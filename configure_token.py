@@ -4,7 +4,7 @@ Configuration tool for setting up the Things authentication token.
 """
 import sys
 import logging
-import config
+from src.things_mcp import config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 

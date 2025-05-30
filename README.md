@@ -2,7 +2,16 @@
 
 This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things app](https://culturedcode.com/things). You can ask Claude to create tasks, analyze projects, help manage priorities, and more.
 
-This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/). 
+This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/), with additional reliability features including:
+
+- **Robust error handling** with exponential backoff and retry mechanisms
+- **Circuit breaker pattern** to prevent cascading failures
+- **Dead letter queue** for failed operations
+- **Intelligent caching** for improved performance
+- **Comprehensive logging** with structured JSON output
+- **AppleScript bridge** for operations that fail with URL schemes
+- **Rate limiting** to prevent overwhelming the Things app
+- **Extensive test suite** for reliability 
 
 <a href="https://glama.ai/mcp/servers/t9cgixg2ah"><img width="380" height="200" src="https://glama.ai/mcp/servers/t9cgixg2ah/badge" alt="Things Server MCP server" /></a>
 
@@ -35,6 +44,7 @@ There are multiple ways to install and use the Things MCP server:
 * Python 3.12+
 * Claude Desktop
 * Things 3 ("Enable Things URLs" must be turned on in Settings -> General)
+* Things Authentication Token (required for URL scheme operations)
 
 #### Installation
 
@@ -112,7 +122,26 @@ Add the Things server to the mcpServers key in the configuration file (be sure t
 }
 ```
 
-### Step 6: Restart Claude Desktop
+### Step 6: Configure Authentication Token
+The Things URL scheme requires an authentication token. You can find it in Things → Settings → General.
+
+Option 1: Set via configuration script
+```bash
+python configure_token.py
+```
+
+Option 2: Set via environment variable
+```bash
+export THINGS_AUTH_TOKEN="your-token-here"
+```
+
+Option 3: Manually create config file
+```bash
+mkdir -p ~/.things-mcp
+echo '{"things_auth_token": "your-token-here"}' > ~/.things-mcp/config.json
+```
+
+### Step 7: Restart Claude Desktop
 Restart the Claude Desktop app to apply the changes.
 
 ### Sample Usage with Claude Desktop
@@ -152,6 +181,16 @@ Restart the Claude Desktop app to apply the changes.
 
 #### Time-based Operations
 - `get-recent` - Get recently created items
+
+#### Modification Operations
+- `add-todo` - Create a new todo with full parameter support
+- `add-project` - Create a new project with tags and todos
+- `update-todo` - Update an existing todo
+- `update-project` - Update an existing project
+- `delete-todo` - Delete a todo (moves to trash)
+- `delete-project` - Delete a project (moves to trash)
+- `show-item` - Show a specific item or list in Things
+- `search-items` - Search for items in Things
 
 ## Tool Parameters
 
@@ -212,10 +251,27 @@ Restart the Claude Desktop app to apply the changes.
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
 
+### delete-todo
+- `id` - ID of the todo to delete (moves to trash)
+
+### delete-project
+- `id` - ID of the project to delete (moves to trash)
+
 ### show-item
 - `id` - ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
 - `query` (optional) - Optional query to filter by
 - `filter_tags` (optional) - Optional tags to filter by
+
+## Important Limitations
+
+### Tags
+- Tags must exist in Things before they can be applied to todos or projects
+- The MCP server will automatically create missing tags when you try to use them
+- If tag creation fails, the todo/project will still be created but without tags
+
+### Authentication Token
+- Required for all URL scheme operations (create, update, delete)
+- Without a token, Things will prompt for authentication on each operation
 
 ## Authentication Token Configuration
 
@@ -291,6 +347,28 @@ twine upload dist/*
 
 Requires Python 3.12+.
 
+## Reliability Features
+
+### Error Handling & Recovery
+- **Retry Logic**: Automatic retries with exponential backoff for transient failures
+- **Circuit Breaker**: Prevents repeated failures from overwhelming the system
+- **Dead Letter Queue**: Failed operations are stored for later retry or analysis
+- **AppleScript Fallback**: When URL scheme operations fail, falls back to direct AppleScript
+
+### Performance Optimization
+- **Smart Caching**: Frequently accessed data is cached with appropriate TTLs
+- **Rate Limiting**: Prevents overwhelming Things app with too many requests
+- **Cache Invalidation**: Automatic cache clearing when data is modified
+
+### Monitoring & Debugging
+- **Structured Logging**: JSON-formatted logs for better analysis
+- **Operation Tracking**: Each operation is logged with timing and status
+- **Cache Statistics**: Monitor cache performance with `get-cache-stats` tool
+- **Log Locations**: 
+  - Main logs: `~/.things-mcp/logs/things_mcp.log`
+  - Structured logs: `~/.things-mcp/logs/things_mcp_structured.json`
+  - Error logs: `~/.things-mcp/logs/things_mcp_errors.log`
+
 ## Troubleshooting
 
 The server includes error handling for:
@@ -299,17 +377,38 @@ The server includes error handling for:
 - Things database access errors
 - Data formatting errors
 - Authentication token issues
+- Network timeouts
+- AppleScript execution failures
 
 ### Common Issues
 
 1. **Missing or invalid token**: Run `python configure_token.py` to set up your token
-2. **Things app not running**: Ensure Things 3 is open when using the MCP server
+2. **Things app not running**: The server will attempt to launch Things automatically
 3. **URL scheme not enabled**: Check that "Enable Things URLs" is enabled in Things → Preferences → General
+4. **Operations failing**: Check the circuit breaker status and dead letter queue
+5. **Performance issues**: Monitor cache statistics with the `get-cache-stats` tool
 
 ### Checking Logs
 
-All errors are logged and returned with descriptive messages. To review the MCP logs from Claude Desktop, run this in the Terminal:
+All errors are logged and returned with descriptive messages. To review the MCP logs:
+
 ```bash
-# Follow logs in real-time
+# Follow main logs in real-time
+tail -f ~/.things-mcp/logs/things_mcp.log
+
+# Check error logs
+tail -f ~/.things-mcp/logs/things_mcp_errors.log
+
+# View structured logs for analysis
+cat ~/.things-mcp/logs/things_mcp_structured.json | jq
+
+# Claude Desktop MCP logs
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
 ```
+
+### Advanced Debugging
+
+1. **Check Dead Letter Queue**: Failed operations are stored in `things_dlq.json`
+2. **Monitor Circuit Breaker**: Look for "Circuit breaker" messages in logs
+3. **Cache Performance**: Use `get-cache-stats` tool to check hit rates
+4. **Enable Debug Logging**: Set console level to DEBUG in `logging_config.py`

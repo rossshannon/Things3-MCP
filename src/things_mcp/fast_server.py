@@ -20,9 +20,14 @@ from .url_scheme import (
     search, launch_things, execute_url
 )
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# Import and configure enhanced logging
+from .logging_config import setup_logging, get_logger, log_operation_start, log_operation_end
+# Import caching
+from .cache import cached, invalidate_caches_for, get_cache_stats, CACHE_TTL
+
+# Configure enhanced logging
+setup_logging(console_level="INFO", file_level="DEBUG", structured_logs=True)
+logger = get_logger(__name__)
 
 # Create the FastMCP server
 mcp = FastMCP(
@@ -36,24 +41,45 @@ mcp = FastMCP(
 @mcp.tool(name="get-inbox")
 def get_inbox() -> str:
     """Get todos from Inbox"""
-    todos = things.inbox()
+    import time
+    start_time = time.time()
+    log_operation_start("get-inbox")
     
-    if not todos:
-        return "No items found in Inbox"
-    
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    try:
+        todos = things.inbox()
+        
+        if not todos:
+            log_operation_end("get-inbox", True, time.time() - start_time, count=0)
+            return "No items found in Inbox"
+        
+        formatted_todos = [format_todo(todo) for todo in todos]
+        log_operation_end("get-inbox", True, time.time() - start_time, count=len(todos))
+        return "\n\n---\n\n".join(formatted_todos)
+    except Exception as e:
+        log_operation_end("get-inbox", False, time.time() - start_time, error=str(e))
+        raise
 
 @mcp.tool(name="get-today")
+@cached(ttl=CACHE_TTL.get("today", 30))
 def get_today() -> str:
     """Get todos due today"""
-    todos = things.today()
+    import time
+    start_time = time.time()
+    log_operation_start("get-today")
     
-    if not todos:
-        return "No items due today"
-    
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    try:
+        todos = things.today()
+        
+        if not todos:
+            log_operation_end("get-today", True, time.time() - start_time, count=0)
+            return "No items due today"
+        
+        formatted_todos = [format_todo(todo) for todo in todos]
+        log_operation_end("get-today", True, time.time() - start_time, count=len(todos))
+        return "\n\n---\n\n".join(formatted_todos)
+    except Exception as e:
+        log_operation_end("get-today", False, time.time() - start_time, error=str(e))
+        raise
 
 @mcp.tool(name="get-upcoming")
 def get_upcoming() -> str:
@@ -325,6 +351,9 @@ def add_task(
         
         if not result:
             return "Error: Failed to create todo"
+        
+        # Invalidate relevant caches after creating a todo
+        invalidate_caches_for(["get-inbox", "get-today", "get-upcoming", "get-todos"])
             
         return f"Successfully created todo: {title}"
     except Exception as e:
@@ -571,6 +600,18 @@ def get_recent(period: str) -> str:
     except Exception as e:
         logger.error(f"Error getting recent items: {str(e)}")
         return f"Error getting recent items: {str(e)}"
+
+@mcp.tool(name="get-cache-stats")
+def get_cache_statistics() -> str:
+    """Get cache performance statistics"""
+    stats = get_cache_stats()
+    
+    return f"""Cache Statistics:
+- Total entries: {stats['entries']}
+- Cache hits: {stats['hits']}
+- Cache misses: {stats['misses']}
+- Hit rate: {stats['hit_rate']}
+- Total requests: {stats['total_requests']}"""
 
 # Main entry point
 def run_things_mcp_server():

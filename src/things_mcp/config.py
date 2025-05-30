@@ -98,7 +98,18 @@ def get_config_value(key, default=None):
     return config.get(key, default)
 
 def get_things_auth_token():
-    """Get the Things authentication token."""
+    """Get the Things authentication token.
+    
+    First checks environment variable THINGS_AUTH_TOKEN, 
+    then falls back to config file.
+    """
+    # Check environment variable first
+    token = os.environ.get('THINGS_AUTH_TOKEN')
+    if token:
+        logger.debug("Using Things auth token from environment variable")
+        return token
+    
+    # Fall back to config file
     return get_config_value("things_auth_token", "")
 
 def set_things_auth_token(token):

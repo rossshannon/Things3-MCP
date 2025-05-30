@@ -218,8 +218,7 @@ class DeadLetterQueue:
         if not self.queue:
             return {"success": True, "retried": 0, "failed": 0}
         
-        from url_scheme import construct_url, execute_url
-        from handlers import retry_operation
+        from .url_scheme import construct_url, execute_url
         
         success_count = 0
         failure_count = 0

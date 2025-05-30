@@ -4,14 +4,14 @@ import things
 import mcp.types as types
 import traceback
 import random
-from formatters import format_todo, format_project, format_area, format_tag
-import url_scheme
+from .formatters import format_todo, format_project, format_area, format_tag
+from . import url_scheme
 import time
 import subprocess
-from applescript_bridge import run_applescript
+from .applescript_bridge import run_applescript
 
 # Import reliability enhancements
-from utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter, validate_tool_registration
+from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter, validate_tool_registration
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +273,7 @@ async def handle_tool_call(
             list_title = arguments.get("list_title")
             
             # Import the AppleScript bridge
-            import applescript_bridge
+            from . import applescript_bridge
             
             # Prepare simplified parameters for the direct AppleScript approach
             # Only include parameters that our AppleScript bridge implementation supports
@@ -391,7 +391,7 @@ async def handle_tool_call(
                 "canceled": arguments.get("canceled")
             }
             
-            import applescript_bridge
+            from . import applescript_bridge
             import url_scheme
             
             # Special tag handling

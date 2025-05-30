@@ -8,7 +8,7 @@ import time
 import logging
 import json
 from typing import Optional, Dict, Any, Union, Callable
-from utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter, is_things_running
+from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter, is_things_running
 
 logger = logging.getLogger(__name__)
         
@@ -133,7 +133,7 @@ def construct_url(command: str, params: Dict[str, Any]) -> str:
     # Get authentication token if needed - applies to all commands to ensure reliability
     try:
         # Import here to avoid circular imports
-        import config
+        from . import config
         
         # Get token from config system
         token = config.get_things_auth_token()
@@ -205,7 +205,7 @@ def construct_url(command: str, params: Dict[str, Any]) -> str:
 
 def should_use_json_api() -> bool:
     """Determine if the JSON API should be used based on Things version."""
-    from utils import detect_things_version
+    from .utils import detect_things_version
     
     version = detect_things_version()
     if not version:
