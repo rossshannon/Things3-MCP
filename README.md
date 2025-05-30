@@ -15,6 +15,22 @@ This server leverages the [Things.py](https://github.com/thingsapi/things.py) li
 
 <a href="https://glama.ai/mcp/servers/t9cgixg2ah"><img width="380" height="200" src="https://glama.ai/mcp/servers/t9cgixg2ah/badge" alt="Things Server MCP server" /></a>
 
+## Attribution
+
+This project is an enhanced FastMCP implementation based on the original [things-mcp](https://github.com/hald/things-mcp) project by [Harald Lindstrøm](https://github.com/hald). 
+
+**Original Project**: https://github.com/hald/things-mcp
+**Enhanced by**: Yaroslav Krempovych
+
+This enhanced version adds:
+- Comprehensive reliability features (circuit breaker, retry logic, dead letter queue)
+- Performance optimizations with intelligent caching
+- AppleScript bridge for improved compatibility
+- Enhanced error handling and logging
+- FastMCP implementation pattern
+
+Special thanks to Harald Lindstrøm for creating the foundational implementation that made this enhanced version possible.
+
 ## Why Things MCP?
 
 This MCP server unlocks the power of AI for your task management:

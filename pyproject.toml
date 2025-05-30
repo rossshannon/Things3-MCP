@@ -1,15 +1,15 @@
 [project]
 name = "things-fastmcp"
 version = "1.0.0"
-description = "Things app Model Context Protocol (MCP) server for Claude and Anthropic Windsurf"
+description = "Enhanced FastMCP implementation of the Things MCP server for Claude and Windsurf"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT License"}
 authors = [
-    {name = "Harald Lindstrøm", email = "hald@users.noreply.github.com"},
-    {name = "excelsier", email = "51231325+excelsier@users.noreply.github.com"}
+    {name = "Yaroslav Krempovych", email = "51231325+excelsior@users.noreply.github.com"},
+    {name = "Harald Lindstrøm", email = "hald@users.noreply.github.com"}
 ]
-keywords = ["mcp", "anthropic", "claude", "things", "task-management", "productivity"]
+keywords = ["mcp", "anthropic", "claude", "things", "task-management", "productivity", "fastmcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
@@ -29,9 +29,9 @@ dependencies = [
 things-fastmcp = "src.things_mcp.fast_server:run_things_mcp_server"
 
 [project.urls]
-"Homepage" = "https://github.com/excelsier/things-mcp"
-"Bug Tracker" = "https://github.com/excelsier/things-mcp/issues"
-"Documentation" = "https://github.com/excelsier/things-mcp#readme"
+"Homepage" = "https://github.com/excelsier/things-fastmcp"
+"Bug Tracker" = "https://github.com/excelsier/things-fastmcp/issues"
+"Documentation" = "https://github.com/excelsier/things-fastmcp#readme"
 
 [build-system]
 requires = ["hatchling"]
