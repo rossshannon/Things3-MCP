@@ -1,65 +1,26 @@
-# Things 3 Enhanced MCP Server
+# Things MCP Server
 
-This enhanced [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server provides **advanced and reliable integration** between [Things 3 app](https://culturedcode.com/things) and Claude Desktop/Windsurf. Manage your tasks, projects, and productivity workflows using natural language with enterprise-grade reliability features.
+This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things app](https://culturedcode.com/things). You can ask Claude to create tasks, analyze projects, help manage priorities, and more.
 
-This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/), enhanced with **production-ready reliability features**:
+This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/), with additional reliability features including:
 
-- **🔄 Robust error handling** with exponential backoff and retry mechanisms
-- **⚡ Circuit breaker pattern** to prevent cascading failures
-- **📦 Dead letter queue** for failed operations
-- **🧠 Intelligent caching** for improved performance
-- **📊 Comprehensive logging** with structured JSON output
-- **🍎 AppleScript bridge** for operations that fail with URL schemes
-- **⏱️ Rate limiting** to prevent overwhelming the Things app
-- **🧪 Extensive test suite** for reliability 
+- **Robust error handling** with exponential backoff and retry mechanisms
+- **Circuit breaker pattern** to prevent cascading failures
+- **Dead letter queue** for failed operations
+- **Intelligent caching** for improved performance
+- **Comprehensive logging** with structured JSON output
+- **AppleScript bridge** for operations that fail with URL schemes
+- **Rate limiting** to prevent overwhelming the Things app
+- **Extensive test suite** for reliability 
 
-<a href="https://glama.ai/mcp/servers/t9cgixg2ah"><img width="380" height="200" src="https://glama.ai/mcp/servers/t9cgixg2ah/badge" alt="Things 3 Enhanced MCP Server" /></a>
+## Why Things MCP?
 
-## Attribution
+This MCP server unlocks the power of AI for your task management:
 
-This project is an enhanced FastMCP implementation based on the original [things-mcp](https://github.com/hald/things-mcp) project by [Harald Lindstrøm](https://github.com/hald). 
-
-**Original Project**: https://github.com/hald/things-mcp  
-**Enhanced by**: Yaroslav Krempovych
-
-This enhanced version adds:
-- 🔄 Comprehensive reliability features (circuit breaker, retry logic, dead letter queue)
-- ⚡ Performance optimizations with intelligent caching
-- 🍎 AppleScript bridge for improved macOS compatibility
-- 📊 Enhanced error handling and structured logging
-- 🚀 FastMCP implementation pattern for better maintainability
-
-Special thanks to Harald Lindstrøm for creating the foundational implementation that made this enhanced version possible.
-
-## Why Choose Things 3 Enhanced MCP?
-
-This MCP server unlocks the power of AI for your **Things 3** task management:
-
-- **🗣️ Natural Language Task Creation**: Ask Claude to create complex tasks with all details in natural language
-- **📊 Smart Task Analysis**: Get insights into your projects and productivity patterns  
-- **🎯 GTD & Productivity Workflows**: Let Claude help you implement Getting Things Done and other productivity systems
-- **🔗 Seamless Integration**: Works directly with your existing Things 3 data on macOS/iOS
-- **🛡️ Enterprise Reliability**: Production-ready with comprehensive error handling and monitoring
-
-## ✨ Enhanced Features
-
-### **Reliability & Performance**
-- Circuit breaker pattern prevents system overload
-- Automatic retry with exponential backoff
-- Dead letter queue for failed operations
-- Intelligent caching with TTL management
-- Rate limiting for API protection
-
-### **macOS Integration**
-- AppleScript bridge as fallback mechanism
-- Native Things 3 URL scheme support
-- Seamless macOS ecosystem integration
-
-### **Monitoring & Debugging**
-- Structured JSON logging
-- Performance metrics and statistics
-- Comprehensive error tracking
-- Debug-friendly output
+- **Natural Language Task Creation**: Ask Claude to create tasks with all details in natural language
+- **Smart Task Analysis**: Get insights into your projects and productivity patterns
+- **GTD & Productivity Workflows**: Let Claude help you implement productivity systems
+- **Seamless Integration**: Works directly with your existing Things 3 data
 
 ## Features
 
@@ -86,13 +47,13 @@ There are multiple ways to install and use the Things MCP server:
 #### Installation
 
 ```bash
-pip install things3-enhanced-mcp
+pip install things-mcp
 ```
 
 Or using uv (recommended):
 
 ```bash
-uv pip install things3-enhanced-mcp
+uv pip install things-mcp
 ```
 
 #### Running
@@ -100,7 +61,7 @@ uv pip install things3-enhanced-mcp
 After installation, you can run the server directly:
 
 ```bash
-things3-enhanced-mcp
+things-mcp
 ```
 
 ### Option 2: Manual Installation
@@ -142,12 +103,18 @@ Edit the Claude Desktop configuration file:
 code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 ```
 
-Add the Things 3 Enhanced server to the mcpServers key in the configuration file:
+Add the Things server to the mcpServers key in the configuration file (be sure to update the path to the folder where you installed these files):
 ```json
 {
     "mcpServers": {
-        "things3-enhanced": {
-            "command": "things3-enhanced-mcp"
+        "things": {
+            "command": "uv",
+            "args": [
+                "--directory",
+                "/ABSOLUTE/PATH/TO/PARENT/FOLDER/things-mcp",
+                "run",
+                "things_server.py"
+            ]
         }
     }
 }
@@ -176,11 +143,10 @@ echo '{"things_auth_token": "your-token-here"}' > ~/.things-mcp/config.json
 Restart the Claude Desktop app to apply the changes.
 
 ### Sample Usage with Claude Desktop
-* "What's on my Things 3 todo list today?"
-* "Create a project in Things 3 for my vacation planning with a detailed packing checklist."
-* "Evaluate my current Things 3 todos using the Eisenhower matrix."
-* "Help me conduct a GTD-style weekly review using Things 3."
-* "Show me my most overdue tasks and suggest a priority order."
+* "What's on my todo list today?"
+* "Create a todo to pack for my beach vacation next week, include a packling checklist."
+* "Evaluate my current todos using the Eisenhower matrix."
+* "Help me conduct a GTD-style weekly review using Things."
 
 #### Tips
 * Create a project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (eg asking it to include relevant details in the task description might be helpful).
