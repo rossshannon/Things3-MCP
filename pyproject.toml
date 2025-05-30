@@ -1,7 +1,7 @@
 [project]
-name = "things-fastmcp"
+name = "things3-enhanced-mcp"
 version = "1.0.0"
-description = "Enhanced FastMCP implementation of the Things MCP server for Claude and Windsurf"
+description = "Enhanced FastMCP server for Things 3 app integration with Claude Desktop and Windsurf - featuring reliability improvements, caching, and AppleScript bridge"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT License"}
@@ -9,7 +9,7 @@ authors = [
     {name = "Yaroslav Krempovych", email = "51231325+excelsior@users.noreply.github.com"},
     {name = "Harald Lindstrøm", email = "hald@users.noreply.github.com"}
 ]
-keywords = ["mcp", "anthropic", "claude", "things", "task-management", "productivity", "fastmcp"]
+keywords = ["mcp", "anthropic", "claude", "things3", "things", "task-management", "productivity", "fastmcp", "macos", "apple"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
@@ -17,7 +17,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Utilities",
     "Topic :: Office/Business :: Scheduling",
-    "Topic :: Software Development :: Libraries :: Python Modules"
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: MacOS"
 ]
 dependencies = [
     "httpx>=0.28.1",
@@ -26,7 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-things-fastmcp = "src.things_mcp.fast_server:run_things_mcp_server"
+things3-enhanced-mcp = "src.things_mcp.fast_server:run_things_mcp_server"
 
 [project.urls]
 "Homepage" = "https://github.com/excelsier/things-fastmcp"

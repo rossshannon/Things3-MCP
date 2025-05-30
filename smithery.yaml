@@ -1,0 +1,102 @@
+name: things3-enhanced-mcp
+version: 1.0.0
+description: "Enhanced FastMCP server for Things 3 app integration with Claude Desktop and Windsurf - featuring reliability improvements, caching, and AppleScript bridge"
+
+# Smithery configuration
+registry:
+  displayName: "Things 3 Enhanced MCP"
+  shortDescription: "Advanced Things 3 integration with enterprise reliability features"
+  longDescription: |
+    Enhanced Model Context Protocol server for seamless Things 3 app integration with AI assistants. 
+    Features production-ready reliability with circuit breaker patterns, intelligent caching, AppleScript 
+    bridge, and comprehensive error handling. Perfect for macOS users wanting robust task management 
+    automation with Claude Desktop or Windsurf.
+  
+  tags:
+    - task-management
+    - productivity
+    - things3
+    - macos
+    - apple
+    - fastmcp
+    - reliability
+    - gtd
+  
+  category: "Task Management"
+  
+  # Requirements
+  requirements:
+    os: ["macos"]
+    platform: ["local"]
+    
+  # Documentation
+  homepage: "https://github.com/excelsier/things-fastmcp"
+  repository: "https://github.com/excelsier/things-fastmcp"
+  documentation: "https://github.com/excelsier/things-fastmcp#readme"
+  
+  # Installation
+  installation:
+    type: "pip"
+    package: "things3-enhanced-mcp"
+    command: "things3-enhanced-mcp"
+    
+  # Configuration requirements
+  configuration:
+    required:
+      - name: "THINGS_AUTH_TOKEN"
+        description: "Authentication token from Things 3 Preferences → General"
+        type: "string"
+        secret: true
+    optional:
+      - name: "THINGS_MCP_LOG_LEVEL"
+        description: "Logging level (DEBUG, INFO, WARNING, ERROR)"
+        type: "string"
+        default: "INFO"
+
+# Build configuration  
+build:
+  type: "python"
+  python_version: "3.12"
+  
+  # Entry point
+  entry_point: "src.things_mcp.fast_server:run_things_mcp_server"
+  
+  # Dependencies from pyproject.toml
+  dependencies:
+    - "httpx>=0.28.1"
+    - "mcp[cli]>=1.2.0" 
+    - "things-py>=0.0.15"
+
+# Deployment settings
+deployment:
+  type: "local"  # This runs locally, not on Smithery's servers
+  
+# Health checks
+health:
+  startup_timeout: 30
+  readiness_probe:
+    path: "/health"
+    timeout: 5
+    
+# Features/Tools provided by this MCP
+tools:
+  - name: "get-inbox"
+    description: "Get todos from Things 3 Inbox"
+  - name: "get-today" 
+    description: "Get todos due today"
+  - name: "get-upcoming"
+    description: "Get upcoming todos"
+  - name: "get-anytime"
+    description: "Get todos from Anytime list"
+  - name: "get-someday"
+    description: "Get todos from Someday list"
+  - name: "add-todo"
+    description: "Create a new todo with full parameter support"
+  - name: "add-project"
+    description: "Create a new project with tags and todos"
+  - name: "update-todo"
+    description: "Update an existing todo"
+  - name: "search-todos"
+    description: "Search for todos by title/notes"
+  - name: "get-tags"
+    description: "Get all available tags" 
