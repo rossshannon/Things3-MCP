@@ -16,7 +16,7 @@ import mcp.types as types
 from .formatters import format_todo, format_project, format_area, format_tag
 from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter
 from .url_scheme import (
-    add_todo, add_project, update_todo, update_project, show, 
+    add_todo, add_project, update_todo, update_project, show,
     search, launch_things, execute_url
 )
 
@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 # Create the FastMCP server
 mcp = FastMCP(
-    "Things", 
+    "Things",
     description="Interact with the Things task management app",
     version="0.1.1"
 )
@@ -44,14 +44,14 @@ def get_inbox() -> str:
     import time
     start_time = time.time()
     log_operation_start("get-inbox")
-    
+
     try:
         todos = things.inbox()
-        
+
         if not todos:
             log_operation_end("get-inbox", True, time.time() - start_time, count=0)
             return "No items found in Inbox"
-        
+
         formatted_todos = [format_todo(todo) for todo in todos]
         log_operation_end("get-inbox", True, time.time() - start_time, count=len(todos))
         return "\n\n---\n\n".join(formatted_todos)
@@ -66,17 +66,80 @@ def get_today() -> str:
     import time
     start_time = time.time()
     log_operation_start("get-today")
-    
+
     try:
         todos = things.today()
-        
+
         if not todos:
             log_operation_end("get-today", True, time.time() - start_time, count=0)
             return "No items due today"
-        
+
         formatted_todos = [format_todo(todo) for todo in todos]
         log_operation_end("get-today", True, time.time() - start_time, count=len(todos))
         return "\n\n---\n\n".join(formatted_todos)
+    except TypeError as e:
+        if "'<' not supported between instances of 'NoneType' and 'str'" in str(e):
+            # Handle the sorting bug in things.today() by using a workaround
+            log_operation_end("get-today", True, time.time() - start_time, error="Sorting bug workaround applied")
+            try:
+                # Replicate the exact logic from things.today() but with safe sorting
+                import datetime
+                today_str = datetime.date.today().strftime('%Y-%m-%d')
+
+                # Replicate the three categories from things.today():
+                # 1. regular_today_tasks: start_date=True (today), start="Anytime", index="todayIndex"
+                regular_today_tasks = things.tasks(
+                    start_date=True,  # today
+                    start="Anytime",
+                    index="todayIndex",
+                    status="incomplete"
+                )
+
+                # 2. unconfirmed_scheduled_tasks: start_date="past", start="Someday", index="todayIndex"
+                unconfirmed_scheduled_tasks = things.tasks(
+                    start_date="past",
+                    start="Someday",
+                    index="todayIndex",
+                    status="incomplete"
+                )
+
+                # 3. unconfirmed_overdue_tasks: start_date=False, deadline="past", deadline_suppressed=False
+                unconfirmed_overdue_tasks = things.tasks(
+                    start_date=False,
+                    deadline="past",
+                    deadline_suppressed=False,
+                    status="incomplete"
+                )
+
+                # Combine all three categories like the original
+                result = [
+                    *regular_today_tasks,
+                    *unconfirmed_scheduled_tasks,
+                    *unconfirmed_overdue_tasks,
+                ]
+
+                if not result:
+                    return "No items due today"
+
+                # Sort manually with None-safe comparison
+                def safe_sort_key(task):
+                    today_index = task.get("today_index")
+                    if today_index is None:
+                        today_index = 999999  # Put items without today_index at the end
+                    start_date = task.get("start_date")
+                    if start_date is None:
+                        start_date = ""
+                    return (today_index, start_date)
+
+                result.sort(key=safe_sort_key)
+                formatted_todos = [format_todo(todo) for todo in result]
+                return "\n\n---\n\n".join(formatted_todos)
+            except Exception as fallback_error:
+                log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {str(fallback_error)}")
+                return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {str(fallback_error)}"
+        else:
+            log_operation_end("get-today", False, time.time() - start_time, error=str(e))
+            raise
     except Exception as e:
         log_operation_end("get-today", False, time.time() - start_time, error=str(e))
         raise
@@ -85,10 +148,10 @@ def get_today() -> str:
 def get_upcoming() -> str:
     """Get upcoming todos"""
     todos = things.upcoming()
-    
+
     if not todos:
         return "No upcoming items"
-    
+
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
@@ -96,10 +159,10 @@ def get_upcoming() -> str:
 def get_anytime() -> str:
     """Get todos from Anytime list"""
     todos = things.anytime()
-    
+
     if not todos:
         return "No items in Anytime list"
-    
+
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
@@ -107,10 +170,10 @@ def get_anytime() -> str:
 def get_someday() -> str:
     """Get todos from Someday list"""
     todos = things.someday()
-    
+
     if not todos:
         return "No items in Someday list"
-    
+
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
@@ -118,19 +181,19 @@ def get_someday() -> str:
 def get_logbook(period: str = "7d", limit: int = 50) -> str:
     """
     Get completed todos from Logbook, defaults to last 7 days
-    
+
     Args:
         period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'
         limit: Maximum number of entries to return. Defaults to 50
     """
     todos = things.last(period, status='completed')
-    
+
     if not todos:
         return "No completed items found"
-    
+
     if todos and len(todos) > limit:
         todos = todos[:limit]
-        
+
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
@@ -138,10 +201,10 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 def get_trash() -> str:
     """Get trashed todos"""
     todos = things.trash()
-    
+
     if not todos:
         return "No items in trash"
-    
+
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
@@ -151,7 +214,7 @@ def get_trash() -> str:
 def get_todos(project_uuid: Optional[str] = None, include_items: bool = True) -> str:
     """
     Get todos from Things, optionally filtered by project
-    
+
     Args:
         project_uuid: Optional UUID of a specific project to get todos from
         include_items: Include checklist items
@@ -162,7 +225,7 @@ def get_todos(project_uuid: Optional[str] = None, include_items: bool = True) ->
             return f"Error: Invalid project UUID '{project_uuid}'"
 
     todos = things.todos(project=project_uuid, start=None)
-    
+
     if not todos:
         return "No todos found"
 
@@ -173,7 +236,7 @@ def get_todos(project_uuid: Optional[str] = None, include_items: bool = True) ->
 def get_projects(include_items: bool = False) -> str:
     """
     Get all projects from Things
-    
+
     Args:
         include_items: Include tasks within projects
     """
@@ -189,7 +252,7 @@ def get_projects(include_items: bool = False) -> str:
 def get_areas(include_items: bool = False) -> str:
     """
     Get all areas from Things
-    
+
     Args:
         include_items: Include projects and tasks within areas
     """
@@ -207,7 +270,7 @@ def get_areas(include_items: bool = False) -> str:
 def get_tags(include_items: bool = False) -> str:
     """
     Get all tags
-    
+
     Args:
         include_items: Include items tagged with each tag
     """
@@ -223,7 +286,7 @@ def get_tags(include_items: bool = False) -> str:
 def get_tagged_items(tag: str) -> str:
     """
     Get items with a specific tag
-    
+
     Args:
         tag: Tag title to filter by
     """
@@ -241,7 +304,7 @@ def get_tagged_items(tag: str) -> str:
 def search_todos(query: str) -> str:
     """
     Search todos by title or notes
-    
+
     Args:
         query: Search term to look for in todo titles and notes
     """
@@ -264,7 +327,7 @@ def search_advanced(
 ) -> str:
     """
     Advanced todo search with multiple filters
-    
+
     Args:
         status: Filter by todo status (incomplete/completed/canceled)
         start_date: Filter by start date (YYYY-MM-DD)
@@ -275,7 +338,7 @@ def search_advanced(
     """
     # Build filter parameters
     kwargs = {}
-    
+
     # Add filters that are provided
     if status:
         kwargs['status'] = status
@@ -289,14 +352,14 @@ def search_advanced(
         kwargs['area'] = area
     if type:
         kwargs['type'] = type
-        
+
     # Execute search with applicable filters
     try:
         todos = things.todos(**kwargs)
-        
+
         if not todos:
             return "No items found matching your search criteria"
-            
+
         formatted_todos = [format_todo(todo) for todo in todos]
         return "\n\n---\n\n".join(formatted_todos)
     except Exception as e:
@@ -314,11 +377,10 @@ def add_task(
     checklist_items: Optional[List[str]] = None,
     list_id: Optional[str] = None,
     list_title: Optional[str] = None,
-    heading: Optional[str] = None
+    heading: Optional[str] = None,
 ) -> str:
-    """
-    Create a new todo in Things
-    
+    """Create a new todo in Things.
+
     Args:
         title: Title of the todo
         notes: Notes for the todo
@@ -331,34 +393,39 @@ def add_task(
         heading: Heading to add under
     """
     try:
-        # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
-                
-        # Execute the add_todo URL command
-        result = add_todo(
-            title=title,
-            notes=notes,
-            when=when,
-            deadline=deadline,
-            tags=tags,
-            checklist_items=checklist_items,
-            list_id=list_id,
-            list_title=list_title,
-            heading=heading
-        )
-        
-        if not result:
-            return "Error: Failed to create todo"
-        
+        # Import the AppleScript bridge for more reliable todo creation
+        from .applescript_bridge import add_todo_direct
+
+        # Clean up title and notes to handle URL encoding
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
+
+        if isinstance(notes, str):
+            notes = notes.replace("+", " ").replace("%20", " ")
+
+        # Use the direct AppleScript approach which is more reliable
+        logger.info(f"Creating todo using AppleScript: {title}")
+
+        # Simple direct call to test
+        try:
+            task_id = add_todo_direct(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_title=list_title)
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+        if not task_id:
+            return "Error: Failed to create todo using AppleScript"
+
         # Invalidate relevant caches after creating a todo
         invalidate_caches_for(["get-inbox", "get-today", "get-upcoming", "get-todos"])
-            
-        return f"Successfully created todo: {title}"
+
+        return f"✅ Successfully created todo: {title} (ID: {task_id})"
+
     except Exception as e:
         logger.error(f"Error creating todo: {str(e)}")
-        return f"Error creating todo: {str(e)}"
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error creating todo: {str(e)}"
 
 @mcp.tool(name="add-project")
 def add_new_project(
@@ -373,7 +440,7 @@ def add_new_project(
 ) -> str:
     """
     Create a new project in Things
-    
+
     Args:
         title: Title of the project
         notes: Notes for the project
@@ -389,7 +456,7 @@ def add_new_project(
         if not app_state.update_app_state():
             if not launch_things():
                 return "Error: Unable to launch Things app"
-                
+
         # Execute the add_project URL command
         result = add_project(
             title=title,
@@ -401,10 +468,10 @@ def add_new_project(
             area_title=area_title,
             todos=todos
         )
-        
+
         if not result:
             return "Error: Failed to create project"
-            
+
         return f"Successfully created project: {title}"
     except Exception as e:
         logger.error(f"Error creating project: {str(e)}")
@@ -423,7 +490,7 @@ def update_task(
 ) -> str:
     """
     Update an existing todo in Things
-    
+
     Args:
         id: ID of the todo to update
         title: New title
@@ -439,7 +506,7 @@ def update_task(
         if not app_state.update_app_state():
             if not launch_things():
                 return "Error: Unable to launch Things app"
-                
+
         # Execute the update_todo URL command
         result = update_todo(
             id=id,
@@ -451,10 +518,10 @@ def update_task(
             completed=completed,
             canceled=canceled
         )
-        
+
         if not result:
             return "Error: Failed to update todo"
-            
+
         return f"Successfully updated todo with ID: {id}"
     except Exception as e:
         logger.error(f"Error updating todo: {str(e)}")
@@ -473,7 +540,7 @@ def update_existing_project(
 ) -> str:
     """
     Update an existing project in Things
-    
+
     Args:
         id: ID of the project to update
         title: New title
@@ -489,7 +556,7 @@ def update_existing_project(
         if not app_state.update_app_state():
             if not launch_things():
                 return "Error: Unable to launch Things app"
-                
+
         # Execute the update_project URL command
         result = update_project(
             id=id,
@@ -501,10 +568,10 @@ def update_existing_project(
             completed=completed,
             canceled=canceled
         )
-        
+
         if not result:
             return "Error: Failed to update project"
-            
+
         return f"Successfully updated project with ID: {id}"
     except Exception as e:
         logger.error(f"Error updating project: {str(e)}")
@@ -518,7 +585,7 @@ def show_item(
 ) -> str:
     """
     Show a specific item or list in Things
-    
+
     Args:
         id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
         query: Optional query to filter by
@@ -529,17 +596,17 @@ def show_item(
         if not app_state.update_app_state():
             if not launch_things():
                 return "Error: Unable to launch Things app"
-                
+
         # Execute the show URL command
         result = show(
             id=id,
             query=query,
             filter_tags=filter_tags
         )
-        
+
         if not result:
             return f"Error: Failed to show item/list '{id}'"
-            
+
         return f"Successfully opened '{id}' in Things"
     except Exception as e:
         logger.error(f"Error showing item: {str(e)}")
@@ -549,7 +616,7 @@ def show_item(
 def search_all_items(query: str) -> str:
     """
     Search for items in Things
-    
+
     Args:
         query: Search query
     """
@@ -558,13 +625,13 @@ def search_all_items(query: str) -> str:
         if not app_state.update_app_state():
             if not launch_things():
                 return "Error: Unable to launch Things app"
-                
+
         # Execute the search URL command
         result = search(query=query)
-        
+
         if not result:
             return f"Error: Failed to search for '{query}'"
-            
+
         return f"Successfully searched for '{query}' in Things"
     except Exception as e:
         logger.error(f"Error searching: {str(e)}")
@@ -574,7 +641,7 @@ def search_all_items(query: str) -> str:
 def get_recent(period: str) -> str:
     """
     Get recently created items
-    
+
     Args:
         period: Time period (e.g., '3d', '1w', '2m', '1y')
     """
@@ -582,20 +649,20 @@ def get_recent(period: str) -> str:
         # Check if period format is valid
         if not period or not any(period.endswith(unit) for unit in ['d', 'w', 'm', 'y']):
             return "Error: Period must be in format '3d', '1w', '2m', '1y'"
-            
+
         # Get recent items
         items = things.last(period)
-        
+
         if not items:
             return f"No items found in the last {period}"
-            
+
         formatted_items = []
         for item in items:
             if item.get('type') == 'to-do':
                 formatted_items.append(format_todo(item))
             elif item.get('type') == 'project':
                 formatted_items.append(format_project(item, include_items=False))
-                
+
         return "\n\n---\n\n".join(formatted_items)
     except Exception as e:
         logger.error(f"Error getting recent items: {str(e)}")
@@ -605,7 +672,7 @@ def get_recent(period: str) -> str:
 def get_cache_statistics() -> str:
     """Get cache performance statistics"""
     stats = get_cache_stats()
-    
+
     return f"""Cache Statistics:
 - Total entries: {stats['entries']}
 - Cache hits: {stats['hits']}
@@ -629,7 +696,7 @@ def run_things_mcp_server():
             logger.error(f"Error launching Things app: {str(e)}")
     else:
         logger.info("Things app is running and ready for operations")
-        
+
     # Run the MCP server
     mcp.run()
 
