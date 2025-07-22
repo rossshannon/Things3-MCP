@@ -182,7 +182,15 @@ def escape_applescript_string(text: str) -> str:
     text = text.replace("+", " ")
 
     # Escape quotes by doubling them (AppleScript style)
-    return text.replace('"', '""')
+    text = text.replace('"', '""')
+
+    # Handle other problematic characters
+    text = text.replace('\\', '\\\\')  # Escape backslashes
+    text = text.replace('\n', '\\n')   # Escape newlines
+    text = text.replace('\r', '\\r')   # Escape carriage returns
+    text = text.replace('\t', '\\t')   # Escape tabs
+
+    return text
 
 def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str] = None,
                      when: Optional[str] = None, deadline: Optional[str] = None,
