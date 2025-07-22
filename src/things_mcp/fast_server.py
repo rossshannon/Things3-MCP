@@ -17,10 +17,9 @@ import mcp.types as types
 from .formatters import format_todo, format_project, format_area, format_tag
 from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter
 from .url_scheme import (
-    add_todo, add_project, update_project, show,
-    search, launch_things, execute_url
+    add_todo, show, search, launch_things, execute_url
 )
-from .applescript_bridge import add_todo_direct, update_todo_direct
+from .applescript_bridge import add_todo_direct, update_todo_direct, add_project_direct, update_project_direct
 
 # Import and configure enhanced logging
 from .logging_config import setup_logging, get_logger, log_operation_start, log_operation_end
@@ -493,30 +492,44 @@ def add_new_project(
         tags = params['tags']
         todos = params['todos']
 
-        # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
+        # Clean up title and notes to handle URL encoding
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
 
-        # Execute the add_project URL command
-        result = add_project(
-            title=title,
-            notes=notes,
-            when=when,
-            deadline=deadline,
-            tags=tags,
-            area_id=area_id,
-            area_title=area_title,
-            todos=todos
-        )
+        if isinstance(notes, str):
+            notes = notes.replace("+", " ").replace("%20", " ")
 
-        if not result:
-            return "Error: Failed to create project"
+        # Use the direct AppleScript approach which is more reliable
+        logger.info(f"Creating project using AppleScript: {title}")
 
-        return f"Successfully created project: {title}"
+        # Call the AppleScript bridge directly
+        try:
+            project_id = add_project_direct(
+                title=title,
+                notes=notes,
+                when=when,
+                deadline=deadline,
+                tags=tags,
+                area_title=area_title,
+                todos=todos
+            )
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+        if not project_id:
+            return "Error: Failed to create project using AppleScript"
+
+        # Invalidate relevant caches after creating a project
+        invalidate_caches_for(["get-projects", "get-areas"])
+
+        return f"✅ Successfully created project: {title} (ID: {project_id})"
+
     except Exception as e:
         logger.error(f"Error creating project: {str(e)}")
-        return f"Error creating project: {str(e)}"
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error creating project: {str(e)}"
 
 @mcp.tool(name="update_todo")
 def update_task(
@@ -620,30 +633,45 @@ def update_existing_project(
         )
         tags = params['tags']
 
-        # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
+        # Clean up title and notes to handle URL encoding
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
 
-        # Execute the update_project URL command
-        result = update_project(
-            id=id,
-            title=title,
-            notes=notes,
-            when=when,
-            deadline=deadline,
-            tags=tags,
-            completed=completed,
-            canceled=canceled
-        )
+        if isinstance(notes, str):
+            notes = notes.replace("+", " ").replace("%20", " ")
 
-        if not result:
-            return "Error: Failed to update project"
+        # Use the direct AppleScript approach which is more reliable
+        logger.info(f"Updating project using AppleScript: {id}")
 
-        return f"Successfully updated project with ID: {id}"
+        # Call the AppleScript bridge directly
+        try:
+            success = update_project_direct(
+                id=id,
+                title=title,
+                notes=notes,
+                when=when,
+                deadline=deadline,
+                tags=tags,
+                completed=completed,
+                canceled=canceled
+            )
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+        if not success:
+            return "Error: Failed to update project using AppleScript"
+
+        # Invalidate relevant caches after updating a project
+        invalidate_caches_for(["get-projects", "get-areas", "get-todos"])
+
+        return f"✅ Successfully updated project with ID: {id}"
+
     except Exception as e:
         logger.error(f"Error updating project: {str(e)}")
-        return f"Error updating project: {str(e)}"
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error updating project: {str(e)}"
 
 @mcp.tool(name="show_item")
 def show_item(
