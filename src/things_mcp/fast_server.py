@@ -17,9 +17,10 @@ import mcp.types as types
 from .formatters import format_todo, format_project, format_area, format_tag
 from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter
 from .url_scheme import (
-    add_todo, add_project, update_todo, update_project, show,
+    add_todo, add_project, update_project, show,
     search, launch_things, execute_url
 )
+from .applescript_bridge import add_todo_direct, update_todo_direct
 
 # Import and configure enhanced logging
 from .logging_config import setup_logging, get_logger, log_operation_start, log_operation_end
@@ -428,9 +429,6 @@ def add_task(
         tags = params['tags']
         checklist_items = params['checklist_items']
 
-        # Import the AppleScript bridge for more reliable todo creation
-        from .applescript_bridge import add_todo_direct
-
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
             title = title.replace("+", " ").replace("%20", " ")
@@ -551,30 +549,45 @@ def update_task(
         )
         tags = params['tags']
 
-        # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
+        # Clean up title and notes to handle URL encoding
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
 
-        # Execute the update_todo URL command
-        result = update_todo(
-            id=id,
-            title=title,
-            notes=notes,
-            when=when,
-            deadline=deadline,
-            tags=tags,
-            completed=completed,
-            canceled=canceled
-        )
+        if isinstance(notes, str):
+            notes = notes.replace("+", " ").replace("%20", " ")
 
-        if not result:
-            return "Error: Failed to update todo"
+        # Use the direct AppleScript approach which is more reliable
+        logger.info(f"Updating todo using AppleScript: {id}")
 
-        return f"Successfully updated todo with ID: {id}"
+        # Call the AppleScript bridge directly
+        try:
+            success = update_todo_direct(
+                id=id,
+                title=title,
+                notes=notes,
+                when=when,
+                deadline=deadline,
+                tags=tags,
+                completed=completed,
+                canceled=canceled
+            )
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+        if not success:
+            return "Error: Failed to update todo using AppleScript"
+
+        # Invalidate relevant caches after updating a todo
+        invalidate_caches_for(["get-inbox", "get-today", "get-upcoming", "get-todos", "get-anytime", "get-someday"])
+
+        return f"✅ Successfully updated todo with ID: {id}"
+
     except Exception as e:
         logger.error(f"Error updating todo: {str(e)}")
-        return f"Error updating todo: {str(e)}"
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error updating todo: {str(e)}"
 
 @mcp.tool(name="update_project")
 def update_existing_project(

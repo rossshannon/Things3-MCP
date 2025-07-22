@@ -274,34 +274,12 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
             tags = [tags]
 
         if tags:
-            # Clear existing tags first
-            script_parts.append('    -- Clear existing tags')
-            script_parts.append('    set tag_names of theTodo to {}')
-
-            # Simplified tag handling
-            import json
-            tags_json = json.dumps(tags)
-            script_parts.append(f'''
-    -- Set tags using a list
-    set tagNameList to {tags_json}
-    -- Clear existing tags
-    set oldTags to tags of theTodo
-    repeat with t from (count of oldTags) to 1 by -1
-        delete item t of oldTags
-    end repeat
-    -- Add new tags
-    repeat with t from 1 to (count of tagNameList)
-        set tagText to item t of tagNameList
-        tell theTodo
-            set newTag to make new tag
-            set name of newTag to tagText
-        end tell
-    end repeat
-''')
+            # Use the same simple approach as add_todo_direct
+            tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
+            script_parts.append(f'    set tag names of theTodo to "{tag_names}"')
         else:
             # Clear all tags if empty list provided
-            script_parts.append('    -- Clear all tags')
-            script_parts.append('    set tag_names of theTodo to {}')
+            script_parts.append('    set tag names of theTodo to ""')
 
     # Handle adding tags without replacing existing ones
     if add_tags is not None:
