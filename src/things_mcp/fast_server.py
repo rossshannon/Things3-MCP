@@ -6,6 +6,7 @@ This provides a more modern and maintainable approach to the Things integration.
 import logging
 import asyncio
 import traceback
+import json
 from typing import Dict, Any, Optional, List, Union
 import things
 
@@ -28,6 +29,33 @@ from .cache import cached, invalidate_caches_for, get_cache_stats, CACHE_TTL
 # Configure enhanced logging
 setup_logging(console_level="INFO", file_level="DEBUG", structured_logs=True)
 logger = get_logger(__name__)
+
+def preprocess_array_params(**kwargs):
+    """Preprocess parameters to handle MCP framework array serialization issues.
+
+    The MCP framework sometimes passes arrays as strings (e.g., '["tag1", "tag2"]')
+    instead of actual arrays. This function detects and parses such cases.
+    """
+    result = {}
+    for key, value in kwargs.items():
+        if value is None:
+            result[key] = None
+        elif isinstance(value, str) and value.startswith('[') and value.endswith(']'):
+            # Looks like a stringified array, try to parse it
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    result[key] = parsed
+                    logger.debug(f"Parsed stringified array for {key}: {value} -> {parsed}")
+                else:
+                    result[key] = value
+            except (json.JSONDecodeError, ValueError):
+                # If parsing fails, keep as string
+                result[key] = value
+                logger.warning(f"Failed to parse potential array parameter {key}: {value}")
+        else:
+            result[key] = value
+    return result
 
 # Create the FastMCP server
 mcp = FastMCP(
@@ -372,8 +400,8 @@ def add_task(
     notes: Optional[str] = None,
     when: Optional[str] = None,
     deadline: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    checklist_items: Optional[List[str]] = None,
+    tags: Optional[Union[List[str], str]] = None,
+    checklist_items: Optional[Union[List[str], str]] = None,
     list_id: Optional[str] = None,
     list_title: Optional[str] = None,
     heading: Optional[str] = None,
@@ -392,6 +420,14 @@ def add_task(
         heading: Heading to add under
     """
     try:
+        # Preprocess parameters to handle MCP array serialization issues
+        params = preprocess_array_params(
+            tags=tags,
+            checklist_items=checklist_items
+        )
+        tags = params['tags']
+        checklist_items = params['checklist_items']
+
         # Import the AppleScript bridge for more reliable todo creation
         from .applescript_bridge import add_todo_direct
 
@@ -432,10 +468,10 @@ def add_new_project(
     notes: Optional[str] = None,
     when: Optional[str] = None,
     deadline: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Union[List[str], str]] = None,
     area_id: Optional[str] = None,
     area_title: Optional[str] = None,
-    todos: Optional[List[str]] = None
+    todos: Optional[Union[List[str], str]] = None
 ) -> str:
     """
     Create a new project in Things
@@ -451,6 +487,14 @@ def add_new_project(
         todos: Initial todos to create in the project
     """
     try:
+        # Preprocess parameters to handle MCP array serialization issues
+        params = preprocess_array_params(
+            tags=tags,
+            todos=todos
+        )
+        tags = params['tags']
+        todos = params['todos']
+
         # Ensure Things app is running
         if not app_state.update_app_state():
             if not launch_things():
@@ -483,7 +527,7 @@ def update_task(
     notes: Optional[str] = None,
     when: Optional[str] = None,
     deadline: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Union[List[str], str]] = None,
     completed: Optional[bool] = None,
     canceled: Optional[bool] = None
 ) -> str:
@@ -501,6 +545,12 @@ def update_task(
         canceled: Mark as canceled
     """
     try:
+        # Preprocess parameters to handle MCP array serialization issues
+        params = preprocess_array_params(
+            tags=tags
+        )
+        tags = params['tags']
+
         # Ensure Things app is running
         if not app_state.update_app_state():
             if not launch_things():
@@ -533,7 +583,7 @@ def update_existing_project(
     notes: Optional[str] = None,
     when: Optional[str] = None,
     deadline: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Union[List[str], str]] = None,
     completed: Optional[bool] = None,
     canceled: Optional[bool] = None
 ) -> str:
@@ -551,6 +601,12 @@ def update_existing_project(
         canceled: Mark as canceled
     """
     try:
+        # Preprocess parameters to handle MCP array serialization issues
+        params = preprocess_array_params(
+            tags=tags
+        )
+        tags = params['tags']
+
         # Ensure Things app is running
         if not app_state.update_app_state():
             if not launch_things():
@@ -678,6 +734,8 @@ def get_cache_statistics() -> str:
 - Cache misses: {stats['misses']}
 - Hit rate: {stats['hit_rate']}
 - Total requests: {stats['total_requests']}"""
+
+
 
 # Main entry point
 def run_things_mcp_server():
