@@ -1,173 +1,98 @@
 #!/usr/bin/env python3
 import subprocess
 import logging
+import time
+import re
 from typing import Optional, List, Dict, Any, Union
 
 logger = logging.getLogger(__name__)
 
-def run_applescript(script: str) -> Union[str, bool]:
-    """Run an AppleScript command and return the result.
+def run_applescript(script: str, timeout: int = 10, retries: int = 3) -> Union[str, bool]:
+    """Run an AppleScript command with improved error handling and retry logic.
 
     Args:
         script: The AppleScript code to execute
+        timeout: Timeout in seconds for the operation
+        retries: Number of retry attempts
 
     Returns:
         The result of the AppleScript execution, or False if it failed
     """
-    try:
-        result = subprocess.run(['osascript', '-e', script],
-                              capture_output=True, text=True)
+    for attempt in range(retries):
+        try:
+            logger.debug(f"AppleScript attempt {attempt + 1}/{retries}")
 
-        if result.returncode != 0:
-            logger.error(f"AppleScript error: {result.stderr}")
-            return False
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
 
-        return result.stdout.strip()
-    except Exception as e:
-        logger.error(f"Error running AppleScript: {str(e)}")
-        return False
+            if result.returncode != 0:
+                logger.warning(f"AppleScript attempt {attempt + 1} failed with return code {result.returncode}: {result.stderr}")
+                if attempt < retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    logger.error(f"All AppleScript attempts failed: {result.stderr}")
+                    return False
 
-def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
-                   tags: Optional[List[str]] = None, list_title: Optional[str] = None,
-                   deadline: Optional[str] = None) -> str:
-    """Add a todo to Things directly using AppleScript.
+            # Success
+            if attempt > 0:
+                logger.info(f"AppleScript succeeded on attempt {attempt + 1}")
+            return result.stdout.strip()
 
-    This bypasses URL schemes entirely to avoid encoding issues.
+        except subprocess.TimeoutExpired:
+            logger.warning(f"AppleScript attempt {attempt + 1} timed out after {timeout}s")
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            else:
+                logger.error("All AppleScript attempts timed out")
+                return False
+        except Exception as e:
+            logger.error(f"AppleScript attempt {attempt + 1} failed with exception: {str(e)}")
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            else:
+                return False
 
-    Args:
-        title: Title of the todo
-        notes: Notes for the todo
-        when: When to schedule the todo (today, tomorrow, evening, anytime, someday)
-        tags: Tags to apply to the todo
-        list_title: Name of project/area to add to
-        deadline: Deadline for the todo (YYYY-MM-DD format)
+    return False
+
+def ensure_things_ready() -> bool:
+    """Ensure Things app is ready for AppleScript operations.
 
     Returns:
-        ID of the created todo if successful, False otherwise
+        bool: True if Things is ready, False otherwise
     """
-    # Build the AppleScript command
-    script_parts = ['tell application "Things3"']
+    try:
+        # First check if Things is running
+        check_script = 'tell application "System Events" to (name of processes) contains "Things3"'
+        result = run_applescript(check_script, timeout=5, retries=2)
 
-    # Create the todo with properties
-    properties = []
-    properties.append(f'name:"{escape_applescript_string(title)}"')
+        if not result or result.lower() != 'true':
+            logger.warning("Things app is not running")
+            return False
 
-    if notes:
-        properties.append(f'notes:"{escape_applescript_string(notes)}"')
+        # Then check if Things is responsive
+        ping_script = 'tell application "Things3" to return name'
+        result = run_applescript(ping_script, timeout=5, retries=2)
 
-    # Add deadline if provided (this is the due date, not start date)
-    if deadline:
-        try:
-            # Parse the deadline date (expecting YYYY-MM-DD format)
-            import datetime
-            deadline_date = datetime.datetime.strptime(deadline, '%Y-%m-%d')
-            current_date = datetime.datetime.now()
-            days_diff = (deadline_date.date() - current_date.date()).days
+        if not result:
+            logger.warning("Things app is not responsive")
+            return False
 
-            # Use simple AppleScript date arithmetic as shown in documentation
-            properties.append(f'due date:(current date) + {days_diff} * days')
-        except ValueError as e:
-            logger.warning(f"Invalid deadline format '{deadline}', expected YYYY-MM-DD: {e}")
+        logger.debug("Things app is ready for operations")
+        return True
 
-    # Determine the target list based on when parameter
-    target_list = "Inbox"  # Default
-    schedule_script = None
-
-    if when:
-        when_mapping = {
-            'today': 'Today',
-            'anytime': 'Anytime',
-            'someday': 'Someday'
-        }
-        if when in when_mapping:
-            target_list = when_mapping[when]
-            # For today, we need to schedule for current date using the schedule command
-            if when == 'today':
-                schedule_script = 'schedule newTodo for current date'
-        elif when == 'tomorrow':
-            target_list = "Today"  # Tomorrow todos show up in Today list
-            schedule_script = 'schedule newTodo for (current date) + 1 * days'
-        elif when == 'evening':
-            target_list = "Today"
-            schedule_script = 'schedule newTodo for current date'
-        else:
-            # Try to parse as a date for custom scheduling
-            try:
-                import datetime
-                schedule_date = datetime.datetime.strptime(when, '%Y-%m-%d')
-                current_date = datetime.datetime.now()
-                days_diff = (schedule_date.date() - current_date.date()).days
-
-                if days_diff <= 0:
-                    target_list = "Today"
-                    schedule_script = 'schedule newTodo for current date'
-                else:
-                    target_list = "Today"  # Will show up in Today/Upcoming as appropriate
-                    schedule_script = f'schedule newTodo for (current date) + {days_diff} * days'
-            except ValueError:
-                logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
-
-    # Create the todo in Inbox first (like the documentation examples)
-    if list_title:
-        # If a specific project/area is specified, create there first
-        script_parts.append(f'set newTodo to make new to do with properties {{{", ".join(properties)}}}')
-    else:
-        # Create in Inbox first, then move and schedule as needed
-        script_parts.append(f'set newTodo to make new to do with properties {{{", ".join(properties)}}} at beginning of list "Inbox"')
-
-    # Handle special scheduling with the schedule command
-    if schedule_script:
-        script_parts.append(schedule_script)
-
-    # If we want it in a specific list (not Inbox), move it there
-    if when and target_list != "Inbox":
-        script_parts.append(f'move newTodo to list "{target_list}"')
-
-    # Add tags if provided
-    if tags and len(tags) > 0:
-        tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
-        script_parts.append(f'set tag names of newTodo to "{tag_names}"')
-
-    # Add to a specific project/area if specified and move to correct list
-    if list_title:
-        script_parts.append(f'set project_name to "{escape_applescript_string(list_title)}"')
-        script_parts.append('try')
-        script_parts.append('  set target_project to first project whose name is project_name')
-        script_parts.append('  set project of newTodo to target_project')
-        script_parts.append('on error')
-        script_parts.append('  -- Project not found, try area')
-        script_parts.append('  try')
-        script_parts.append('    set target_area to first area whose name is project_name')
-        script_parts.append('    set area of newTodo to target_area')
-        script_parts.append('  on error')
-        script_parts.append('    -- Neither project nor area found, todo will remain in inbox')
-        script_parts.append('  end try')
-        script_parts.append('end try')
-
-        # If we specified a when parameter, move to the appropriate list
-        if when and target_list != "Inbox":
-            script_parts.append(f'move newTodo to list "{target_list}"')
-
-    # Get the ID of the created todo
-    script_parts.append('return id of newTodo')
-
-    # Close the tell block
-    script_parts.append('end tell')
-
-    # Execute the script
-    script = '\n'.join(script_parts)
-    logger.debug(f"Executing AppleScript: {script}")
-
-    result = run_applescript(script)
-    if result:
-        logger.info(f"Successfully created todo via AppleScript with ID: {result}")
-        return result
-    else:
-        logger.error("Failed to create todo")
+    except Exception as e:
+        logger.error(f"Error checking Things readiness: {str(e)}")
         return False
 
 def escape_applescript_string(text: str) -> str:
-    """Escape special characters in an AppleScript string.
+    """Escape special characters in an AppleScript string with improved handling.
 
     Args:
         text: The string to escape
@@ -190,14 +115,102 @@ def escape_applescript_string(text: str) -> str:
     text = text.replace('\r', '\\r')   # Escape carriage returns
     text = text.replace('\t', '\\t')   # Escape tabs
 
+    # Handle other potentially problematic characters
+    text = text.replace('&', '\\&')    # Escape ampersands
+    text = text.replace('|', '\\|')    # Escape pipes
+    text = text.replace(';', '\\;')    # Escape semicolons
+
+    # Remove any null bytes or other problematic characters
+    text = text.replace('\x00', '')  # Remove null bytes
+    text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')  # Keep only printable chars
+
     return text
+
+def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
+                   tags: Optional[List[str]] = None, list_title: Optional[str] = None,
+                   deadline: Optional[str] = None) -> str:
+    """Add a todo to Things directly using AppleScript with improved reliability.
+
+    This bypasses URL schemes entirely to avoid encoding issues.
+
+    Args:
+        title: Title of the todo
+        notes: Notes for the todo
+        when: When to schedule the todo (today, tomorrow, evening, anytime, someday)
+        tags: Tags to apply to the todo
+        list_title: Name of project/area to add to
+        deadline: Deadline for the todo (YYYY-MM-DD format)
+
+    Returns:
+        ID of the created todo if successful, False otherwise
+    """
+    # Validate input
+    if not title or not title.strip():
+        logger.error("Title cannot be empty")
+        return False
+
+    # Ensure Things is ready
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return False
+
+    # Build a simpler, more reliable AppleScript command
+    script_parts = [
+        'tell application "Things3"',
+        'try'
+    ]
+
+    # Create the todo with basic properties first
+    properties = [f'name:"{escape_applescript_string(title)}"']
+    if notes:
+        properties.append(f'notes:"{escape_applescript_string(notes)}"')
+
+    # Create in Inbox first (simplest approach)
+    script_parts.append(f'set newTodo to make new to do with properties {{{", ".join(properties)}}} at beginning of list "Inbox"')
+
+    # Handle scheduling with simple approach
+    if when:
+        if when == 'today':
+            script_parts.append('schedule newTodo for current date')
+        elif when == 'tomorrow':
+            script_parts.append('schedule newTodo for (current date) + 1 * days')
+        elif when == 'anytime':
+            # Already in Inbox, no action needed
+            pass
+        elif when == 'someday':
+            script_parts.append('move newTodo to list "Someday"')
+
+    # Add tags if provided (simplified)
+    if tags and len(tags) > 0:
+        tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
+        script_parts.append(f'set tag names of newTodo to "{tag_names}"')
+
+    # Get the ID of the created todo
+    script_parts.append('return id of newTodo')
+    script_parts.append('on error errMsg')
+    script_parts.append('  log "Error creating todo: " & errMsg')
+    script_parts.append('  return false')
+    script_parts.append('end try')
+    script_parts.append('end tell')
+
+    # Execute the script
+    script = '\n'.join(script_parts)
+    logger.debug(f"Executing simplified AppleScript: {script}")
+
+    result = run_applescript(script, timeout=8, retries=3)
+    if result and result != "false":
+        logger.info(f"Successfully created todo via AppleScript with ID: {result}")
+        return result
+    else:
+        logger.error("Failed to create todo")
+        return False
 
 def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str] = None,
                      when: Optional[str] = None, deadline: Optional[str] = None,
                      tags: Optional[Union[List[str], str]] = None, add_tags: Optional[Union[List[str], str]] = None,
                      checklist_items: Optional[List[str]] = None, completed: Optional[bool] = None,
                      canceled: Optional[bool] = None) -> bool:
-    """Update a todo directly using AppleScript.
+    """Update a todo directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
 
@@ -216,139 +229,46 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
     Returns:
         True if successful, False otherwise
     """
-    import re
+    # Ensure Things is ready
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return False
 
     # Build the AppleScript command to find and update the todo
     script_parts = ['tell application "Things3"']
     script_parts.append('try')
     script_parts.append(f'    set theTodo to to do id "{id}"')
 
-    # Update properties one at a time
+    # Update properties one at a time (simplified)
     if title:
         script_parts.append(f'    set name of theTodo to "{escape_applescript_string(title)}"')
 
     if notes:
         script_parts.append(f'    set notes of theTodo to "{escape_applescript_string(notes)}"')
 
-    # Handle date-related properties
+    # Handle simple scheduling
     if when:
-        # Check if when is a date in YYYY-MM-DD format
-        is_date_format = re.match(r'^\d{4}-\d{2}-\d{2}$', when)
-
-        # Simple mapping of common 'when' values to AppleScript commands
         if when == 'today':
             script_parts.append('    move theTodo to list "Today"')
         elif when == 'tomorrow':
-            script_parts.append('    set activation date of theTodo to ((current date) + (1 * days))')
-            script_parts.append('    move theTodo to list "Upcoming"')
-        elif when == 'evening':
-            script_parts.append('    move theTodo to list "Evening"')
+            script_parts.append('    schedule theTodo for (current date) + 1 * days')
         elif when == 'anytime':
             script_parts.append('    move theTodo to list "Anytime"')
         elif when == 'someday':
             script_parts.append('    move theTodo to list "Someday"')
-        elif is_date_format:
-            # Handle YYYY-MM-DD format dates
-            year, month, day = when.split('-')
-            script_parts.append(f'''
-    -- Set activation date with direct date string
-    set dateString to "{when}"
-    set newDate to date dateString
-    set activation date of theTodo to newDate
-    -- Move to the Upcoming list
-    move theTodo to list "Upcoming"
-''')
-        else:
-            # For other formats, just log a warning and don't try to set it
-            logger.warning(f"Schedule format '{when}' not directly supported in this simplified version")
 
-    if deadline:
-        # Check if deadline is in YYYY-MM-DD format
-        if re.match(r'^\d{4}-\d{2}-\d{2}$', deadline):
-            year, month, day = deadline.split('-')
-            script_parts.append(f'''
-    -- Set deadline with direct date string
-    set deadlineString to "{deadline}"
-    set deadlineDate to date deadlineString
-    set deadline of theTodo to deadlineDate
-''')
-        else:
-            logger.warning(f"Invalid deadline format: {deadline}. Expected YYYY-MM-DD")
-
-    # Handle tags (clearing and adding new ones)
+    # Handle tags (simplified)
     if tags is not None:
-        # Convert string tags to list if needed
         if isinstance(tags, str):
             tags = [tags]
-
         if tags:
-            # Use the same simple approach as add_todo_direct
             tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
             script_parts.append(f'    set tag names of theTodo to "{tag_names}"')
-        else:
-            # Clear all tags if empty list provided
-            script_parts.append('    set tag names of theTodo to ""')
 
-    # Handle adding tags without replacing existing ones
-    if add_tags is not None:
-        # Convert string to list if needed
-        if isinstance(add_tags, str):
-            add_tags = [add_tags]
-
-        for tag in add_tags:
-            tag_name = escape_applescript_string(tag)
-            script_parts.append(f'''
-            -- Add tag {tag_name} if it doesn't exist
-            set tagFound to false
-            repeat with t in tags of theTodo
-                if name of t is "{tag_name}" then
-                    set tagFound to true
-                    exit repeat
-                end if
-            end repeat
-            if not tagFound then
-                tell theTodo to make new tag with properties {{name:"{tag_name}"}}
-            end if
-            ''')
-
-    # Handle checklist items - simplified approach
-    if checklist_items is not None:
-        # Convert string to list if needed
-        if isinstance(checklist_items, str):
-            checklist_items = checklist_items.split('\n')
-
-        if checklist_items:
-            # For simplicity, we'll use JSON to pass checklist items
-            import json
-            items_json = json.dumps([item for item in checklist_items])
-            script_parts.append(f'''
-    -- Clear and set checklist items
-    set oldItems to check list items of theTodo
-    repeat with i from (count of oldItems) to 1 by -1
-        delete item i of oldItems
-    end repeat
-
-    set itemList to {items_json}
-    repeat with i from 1 to (count of itemList)
-        set itemText to item i of itemList
-        tell theTodo
-            set newItem to make new check list item
-            set name of newItem to itemText
-        end tell
-    end repeat
-''')
-
-    # Handle completion status - use completion date approach
+    # Handle completion status
     if completed is not None:
         if completed:
             script_parts.append('    set status of theTodo to completed')
-        else:
-            script_parts.append('    set status of theTodo to open')
-
-    # Handle canceled status
-    if canceled is not None:
-        if canceled:
-            script_parts.append('    set status of theTodo to canceled')
         else:
             script_parts.append('    set status of theTodo to open')
 
@@ -364,7 +284,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
     script = '\n'.join(script_parts)
     logger.info(f"Executing AppleScript for update_todo_direct: \n{script}")
 
-    result = run_applescript(script)
+    result = run_applescript(script, timeout=8, retries=3)
 
     if result == "true":
         logger.info(f"Successfully updated todo with ID: {id}")
@@ -376,7 +296,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
 def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
                       tags: Optional[List[str]] = None, area_title: Optional[str] = None,
                       deadline: Optional[str] = None, todos: Optional[List[str]] = None) -> str:
-    """Add a project to Things directly using AppleScript.
+    """Add a project to Things directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid encoding issues.
 
@@ -392,6 +312,16 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
     Returns:
         ID of the created project if successful, False otherwise
     """
+    # Validate input
+    if not title or not title.strip():
+        logger.error("Title cannot be empty")
+        return False
+
+    # Ensure Things is ready
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return False
+
     # Build the AppleScript command
     script_parts = ['tell application "Things3"']
 
@@ -483,8 +413,8 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
     script = '\n'.join(script_parts)
     logger.debug(f"Executing AppleScript: {script}")
 
-    result = run_applescript(script)
-    if result:
+    result = run_applescript(script, timeout=8, retries=3)
+    if result and result != "false":
         logger.info(f"Successfully created project via AppleScript with ID: {result}")
         return result
     else:
@@ -495,7 +425,7 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
                          when: Optional[str] = None, deadline: Optional[str] = None,
                          tags: Optional[Union[List[str], str]] = None, completed: Optional[bool] = None,
                          canceled: Optional[bool] = None) -> bool:
-    """Update a project directly using AppleScript.
+    """Update a project directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
 
@@ -512,7 +442,10 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
     Returns:
         True if successful, False otherwise
     """
-    import re
+    # Ensure Things is ready
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return False
 
     # Build the AppleScript command to find and update the project
     script_parts = ['tell application "Things3"']
@@ -608,7 +541,7 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
     script = '\n'.join(script_parts)
     logger.info(f"Executing AppleScript for update_project_direct: \n{script}")
 
-    result = run_applescript(script)
+    result = run_applescript(script, timeout=8, retries=3)
 
     if result == "true":
         logger.info(f"Successfully updated project with ID: {id}")

@@ -9,7 +9,7 @@ from typing import List
 def get_mcp_tools_list() -> List[types.Tool]:
     """
     Return the list of MCP tools with consistent naming between registration and implementation.
-    
+
     Uses consistent naming without prefixes to ensure proper tool functioning.
     """
     return [
@@ -267,7 +267,7 @@ def get_mcp_tools_list() -> List[types.Tool]:
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tags to apply to the todo"
+                        "description": "Tags to apply to the todo. IMPORTANT: Always pass as an array of strings (e.g., [\"tag1\", \"tag2\"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag."
                     },
                     "checklist_items": {
                         "type": "array",
@@ -316,7 +316,7 @@ def get_mcp_tools_list() -> List[types.Tool]:
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tags to apply to the project"
+                        "description": "Tags to apply to the project. IMPORTANT: Always pass as an array of strings (e.g., [\"tag1\", \"tag2\"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag."
                     },
                     "area_id": {
                         "type": "string",
@@ -365,7 +365,7 @@ def get_mcp_tools_list() -> List[types.Tool]:
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "New tags"
+                        "description": "New tags. IMPORTANT: Always pass as an array of strings (e.g., [\"tag1\", \"tag2\"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag."
                     },
                     "completed": {
                         "type": "boolean",
@@ -409,7 +409,7 @@ def get_mcp_tools_list() -> List[types.Tool]:
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "New tags"
+                        "description": "New tags. IMPORTANT: Always pass as an array of strings (e.g., [\"tag1\", \"tag2\"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag."
                     },
                     "completed": {
                         "type": "boolean",
@@ -456,7 +456,7 @@ def get_mcp_tools_list() -> List[types.Tool]:
                     "filter_tags": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional tags to filter by"
+                        "description": "Optional tags to filter by. IMPORTANT: Always pass as an array of strings (e.g., [\"tag1\", \"tag2\"]) NOT as a comma-separated string."
                     }
                 },
                 "required": ["id"]

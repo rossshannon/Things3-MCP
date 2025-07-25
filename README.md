@@ -11,7 +11,7 @@ This server leverages the [Things.py](https://github.com/thingsapi/things.py) li
 - **Comprehensive logging** with structured JSON output
 - **AppleScript bridge** for operations that fail with URL schemes
 - **Rate limiting** to prevent overwhelming the Things app
-- **Extensive test suite** for reliability 
+- **Extensive test suite** for reliability
 
 ## Why Things MCP?
 
@@ -266,6 +266,7 @@ Restart the Claude Desktop app to apply the changes.
 - Tags must exist in Things before they can be applied to todos or projects
 - The MCP server will automatically create missing tags when you try to use them
 - If tag creation fails, the todo/project will still be created but without tags
+- **IMPORTANT**: When using tags in MCP tool calls, always pass them as an array of strings (e.g., `["tag1", "tag2"]`) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
 
 ### Authentication Token
 - Required for all URL scheme operations (create, update, delete)
@@ -362,7 +363,7 @@ Requires Python 3.12+.
 - **Structured Logging**: JSON-formatted logs for better analysis
 - **Operation Tracking**: Each operation is logged with timing and status
 - **Cache Statistics**: Monitor cache performance with `get-cache-stats` tool
-- **Log Locations**: 
+- **Log Locations**:
   - Main logs: `~/.things-mcp/logs/things_mcp.log`
   - Structured logs: `~/.things-mcp/logs/things_mcp_structured.json`
   - Error logs: `~/.things-mcp/logs/things_mcp_errors.log`

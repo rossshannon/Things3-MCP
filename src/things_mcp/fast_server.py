@@ -413,7 +413,7 @@ def add_task(
         notes: Notes for the todo
         when: When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
         deadline: Deadline for the todo (YYYY-MM-DD)
-        tags: Tags to apply to the todo
+        tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         checklist_items: Checklist items to add
         list_id: ID of project/area to add to
         list_title: Title of project/area to add to
@@ -478,7 +478,7 @@ def add_new_project(
         notes: Notes for the project
         when: When to schedule the project
         deadline: Deadline for the project
-        tags: Tags to apply to the project
+        tags: Tags to apply to the project. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         area_id: ID of area to add to
         area_title: Title of area to add to
         todos: Initial todos to create in the project
@@ -551,7 +551,7 @@ def update_task(
         notes: New notes
         when: New schedule
         deadline: New deadline
-        tags: New tags
+        tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
     """
@@ -622,7 +622,7 @@ def update_existing_project(
         notes: New notes
         when: New schedule
         deadline: New deadline
-        tags: New tags
+        tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
     """
@@ -685,7 +685,7 @@ def show_item(
     Args:
         id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
         query: Optional query to filter by
-        filter_tags: Optional tags to filter by
+        filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
     """
     try:
         # Ensure Things app is running
