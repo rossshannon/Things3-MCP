@@ -182,8 +182,10 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
 
     # Add tags if provided (simplified)
     if tags and len(tags) > 0:
-        tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
-        script_parts.append(f'set tag names of newTodo to "{tag_names}"')
+        # Add each tag individually
+        for tag in tags:
+            escaped_tag = escape_applescript_string(tag)
+            script_parts.append(f'add tag "{escaped_tag}" to newTodo')
 
     # Get the ID of the created todo
     script_parts.append('return id of newTodo')
@@ -262,8 +264,12 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
         if isinstance(tags, str):
             tags = [tags]
         if tags:
-            tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
-            script_parts.append(f'    set tag names of theTodo to "{tag_names}"')
+            # Clear existing tags first
+            script_parts.append('    set tag names of theTodo to ""')
+            # Add each tag individually
+            for tag in tags:
+                escaped_tag = escape_applescript_string(tag)
+                script_parts.append(f'    add tag "{escaped_tag}" to theTodo')
 
     # Handle completion status
     if completed is not None:
@@ -384,8 +390,10 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
 
     # Add tags if provided
     if tags and len(tags) > 0:
-        tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
-        script_parts.append(f'set tag names of newProject to "{tag_names}"')
+        # Add each tag individually
+        for tag in tags:
+            escaped_tag = escape_applescript_string(tag)
+            script_parts.append(f'add tag "{escaped_tag}" to newProject')
 
     # Add to a specific area if specified
     if area_title:
@@ -508,9 +516,12 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
             tags = [tags]
 
         if tags:
-            # Use the same simple approach as add_project_direct
-            tag_names = ", ".join([escape_applescript_string(tag) for tag in tags])
-            script_parts.append(f'    set tag names of theProject to "{tag_names}"')
+            # Clear existing tags first
+            script_parts.append('    set tag names of theProject to ""')
+            # Add each tag individually
+            for tag in tags:
+                escaped_tag = escape_applescript_string(tag)
+                script_parts.append(f'    add tag "{escaped_tag}" to theProject')
         else:
             # Clear all tags if empty list provided
             script_parts.append('    set tag names of theProject to ""')
