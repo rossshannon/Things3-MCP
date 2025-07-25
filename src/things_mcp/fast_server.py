@@ -540,7 +540,8 @@ def update_task(
     deadline: Optional[str] = None,
     tags: Optional[Union[List[str], str]] = None,
     completed: Optional[bool] = None,
-    canceled: Optional[bool] = None
+    canceled: Optional[bool] = None,
+    project: Optional[str] = None
 ) -> str:
     """
     Update an existing todo in Things
@@ -554,6 +555,7 @@ def update_task(
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
+        project: Project name to move the todo to
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
@@ -582,7 +584,8 @@ def update_task(
                 deadline=deadline,
                 tags=tags,
                 completed=completed,
-                canceled=canceled
+                canceled=canceled,
+                project=project
             )
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")

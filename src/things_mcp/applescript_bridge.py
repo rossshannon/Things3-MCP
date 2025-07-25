@@ -4,6 +4,7 @@ import logging
 import time
 import re
 from typing import Optional, List, Dict, Any, Union
+from .date_converter import update_applescript_with_due_date
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,15 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
             escaped_tag = escape_applescript_string(tag)
             script_parts.append(f'add tag "{escaped_tag}" to newTodo')
 
+    # Handle deadline using the date converter (BEFORE return statement)
+    if deadline:
+        update_applescript_with_due_date(script_parts, deadline, "newTodo")
+
+    # Handle project/area assignment
+    if list_title:
+        escaped_list = escape_applescript_string(list_title)
+        script_parts.append(f'set project of newTodo to project "{escaped_list}"')
+
     # Get the ID of the created todo
     script_parts.append('return id of newTodo')
     script_parts.append('on error errMsg')
@@ -211,7 +221,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
                      when: Optional[str] = None, deadline: Optional[str] = None,
                      tags: Optional[Union[List[str], str]] = None, add_tags: Optional[Union[List[str], str]] = None,
                      checklist_items: Optional[List[str]] = None, completed: Optional[bool] = None,
-                     canceled: Optional[bool] = None) -> bool:
+                     canceled: Optional[bool] = None, project: Optional[str] = None) -> bool:
     """Update a todo directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
@@ -227,6 +237,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
         checklist_items: Checklist items to set for the todo (replaces existing items)
         completed: Mark as completed
         canceled: Mark as canceled
+        project: Name of project to move the todo into
 
     Returns:
         True if successful, False otherwise
@@ -259,17 +270,23 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
         elif when == 'someday':
             script_parts.append('    move theTodo to list "Someday"')
 
+    # Handle deadline using the new converter
+    if deadline:
+        update_applescript_with_due_date(script_parts, deadline, "theTodo")
+
     # Handle tags (simplified)
     if tags is not None:
         if isinstance(tags, str):
             tags = [tags]
         if tags:
-            # Clear existing tags first
-            script_parts.append('    set tag names of theTodo to ""')
-            # Add each tag individually
-            for tag in tags:
-                escaped_tag = escape_applescript_string(tag)
-                script_parts.append(f'    add tag "{escaped_tag}" to theTodo')
+            # Set all tags at once using comma-separated string
+            tag_string = ", ".join([escape_applescript_string(tag) for tag in tags])
+            script_parts.append(f'    set tag names of theTodo to "{tag_string}"')
+
+    # Handle project assignment
+    if project:
+        escaped_project = escape_applescript_string(project)
+        script_parts.append(f'    set project of theTodo to project "{escaped_project}"')
 
     # Handle completion status
     if completed is not None:
@@ -496,35 +513,20 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
             # For other formats, just log a warning and don't try to set it
             logger.warning(f"Schedule format '{when}' not directly supported in this simplified version")
 
+    # Handle deadline using the new converter
     if deadline:
-        # Check if deadline is in YYYY-MM-DD format
-        if re.match(r'^\d{4}-\d{2}-\d{2}$', deadline):
-            year, month, day = deadline.split('-')
-            script_parts.append(f'''
-    -- Set deadline with direct date string
-    set deadlineString to "{deadline}"
-    set deadlineDate to date deadlineString
-    set due date of theProject to deadlineDate
-''')
-        else:
-            logger.warning(f"Invalid deadline format: {deadline}. Expected YYYY-MM-DD")
+        update_applescript_with_due_date(script_parts, deadline, "theProject")
 
-    # Handle tags (clearing and adding new ones)
+    # Handle tags (adding new ones)
     if tags is not None:
         # Convert string tags to list if needed
         if isinstance(tags, str):
             tags = [tags]
 
         if tags:
-            # Clear existing tags first
-            script_parts.append('    set tag names of theProject to ""')
-            # Add each tag individually
-            for tag in tags:
-                escaped_tag = escape_applescript_string(tag)
-                script_parts.append(f'    add tag "{escaped_tag}" to theProject')
-        else:
-            # Clear all tags if empty list provided
-            script_parts.append('    set tag names of theProject to ""')
+            # Set all tags at once using comma-separated string
+            tag_string = ", ".join([escape_applescript_string(tag) for tag in tags])
+            script_parts.append(f'    set tag names of theProject to "{tag_string}"')
 
     # Handle completion status
     if completed is not None:

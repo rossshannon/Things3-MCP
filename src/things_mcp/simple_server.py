@@ -400,20 +400,15 @@ def add_task(
         if not ensure_tags_exist(tags):
             logger.warning("Failed to ensure all tags exist, but continuing anyway")
 
-    # Use URL scheme for creation as it supports more parameters
-    # According to Things URL scheme docs, some features only work via URL scheme
+    # Use direct AppleScript for creation to support project assignment
     try:
-        # The URL scheme uses 'list' parameter for project/area name
-        result = add_todo(
+        result = add_todo_direct(
             title=title,
             notes=notes,
             when=when,
             deadline=deadline,
             tags=tags,
-            checklist_items=checklist_items,
-            list_id=list_id,
-            list=list_title,  # This is the correct parameter name for project/area
-            heading=heading
+            list_title=list_title
         )
 
         if result:
@@ -493,7 +488,8 @@ def update_task(
     deadline: Optional[str] = None,
     tags: Optional[List[str]] = None,
     completed: Optional[bool] = None,
-    canceled: Optional[bool] = None
+    canceled: Optional[bool] = None,
+    project: Optional[str] = None
 ) -> str:
     """Update an existing todo in Things
 
@@ -506,6 +502,7 @@ def update_task(
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
+        project: Name of project to move the todo into
     """
     if not ensure_things_running():
         return "Error: Unable to connect to Things app"
@@ -516,9 +513,9 @@ def update_task(
         if not ensure_tags_exist(tags):
             logger.warning("Failed to ensure all tags exist, but continuing anyway")
 
-    # Use URL scheme for updates as per Things documentation
+    # Use direct AppleScript for updates to support project assignment
     try:
-        result = update_todo(
+        result = update_todo_direct(
             id=id,
             title=title,
             notes=notes,
@@ -526,7 +523,8 @@ def update_task(
             deadline=deadline,
             tags=tags,
             completed=completed,
-            canceled=canceled
+            canceled=canceled,
+            project=project
         )
 
         if result:
