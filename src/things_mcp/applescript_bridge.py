@@ -220,8 +220,8 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
 def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str] = None,
                      when: Optional[str] = None, deadline: Optional[str] = None,
                      tags: Optional[Union[List[str], str]] = None, add_tags: Optional[Union[List[str], str]] = None,
-                     checklist_items: Optional[List[str]] = None, completed: Optional[bool] = None,
-                     canceled: Optional[bool] = None, project: Optional[str] = None) -> bool:
+                     completed: Optional[bool] = None, canceled: Optional[bool] = None,
+                     project: Optional[str] = None) -> bool:
     """Update a todo directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
@@ -234,7 +234,6 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
         deadline: New deadline for the todo (YYYY-MM-DD)
         tags: New tags for the todo (replaces existing tags)
         add_tags: Tags to add to the todo (preserves existing tags)
-        checklist_items: Checklist items to set for the todo (replaces existing items)
         completed: Mark as completed
         canceled: Mark as canceled
         project: Name of project to move the todo into

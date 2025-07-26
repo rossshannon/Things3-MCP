@@ -238,13 +238,12 @@ def get_trash() -> str:
 # BASIC TODO OPERATIONS
 
 @mcp.tool(name="get_todos")
-def get_todos(project_uuid: Optional[str] = None, include_items: bool = True) -> str:
+def get_todos(project_uuid: Optional[str] = None) -> str:
     """
     Get todos from Things, optionally filtered by project
 
     Args:
         project_uuid: Optional UUID of a specific project to get todos from
-        include_items: Include checklist items
     """
     if project_uuid:
         project = things.get(project_uuid)
@@ -401,7 +400,6 @@ def add_task(
     when: Optional[str] = None,
     deadline: Optional[str] = None,
     tags: Optional[Union[List[str], str]] = None,
-    checklist_items: Optional[Union[List[str], str]] = None,
     list_id: Optional[str] = None,
     list_title: Optional[str] = None,
     heading: Optional[str] = None,
@@ -414,7 +412,6 @@ def add_task(
         when: When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
         deadline: Deadline for the todo (YYYY-MM-DD)
         tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
-        checklist_items: Checklist items to add
         list_id: ID of project/area to add to
         list_title: Title of project/area to add to
         heading: Heading to add under
@@ -422,11 +419,9 @@ def add_task(
     try:
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(
-            tags=tags,
-            checklist_items=checklist_items
+            tags=tags
         )
         tags = params['tags']
-        checklist_items = params['checklist_items']
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
