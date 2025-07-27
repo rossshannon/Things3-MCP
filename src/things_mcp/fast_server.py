@@ -15,7 +15,6 @@ import mcp.types as types
 
 # Import supporting modules
 from .formatters import format_todo, format_project, format_area, format_tag
-from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter
 from .applescript_bridge import add_todo_direct, update_todo_direct, add_project_direct, update_project_direct, ensure_things_ready
 
 # Import and configure enhanced logging
