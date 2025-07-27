@@ -402,7 +402,6 @@ def add_task(
     tags: Optional[Union[List[str], str]] = None,
     list_id: Optional[str] = None,
     list_title: Optional[str] = None,
-    heading: Optional[str] = None,
 ) -> str:
     """Create a new todo in Things.
 
@@ -414,7 +413,6 @@ def add_task(
         tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         list_id: ID of project/area to add to
         list_title: Title of project/area to add to
-        heading: Heading to add under
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
@@ -609,7 +607,9 @@ def update_existing_project(
     deadline: Optional[str] = None,
     tags: Optional[Union[List[str], str]] = None,
     completed: Optional[bool] = None,
-    canceled: Optional[bool] = None
+    canceled: Optional[bool] = None,
+    list_name: Optional[str] = None,
+    area_title: Optional[str] = None
 ) -> str:
     """
     Update an existing project in Things
@@ -618,25 +618,40 @@ def update_existing_project(
         id: ID of the project to update
         title: New title
         notes: New notes
-        when: New schedule
-        deadline: New deadline
+        when: New schedule (today, tomorrow, anytime, someday, or YYYY-MM-DD)
+        deadline: New deadline (YYYY-MM-DD)
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
+        list_name: Move project directly to a built-in list. Must be one of:
+                  - "Today": Move to Today list
+                  - "Upcoming": Move to Upcoming list
+                  - "Anytime": Move to Anytime list
+                  - "Someday": Move to Someday list
+                  - "Trash": Move to trash
+                  Note: Projects cannot be moved to Inbox or Logbook. To move a project
+                  to Logbook, mark it as completed instead.
+        area_title: Title of the area to move the project to
     """
     try:
-        # Preprocess parameters to handle MCP array serialization issues
-        params = preprocess_array_params(
-            tags=tags
-        )
+        # Log all input parameters for debugging
+        logger.info("Raw input parameters for update_project:")
+        for param_name, param_value in locals().items():
+            if param_name != 'self':  # Skip self parameter
+                logger.info(f"  {param_name}: {param_value!r}")
+
+        # Preprocess only the tags parameter
+        params = preprocess_array_params(tags=tags)
         tags = params['tags']
 
-        # Clean up title and notes to handle URL encoding
+        # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
             title = title.replace("+", " ").replace("%20", " ")
-
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
+        if isinstance(area_title, str):
+            area_title = area_title.replace("+", " ").replace("%20", " ")
+            logger.info(f"Cleaned area_title: {area_title!r}")
 
         # Use the direct AppleScript approach which is more reliable
         logger.info(f"Updating project using AppleScript: {id}")
@@ -651,23 +666,32 @@ def update_existing_project(
                 deadline=deadline,
                 tags=tags,
                 completed=completed,
-                canceled=canceled
+                canceled=canceled,
+                list_name=list_name,
+                area_title=area_title
             )
+            logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
+
+            # Handle various success cases
+            if "true" in str(success).lower():
+                logger.debug("Success case matched: 'true' in result")
+                # Invalidate relevant caches after updating a project
+                invalidate_caches_for(["get-projects", "get-areas", "get-todos"])
+                return f"✅ Successfully updated project with ID: {id}"
+            elif success.startswith("Error:"):
+                logger.error(f"AppleScript error: {success}")
+                return success
+            else:
+                logger.error(f"AppleScript update failed with result: {success!r}")
+                return f"Error: Failed to update project using AppleScript. Result: {success}"
+
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
+            logger.error(f"Full bridge error traceback: {traceback.format_exc()}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
-
-        if not success:
-            return "Error: Failed to update project using AppleScript"
-
-        # Invalidate relevant caches after updating a project
-        invalidate_caches_for(["get-projects", "get-areas", "get-todos"])
-
-        return f"✅ Successfully updated project with ID: {id}"
 
     except Exception as e:
         logger.error(f"Error updating project: {str(e)}")
-        import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error updating project: {str(e)}"
 
