@@ -272,7 +272,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
                      when: Optional[str] = None, deadline: Optional[str] = None,
                      tags: Optional[Union[List[str], str]] = None, add_tags: Optional[Union[List[str], str]] = None,
                      completed: Optional[bool] = None, canceled: Optional[bool] = None,
-                     project: Optional[str] = None) -> bool:
+                     project: Optional[str] = None, area_title: Optional[str] = None) -> str:
     """Update a todo directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
@@ -288,14 +288,15 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
         completed: Mark as completed
         canceled: Mark as canceled
         project: Name of project to move the todo into
+        area_title: Title of the area to move the todo to
 
     Returns:
-        True if successful, False otherwise
+        "true" if successful, error message if failed
     """
     # Ensure Things is ready
     if not ensure_things_ready():
         logger.error("Things app is not ready for operations")
-        return False
+        return "Error: Things app is not ready"
 
     # Build the AppleScript command to find and update the todo
     script_parts = ['tell application "Things3"']
@@ -328,7 +329,22 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
     # Handle project assignment
     if project:
         escaped_project = escape_applescript_string(project)
-        script_parts.append(f'    set project of theTodo to project "{escaped_project}"')
+        script_parts.append(f'    try')
+        script_parts.append(f'        set targetProject to project "{escaped_project}"')
+        script_parts.append(f'        set project of theTodo to targetProject')
+        script_parts.append(f'    on error')
+        script_parts.append(f'        return "Error: Project not found - {escaped_project}"')
+        script_parts.append(f'    end try')
+
+    # Handle area assignment
+    if area_title:
+        escaped_area = escape_applescript_string(area_title)
+        script_parts.append(f'    try')
+        script_parts.append(f'        set targetArea to first area whose name is "{escaped_area}"')
+        script_parts.append(f'        set area of theTodo to targetArea')
+        script_parts.append(f'    on error')
+        script_parts.append(f'        return "Error: Area not found - {escaped_area}"')
+        script_parts.append(f'    end try')
 
     # Handle completion status
     if completed is not None:
@@ -340,23 +356,16 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
     # Return true on success
     script_parts.append('    return true')
     script_parts.append('on error errMsg')
-    script_parts.append('    log "Error updating todo: " & errMsg')
-    script_parts.append('    return false')
+    script_parts.append('    return "Error: " & errMsg')
     script_parts.append('end try')
     script_parts.append('end tell')
 
     # Execute the script
     script = '\n'.join(script_parts)
-    logger.info(f"Executing AppleScript for update_todo_direct: \n{script}")
-
-    result = run_applescript(script, timeout=8, retries=3)
-
-    if result == "true":
-        logger.info(f"Successfully updated todo with ID: {id}")
-        return True
-    else:
-        logger.error(f"AppleScript update_todo_direct failed: {result}")
-        return False
+    logger.debug(f"Generated AppleScript:\n{script}")
+    result = run_applescript(script)
+    logger.debug(f"AppleScript result: {result!r}")
+    return result
 
 def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
                       tags: Optional[List[str]] = None, area_title: Optional[str] = None,

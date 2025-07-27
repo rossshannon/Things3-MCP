@@ -534,7 +534,8 @@ def update_task(
     tags: Optional[Union[List[str], str]] = None,
     completed: Optional[bool] = None,
     canceled: Optional[bool] = None,
-    project: Optional[str] = None
+    project: Optional[str] = None,
+    area_title: Optional[str] = None
 ) -> str:
     """
     Update an existing todo in Things
@@ -543,12 +544,13 @@ def update_task(
         id: ID of the todo to update
         title: New title
         notes: New notes
-        when: New schedule
-        deadline: New deadline
+        when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
+        deadline: New deadline (YYYY-MM-DD)
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed
         canceled: Mark as canceled
         project: Project name to move the todo to
+        area_title: Title of the area to move the todo to
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
@@ -557,12 +559,15 @@ def update_task(
         )
         tags = params['tags']
 
-        # Clean up title and notes to handle URL encoding
+        # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
             title = title.replace("+", " ").replace("%20", " ")
-
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
+        if isinstance(project, str):
+            project = project.replace("+", " ").replace("%20", " ")
+        if isinstance(area_title, str):
+            area_title = area_title.replace("+", " ").replace("%20", " ")
 
         # Use the direct AppleScript approach which is more reliable
         logger.info(f"Updating todo using AppleScript: {id}")
@@ -578,23 +583,31 @@ def update_task(
                 tags=tags,
                 completed=completed,
                 canceled=canceled,
-                project=project
+                project=project,
+                area_title=area_title
             )
+            logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
+
+            # Handle various success cases
+            if "true" in str(success).lower():
+                logger.debug("Success case matched: 'true' in result")
+                # Invalidate relevant caches after updating a todo
+                invalidate_caches_for(["get-todos", "get-projects", "get-areas"])
+                return f"✅ Successfully updated todo with ID: {id}"
+            elif success.startswith("Error:"):
+                logger.error(f"AppleScript error: {success}")
+                return success
+            else:
+                logger.error(f"AppleScript update failed with result: {success!r}")
+                return f"Error: Failed to update todo using AppleScript. Result: {success}"
+
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
+            logger.error(f"Full bridge error traceback: {traceback.format_exc()}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
-
-        if not success:
-            return "Error: Failed to update todo using AppleScript"
-
-        # Invalidate relevant caches after updating a todo
-        invalidate_caches_for(["get-inbox", "get-today", "get-upcoming", "get-todos", "get-anytime", "get-someday"])
-
-        return f"✅ Successfully updated todo with ID: {id}"
 
     except Exception as e:
         logger.error(f"Error updating todo: {str(e)}")
-        import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error updating todo: {str(e)}"
 
