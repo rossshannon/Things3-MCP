@@ -16,10 +16,7 @@ import mcp.types as types
 # Import supporting modules
 from .formatters import format_todo, format_project, format_area, format_tag
 from .utils import app_state, circuit_breaker, dead_letter_queue, rate_limiter
-from .url_scheme import (
-    add_todo, show, search, launch_things, execute_url
-)
-from .applescript_bridge import add_todo_direct, update_todo_direct, add_project_direct, update_project_direct
+from .applescript_bridge import add_todo_direct, update_todo_direct, add_project_direct, update_project_direct, ensure_things_ready
 
 # Import and configure enhanced logging
 from .logging_config import setup_logging, get_logger, log_operation_start, log_operation_end
@@ -724,21 +721,12 @@ def show_item(
     """
     try:
         # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
+        if not ensure_things_ready():
+            return "Error: Unable to connect to Things app"
 
-        # Execute the show URL command
-        result = show(
-            id=id,
-            query=query,
-            filter_tags=filter_tags
-        )
-
-        if not result:
-            return f"Error: Failed to show item/list '{id}'"
-
-        return f"Successfully opened '{id}' in Things"
+        # For now, just return a message indicating the item would be shown
+        # This functionality can be implemented in AppleScript if needed later
+        return f"Note: Show functionality removed. Item '{id}' would be displayed in Things."
     except Exception as e:
         logger.error(f"Error showing item: {str(e)}")
         return f"Error showing item: {str(e)}"
@@ -753,17 +741,12 @@ def search_all_items(query: str) -> str:
     """
     try:
         # Ensure Things app is running
-        if not app_state.update_app_state():
-            if not launch_things():
-                return "Error: Unable to launch Things app"
+        if not ensure_things_ready():
+            return "Error: Unable to connect to Things app"
 
-        # Execute the search URL command
-        result = search(query=query)
-
-        if not result:
-            return f"Error: Failed to search for '{query}'"
-
-        return f"Successfully searched for '{query}' in Things"
+        # For now, just return a message indicating the search would be performed
+        # This functionality can be implemented in AppleScript if needed later
+        return f"Note: Search functionality removed. Would search for '{query}' in Things."
     except Exception as e:
         logger.error(f"Error searching: {str(e)}")
         return f"Error searching: {str(e)}"
@@ -817,18 +800,10 @@ def get_cache_statistics() -> str:
 def run_things_mcp_server():
     """Run the Things MCP server"""
     # Check if Things app is available
-    if not app_state.update_app_state():
-        logger.warning("Things app is not running at startup. MCP will attempt to launch it when needed.")
-        try:
-            # Try to launch Things
-            if launch_things():
-                logger.info("Successfully launched Things app")
-            else:
-                logger.error("Unable to launch Things app. Some operations may fail.")
-        except Exception as e:
-            logger.error(f"Error launching Things app: {str(e)}")
-    else:
+    if ensure_things_ready():
         logger.info("Things app is running and ready for operations")
+    else:
+        logger.warning("Things app is not running at startup. Operations will attempt to connect when needed.")
 
     # Run the MCP server
     mcp.run()
