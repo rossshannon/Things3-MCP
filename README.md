@@ -1,16 +1,17 @@
+<div align="center">
+
+![Things3 MCP Logo](docs/images/Things3-MCP-logo.png)
+
 # Things MCP Server
+
+</div>
 
 This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things app](https://culturedcode.com/things). You can ask Claude to create tasks, analyze projects, help manage priorities, and more.
 
 This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/), with additional reliability features including:
 
-- **Robust error handling** with exponential backoff and retry mechanisms
-- **Circuit breaker pattern** to prevent cascading failures
-- **Dead letter queue** for failed operations
-- **Intelligent caching** for improved performance
 - **Comprehensive logging** with structured JSON output
 - **AppleScript bridge** for operations that fail with URL schemes
-- **Rate limiting** to prevent overwhelming the Things app
 - **Extensive test suite** for reliability
 
 ## Why Things MCP?
@@ -41,8 +42,7 @@ There are multiple ways to install and use the Things MCP server:
 #### Prerequisites
 * Python 3.12+
 * Claude Desktop
-* Things 3 ("Enable Things URLs" must be turned on in Settings -> General)
-* Things Authentication Token (required for URL scheme operations)
+* Things 3 for MacOS
 
 #### Installation
 
@@ -69,7 +69,7 @@ things-mcp
 #### Prerequisites
 * Python 3.12+
 * Claude Desktop
-* Things 3 ("Enable Things URLs" must be turned on in Settings -> General)
+* Things 3
 
 #### Step 1: Install uv
 Install uv if you haven't already:
@@ -80,8 +80,8 @@ Restart your terminal afterwards.
 
 #### Step 2: Clone this repository
 ```bash
-git clone https://github.com/hald/things-mcp
-cd things-mcp
+git clone https://github.com/rossshannon/Things3-MCP
+cd Things3-MCP
 ```
 
 #### Step 3: Set up Python environment and dependencies
@@ -90,14 +90,7 @@ uv venv
 uv pip install -r pyproject.toml
 ```
 
-### Step 4: Configure Things authentication token
-Run the configuration tool to set up your Things authentication token:
-```bash
-python configure_token.py
-```
-This will guide you through the process of configuring your Things authentication token, which is required for the MCP server to interact with your Things app.
-
-### Step 5: Configure Claude Desktop
+### Step 4: Configure Claude Desktop
 Edit the Claude Desktop configuration file:
 ```bash
 code ~/Library/Application\ Support/Claude/claude_desktop_config.json
@@ -111,46 +104,27 @@ Add the Things server to the mcpServers key in the configuration file (be sure t
             "command": "uv",
             "args": [
                 "--directory",
-                "/ABSOLUTE/PATH/TO/PARENT/FOLDER/things-mcp",
+                "/ABSOLUTE/PATH/TO/PARENT/FOLDER/Things3-MCP",
                 "run",
-                "things_server.py"
+                "things_fast_server.py"
             ]
         }
     }
 }
 ```
 
-### Step 6: Configure Authentication Token
-The Things URL scheme requires an authentication token. You can find it in Things → Settings → General.
-
-Option 1: Set via configuration script
-```bash
-python configure_token.py
-```
-
-Option 2: Set via environment variable
-```bash
-export THINGS_AUTH_TOKEN="your-token-here"
-```
-
-Option 3: Manually create config file
-```bash
-mkdir -p ~/.things-mcp
-echo '{"things_auth_token": "your-token-here"}' > ~/.things-mcp/config.json
-```
-
-### Step 7: Restart Claude Desktop
+### Step 5: Restart Claude Desktop
 Restart the Claude Desktop app to apply the changes.
 
 ### Sample Usage with Claude Desktop
-* "What's on my todo list today?"
-* "Create a todo to pack for my beach vacation next week, include a packling checklist."
-* "Evaluate my current todos using the Eisenhower matrix."
-* "Help me conduct a GTD-style weekly review using Things."
+* “What's on my todo list today?”
+* “Create a todo to pack for my beach vacation next week, include a packing checklist.”
+* “Evaluate my current todos using the Eisenhower matrix.”
+* “Help me conduct a GTD-style weekly review using Things.”
 
 #### Tips
-* Create a project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (eg asking it to include relevant details in the task description might be helpful).
-* Try adding another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create todos from upcoming calendar events (eg prep for a meeting), etc.
+* Create a project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (e.g., asking it to include relevant details in the task description might be helpful).
+* Try adding another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create todos from upcoming calendar events (e.g., prep for a meeting), etc.
 
 
 ### Available Tools
@@ -217,8 +191,6 @@ Restart the Claude Desktop app to apply the changes.
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` or `list_id` (optional) - Title or ID of project/area to add to
-- `heading` (optional) - Heading to add under
-- `checklist_items` (optional) - Checklist items to add
 
 ### update-todo
 - `id` - ID of the todo to update
@@ -354,15 +326,9 @@ Requires Python 3.12+.
 - **Dead Letter Queue**: Failed operations are stored for later retry or analysis
 - **AppleScript Fallback**: When URL scheme operations fail, falls back to direct AppleScript
 
-### Performance Optimization
-- **Smart Caching**: Frequently accessed data is cached with appropriate TTLs
-- **Rate Limiting**: Prevents overwhelming Things app with too many requests
-- **Cache Invalidation**: Automatic cache clearing when data is modified
-
 ### Monitoring & Debugging
 - **Structured Logging**: JSON-formatted logs for better analysis
 - **Operation Tracking**: Each operation is logged with timing and status
-- **Cache Statistics**: Monitor cache performance with `get-cache-stats` tool
 - **Log Locations**:
   - Main logs: `~/.things-mcp/logs/things_mcp.log`
   - Structured logs: `~/.things-mcp/logs/things_mcp_structured.json`
@@ -381,11 +347,7 @@ The server includes error handling for:
 
 ### Common Issues
 
-1. **Missing or invalid token**: Run `python configure_token.py` to set up your token
-2. **Things app not running**: The server will attempt to launch Things automatically
-3. **URL scheme not enabled**: Check that "Enable Things URLs" is enabled in Things → Preferences → General
-4. **Operations failing**: Check the circuit breaker status and dead letter queue
-5. **Performance issues**: Monitor cache statistics with the `get-cache-stats` tool
+2. **Things app not running**: Make sure the Things app is running on your Mac.
 
 ### Checking Logs
 
@@ -404,10 +366,3 @@ cat ~/.things-mcp/logs/things_mcp_structured.json | jq
 # Claude Desktop MCP logs
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
 ```
-
-### Advanced Debugging
-
-1. **Check Dead Letter Queue**: Failed operations are stored in `things_dlq.json`
-2. **Monitor Circuit Breaker**: Look for "Circuit breaker" messages in logs
-3. **Cache Performance**: Use `get-cache-stats` tool to check hit rates
-4. **Enable Debug Logging**: Set console level to DEBUG in `logging_config.py`
