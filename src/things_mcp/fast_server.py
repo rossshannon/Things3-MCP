@@ -719,13 +719,38 @@ def show_item(
         filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
     """
     try:
-        # Ensure Things app is running
-        if not ensure_things_ready():
-            return "Error: Unable to connect to Things app"
-
-        # For now, just return a message indicating the item would be shown
-        # This functionality can be implemented in AppleScript if needed later
-        return f"Note: Show functionality removed. Item '{id}' would be displayed in Things."
+        # For built-in lists, return the appropriate data
+        if id == "inbox":
+            return get_inbox()
+        elif id == "today":
+            return get_today()
+        elif id == "upcoming":
+            return get_upcoming()
+        elif id == "anytime":
+            return get_anytime()
+        elif id == "someday":
+            return get_someday()
+        elif id == "logbook":
+            return get_logbook()
+        elif id == "trash":
+            return get_trash()
+        else:
+            # For specific item IDs, try to get the item
+            try:
+                item = things.get(id)
+                if item:
+                    if item.get('type') == 'to-do':
+                        return format_todo(item)
+                    elif item.get('type') == 'project':
+                        return format_project(item, include_items=True)
+                    elif item.get('type') == 'area':
+                        return format_area(item, include_items=True)
+                    else:
+                        return f"Found item: {item}"
+                else:
+                    return f"No item found with ID: {id}"
+            except Exception as e:
+                return f"Error retrieving item '{id}': {str(e)}"
     except Exception as e:
         logger.error(f"Error showing item: {str(e)}")
         return f"Error showing item: {str(e)}"
@@ -739,13 +764,14 @@ def search_all_items(query: str) -> str:
         query: Search query
     """
     try:
-        # Ensure Things app is running
-        if not ensure_things_ready():
-            return "Error: Unable to connect to Things app"
+        # Use the Python things library for search (same as search_todos)
+        todos = things.search(query)
 
-        # For now, just return a message indicating the search would be performed
-        # This functionality can be implemented in AppleScript if needed later
-        return f"Note: Search functionality removed. Would search for '{query}' in Things."
+        if not todos:
+            return f"No items found matching '{query}'"
+
+        formatted_todos = [format_todo(todo) for todo in todos]
+        return "\n\n---\n\n".join(formatted_todos)
     except Exception as e:
         logger.error(f"Error searching: {str(e)}")
         return f"Error searching: {str(e)}"
