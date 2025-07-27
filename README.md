@@ -221,39 +221,8 @@ Restart the Claude Desktop app to apply the changes.
 - `query` (optional) - Optional query to filter by
 - `filter_tags` (optional) - Optional tags to filter by
 
-## Important Limitations
-
-### Tags
-- Tags must exist in Things before they can be applied to todos or projects
-- The MCP server will automatically create missing tags when you try to use them
-- If tag creation fails, the todo/project will still be created but without tags
-- **IMPORTANT**: When using tags in MCP tool calls, always pass them as an array of strings (e.g., `["tag1", "tag2"]`) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
-
-### Authentication Token
-- Required for all URL scheme operations (create, update, delete)
-- Without a token, Things will prompt for authentication on each operation
-
-## Authentication Token Configuration
-
-The Things MCP server requires an authentication token to interact with the Things app. This token is used to authorize URL scheme commands.
-
-### How to get your Things authentication token
-
-1. Open Things app on your Mac
-2. Go to Things → Preferences (⌘,)
-3. Select the General tab
-4. Make sure "Enable Things URLs" is checked
-5. Look for the authentication token displayed in the preferences window
-
-### Configuring the token
-
-Run the included configuration tool to set up your token:
-
-```bash
-python configure_token.py
-```
-
-This interactive script will prompt you for your token and save it securely in your local configuration.
+## Using Tags
+- The MCP server will automatically create missing tags when they are added to a task or project. Configure your LLM to do a lookup of your tags first before making changes if you want to control this.
 
 ## Development
 
