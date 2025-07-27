@@ -1,1 +1,0 @@
-* Fully self-contained test suite with no dependency on existing Projects, Areas or Tags, and no side-effects on existing data
