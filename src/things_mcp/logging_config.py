@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -17,10 +17,10 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 class StructuredFormatter(logging.Formatter):
     """Custom formatter that outputs structured JSON logs for better analysis."""
-    
+
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),
@@ -28,7 +28,7 @@ class StructuredFormatter(logging.Formatter):
             'function': record.funcName,
             'line': record.lineno,
         }
-        
+
         # Add any extra fields
         if hasattr(record, 'operation'):
             log_data['operation'] = record.operation
@@ -38,31 +38,31 @@ class StructuredFormatter(logging.Formatter):
             log_data['error_type'] = record.error_type
         if hasattr(record, 'retry_count'):
             log_data['retry_count'] = record.retry_count
-            
+
         # Add exception info if present
         if record.exc_info:
             log_data['exception'] = self.formatException(record.exc_info)
-            
+
         return json.dumps(log_data)
 
 class OperationLogFilter(logging.Filter):
     """Filter to add operation context to log records."""
-    
+
     def __init__(self):
         super().__init__()
         self.operation_context = {}
-    
+
     def set_operation_context(self, operation: str, **kwargs):
         """Set the current operation context."""
         self.operation_context = {
             'operation': operation,
             **kwargs
         }
-    
+
     def clear_operation_context(self):
         """Clear the operation context."""
         self.operation_context = {}
-    
+
     def filter(self, record: logging.LogRecord) -> bool:
         # Add operation context to the record
         for key, value in self.operation_context.items():
@@ -81,7 +81,7 @@ def setup_logging(
 ) -> None:
     """
     Configure comprehensive logging for the Things MCP server.
-    
+
     Args:
         console_level: Log level for console output
         file_level: Log level for file output
@@ -92,10 +92,10 @@ def setup_logging(
     # Get the root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)  # Capture everything, filter at handler level
-    
+
     # Remove existing handlers
     root_logger.handlers.clear()
-    
+
     # Console handler with simple formatting
     console_handler = logging.StreamHandler()
     console_handler.setLevel(getattr(logging, console_level.upper()))
@@ -106,7 +106,7 @@ def setup_logging(
     console_handler.setFormatter(console_format)
     console_handler.addFilter(operation_filter)
     root_logger.addHandler(console_handler)
-    
+
     # File handlers with rotation
     if structured_logs:
         # Structured JSON logs for analysis
@@ -119,7 +119,7 @@ def setup_logging(
         json_file_handler.setFormatter(StructuredFormatter())
         json_file_handler.addFilter(operation_filter)
         root_logger.addHandler(json_file_handler)
-    
+
     # Human-readable file logs
     text_file_handler = logging.handlers.RotatingFileHandler(
         LOGS_DIR / 'things_mcp.log',
@@ -134,7 +134,7 @@ def setup_logging(
     text_file_handler.setFormatter(text_format)
     text_file_handler.addFilter(operation_filter)
     root_logger.addHandler(text_file_handler)
-    
+
     # Error-only file handler
     error_file_handler = logging.handlers.RotatingFileHandler(
         LOGS_DIR / 'things_mcp_errors.log',
@@ -145,7 +145,7 @@ def setup_logging(
     error_file_handler.setFormatter(text_format)
     error_file_handler.addFilter(operation_filter)
     root_logger.addHandler(error_file_handler)
-    
+
     # Log the logging configuration
     logger = logging.getLogger(__name__)
     logger.info(f"Logging configured - Console: {console_level}, File: {file_level}, Structured: {structured_logs}")
@@ -167,12 +167,12 @@ def log_operation_end(operation: str, success: bool, duration: float = None, **k
     }
     if duration is not None:
         extra['duration'] = duration
-        
+
     if success:
         logger.info(f"Operation completed: {operation}", extra=extra)
     else:
         logger.error(f"Operation failed: {operation}", extra=extra)
-    
+
     operation_filter.clear_operation_context()
 
 def log_retry_attempt(operation: str, attempt: int, max_attempts: int, error: str) -> None:
@@ -194,7 +194,7 @@ def log_circuit_breaker_state(state: str, failure_count: int = None) -> None:
     extra = {'circuit_breaker_state': state}
     if failure_count is not None:
         extra['failure_count'] = failure_count
-        
+
     logger.warning(f"Circuit breaker state changed to: {state}", extra=extra)
 
 def log_dead_letter_queue(operation: str, params: Dict[str, Any], error: str) -> None:

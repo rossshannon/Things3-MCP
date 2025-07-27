@@ -16,19 +16,22 @@
   - [ ] Implement proper rollback mechanisms
 
 ## List View Operations
-- [ ] Test `get_inbox()`
-- [ ] Test `get_today()`
-- [ ] Test `get_upcoming()`
-- [ ] Test `get_anytime()`
-- [ ] Test `get_someday()`
-- [ ] Test `get_logbook()`
-- [ ] Test `get_trash()`
-- [ ] Test `get_todos()` with project filtering
-- [ ] Test `get_projects()` with `include_items=True`
-- [ ] Test `get_areas()` with `include_items=True`
-- [ ] Test `get_tags()` and `get_tagged_items()`
-- [ ] Test `search_todos()` and `search_advanced()`
-- [ ] Test `get_recent()` functionality
+- [x] Test `get_inbox()`
+- [x] Test `get_today()`
+- [x] Test `get_upcoming()`
+- [x] Test `get_anytime()`
+- [x] Test `get_someday()`
+- [x] Test `get_logbook()`
+- [x] Test `get_trash()`
+- [x] Test `get_todos()` with project filtering
+- [x] Test `get_projects()` with `include_items=True`
+- [x] Test `get_areas()` with `include_items=True`
+- [x] Test `get_tags()` and `get_tagged_items()`
+- [x] Test `search_todos()` and `search_advanced()`
+- [x] Test `get_recent()` functionality
+- [x] Test empty search results
+- [x] Test multiple tag filtering
+- [x] Test searching by emoji
 
 ## Project Operations
 - [ ] Test deadline parameter in `add_project_direct()`
