@@ -418,13 +418,34 @@ def add_project_direct(
     # Build the AppleScript command
     script_parts = ['tell application "Things3"']
 
+    # Handle area assignment BEFORE creating the project
+    area_ref = None
+    if area_title:
+        script_parts.append(f'set area_name to {escape_applescript_string(area_title)}')  # noqa: Q000
+        script_parts.append("try")  # noqa: Q000
+        script_parts.append("  set target_area to first area whose name is area_name")  # noqa: Q000
+        script_parts.append("  set area_ref to target_area")  # noqa: Q000
+        script_parts.append("on error")  # noqa: Q000
+        script_parts.append("  -- Area not found, will create project without area")  # noqa: Q000
+        script_parts.append("  set area_ref to missing value")  # noqa: Q000
+        script_parts.append("end try")  # noqa: Q000
+
     # Build properties for the project
     properties = [f'name:{escape_applescript_string(title)}']  # noqa: Q000
     if notes:
         properties.append(f'notes:{escape_applescript_string(notes)}')  # noqa: Q000
 
-    # Create the project
-    script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")  # noqa: Q000, E501
+    # Add area to properties if found
+    if area_title:
+        script_parts.append("if area_ref is not missing value then")  # noqa: Q000
+        script_parts.append("  set area_property to {area:area_ref}")  # noqa: Q000
+        script_parts.append("else")  # noqa: Q000
+        script_parts.append("  set area_property to {}")  # noqa: Q000
+        script_parts.append("end if")  # noqa: Q000
+        script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}} & area_property")  # noqa: Q000, E501
+    else:
+        # Create the project without area
+        script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")  # noqa: Q000, E501
 
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "newProject")
@@ -439,16 +460,6 @@ def add_project_direct(
     # Handle deadline
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "newProject")
-
-    # Add to a specific area if specified
-    if area_title:
-        script_parts.append(f'set area_name to {escape_applescript_string(area_title)}')  # noqa: Q000
-        script_parts.append("try")  # noqa: Q000
-        script_parts.append("  set target_area to first area whose name is area_name")  # noqa: Q000
-        script_parts.append("  set area of newProject to target_area")  # noqa: Q000
-        script_parts.append("on error")  # noqa: Q000
-        script_parts.append("  -- Area not found, project will remain unassigned")  # noqa: Q000
-        script_parts.append("end try")  # noqa: Q000
 
     # Add initial todos if provided
     if todos and len(todos) > 0:
