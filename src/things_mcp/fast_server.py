@@ -18,7 +18,6 @@ from .applescript_bridge import (
     update_todo_direct,
 )
 
-# Import caching
 # Import supporting modules
 from .formatters import format_area, format_project, format_tag, format_todo
 

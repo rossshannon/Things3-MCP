@@ -156,35 +156,6 @@ def log_operation_end(operation: str, success: bool, duration: float = None, **k
 
     operation_filter.clear_operation_context()
 
-
-def log_retry_attempt(operation: str, attempt: int, max_attempts: int, error: str) -> None:
-    """Log a retry attempt."""
-    logger = logging.getLogger(__name__)
-    logger.warning(
-        f"Retry attempt {attempt}/{max_attempts} for {operation}: {error}",
-        extra={"operation": operation, "retry_count": attempt, "max_attempts": max_attempts, "error": error},
-    )
-
-
-def log_circuit_breaker_state(state: str, failure_count: int = None) -> None:
-    """Log circuit breaker state changes."""
-    logger = logging.getLogger(__name__)
-    extra = {"circuit_breaker_state": state}
-    if failure_count is not None:
-        extra["failure_count"] = failure_count
-
-    logger.warning(f"Circuit breaker state changed to: {state}", extra=extra)
-
-
-def log_dead_letter_queue(operation: str, params: dict[str, Any], error: str) -> None:
-    """Log when an operation is added to the dead letter queue."""
-    logger = logging.getLogger(__name__)
-    logger.error(
-        f"Added to dead letter queue: {operation}",
-        extra={"operation": operation, "params": params, "error": error, "dlq": True},
-    )
-
-
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance with the given name."""
     return logging.getLogger(name)

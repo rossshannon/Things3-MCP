@@ -6,13 +6,9 @@
 
 </div>
 
-This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things app](https://culturedcode.com/things). You can ask Claude to create tasks, analyze projects, help manage priorities, and more.
+This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things 3](https://culturedcode.com/things). You can ask Claude or your MCP client of choiceto create tasks, analyze projects, help manage priorities, and more.
 
-This server leverages the [Things.py](https://github.com/thingsapi/things.py) library and the [Things URL Scheme](https://culturedcode.com/things/help/url-scheme/), with additional reliability features including:
-
-- **Comprehensive logging** with structured JSON output
-- **AppleScript bridge** for operations that fail with URL schemes
-- **Extensive test suite** for reliability
+This MCP server leverages a combination of the [Things.py](https://github.com/thingsapi/things.py) library and [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/), enabling reading and writing to Things 3.
 
 ## Why Things MCP?
 
@@ -130,50 +126,48 @@ Restart the Claude Desktop app to apply the changes.
 ### Available Tools
 
 #### List Views
-- `get-inbox` - Get todos from Inbox
-- `get-today` - Get todos due today
-- `get-upcoming` - Get upcoming todos
-- `get-anytime` - Get todos from Anytime list
-- `get-someday` - Get todos from Someday list
-- `get-logbook` - Get completed todos
-- `get-trash` - Get trashed todos
+- `get_inbox` - Get todos from Inbox
+- `get_today` - Get todos due today
+- `get_upcoming` - Get upcoming todos
+- `get_anytime` - Get todos from Anytime list
+- `get_someday` - Get todos from Someday list
+- `get_logbook` - Get completed todos
+- `get_trash` - Get trashed todos
 
 #### Basic Operations
-- `get-todos` - Get todos, optionally filtered by project
-- `get-projects` - Get all projects
-- `get-areas` - Get all areas
+- `get_todos` - Get todos, optionally filtered by project
+- `get_projects` - Get all projects
+- `get_areas` - Get all areas
 
 #### Tag Operations
-- `get-tags` - Get all tags
-- `get-tagged-items` - Get items with a specific tag
+- `get_tags` - Get all tags
+- `get_tagged_items` - Get items with a specific tag
 
 #### Search Operations
-- `search-todos` - Simple search by title/notes
-- `search-advanced` - Advanced search with multiple filters
+- `search_todos` - Simple search by title/notes
+- `search_advanced` - Advanced search with multiple filters
 
 #### Time-based Operations
-- `get-recent` - Get recently created items
+- `get_recent` - Get recently created items
 
 #### Modification Operations
-- `add-todo` - Create a new todo with full parameter support
-- `add-project` - Create a new project with tags and todos
-- `update-todo` - Update an existing todo
-- `update-project` - Update an existing project
-- `delete-todo` - Delete a todo (moves to trash)
-- `delete-project` - Delete a project (moves to trash)
-- `show-item` - Show a specific item or list in Things
-- `search-items` - Search for items in Things
+- `add_todo` - Create a new todo with full parameter support
+- `add_project` - Create a new project with tags and todos
+- `update_todo` - Update an existing todo
+- `update_project` - Update an existing project
+- `show_item` - Show a specific item or list in Things
+- `search_items` - Search for items in Things
 
 ## Tool Parameters
 
-### get-todos
+### get_todos
 - `project_uuid` (optional) - Filter todos by project
 - `include_items` (optional, default: true) - Include checklist items
 
-### get-projects / get-areas / get-tags
+### get_projects / get_areas / get_tags
 - `include_items` (optional, default: false) - Include contained items
 
-### search-advanced
+### search_advanced
 - `status` - Filter by status (incomplete/completed/canceled)
 - `start_date` - Filter by start date (YYYY-MM-DD)
 - `deadline` - Filter by deadline (YYYY-MM-DD)
@@ -181,10 +175,11 @@ Restart the Claude Desktop app to apply the changes.
 - `area` - Filter by area UUID
 - `type` - Filter by item type (to-do/project/heading)
 
-### get-recent
+### get_recent
 - `period` - Time period (e.g., '3d', '1w', '2m', '1y')
+- `limit` - Maximum number of items to return
 
-### add-todo
+### add_todo
 - `title` - Title of the todo
 - `notes` (optional) - Notes for the todo
 - `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
@@ -192,7 +187,7 @@ Restart the Claude Desktop app to apply the changes.
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` or `list_id` (optional) - Title or ID of project/area to add to
 
-### update-todo
+### update_todo
 - `id` - ID of the todo to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
@@ -202,7 +197,7 @@ Restart the Claude Desktop app to apply the changes.
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
 
-### add-project
+### add_project
 - `title` - Title of the project
 - `notes` (optional) - Notes for the project
 - `when` (optional) - When to schedule the project
@@ -211,7 +206,7 @@ Restart the Claude Desktop app to apply the changes.
 - `area_title` or `area_id` (optional) - Title or ID of area to add to
 - `todos` (optional) - Initial todos to create in the project
 
-### update-project
+### update_project
 - `id` - ID of the project to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
@@ -221,13 +216,7 @@ Restart the Claude Desktop app to apply the changes.
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
 
-### delete-todo
-- `id` - ID of the todo to delete (moves to trash)
-
-### delete-project
-- `id` - ID of the project to delete (moves to trash)
-
-### show-item
+### show_item
 - `id` - ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
 - `query` (optional) - Optional query to filter by
 - `filter_tags` (optional) - Optional tags to filter by
@@ -284,8 +273,8 @@ This project provides two different implementation approaches:
 
 ```bash
 # Clone the repository
-git clone https://github.com/hald/things-mcp
-cd things-mcp
+git clone https://github.com/rossshannon/Things3-MCP
+cd Things3-MCP
 
 # Set up a virtual environment with development dependencies
 uv venv
@@ -320,15 +309,10 @@ Requires Python 3.12+.
 
 ## Reliability Features
 
-### Error Handling & Recovery
-- **Retry Logic**: Automatic retries with exponential backoff for transient failures
-- **Circuit Breaker**: Prevents repeated failures from overwhelming the system
-- **Dead Letter Queue**: Failed operations are stored for later retry or analysis
-- **AppleScript Fallback**: When URL scheme operations fail, falls back to direct AppleScript
-
 ### Monitoring & Debugging
 - **Structured Logging**: JSON-formatted logs for better analysis
 - **Operation Tracking**: Each operation is logged with timing and status
+- **Comprehensive Error Handling**: Graceful handling of Things database access errors
 - **Log Locations**:
   - Main logs: `~/.things-mcp/logs/things_mcp.log`
   - Structured logs: `~/.things-mcp/logs/things_mcp_structured.json`
