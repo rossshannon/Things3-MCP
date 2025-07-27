@@ -1,11 +1,12 @@
 [project]
 name = "things3-enhanced-mcp"
-version = "1.0.0"
+version = "2.0.0"
 description = "Enhanced FastMCP server for Things 3 app integration with Claude Desktop and Windsurf - featuring reliability improvements, caching, and AppleScript bridge"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT License"}
 authors = [
+    {name = "Ross Shannon", email = "4503044+rossshannon@users.noreply.github.com"},
     {name = "Yaroslav Krempovych", email = "51231325+excelsior@users.noreply.github.com"},
     {name = "Harald Lindstrøm", email = "hald@users.noreply.github.com"}
 ]
@@ -30,9 +31,9 @@ dependencies = [
 things3-enhanced-mcp = "src.things_mcp.fast_server:run_things_mcp_server"
 
 [project.urls]
-"Homepage" = "https://github.com/excelsier/things-fastmcp"
-"Bug Tracker" = "https://github.com/excelsier/things-fastmcp/issues"
-"Documentation" = "https://github.com/excelsier/things-fastmcp#readme"
+"Homepage" = "https://github.com/rossshannon/things-fastmcp"
+"Bug Tracker" = "https://github.com/rossshannon/things-fastmcp/issues"
+"Documentation" = "https://github.com/rossshannon/things-fastmcp#readme"
 
 [build-system]
 requires = ["hatchling"]
@@ -57,7 +58,11 @@ dependencies = [
     "pytest-cov",
     "ruff",
     "build",
-    "twine"
+    "twine",
+    "mypy>=1.0.0",
+    "bandit[toml]>=1.7.0",
+    "safety>=2.0.0",
+    "pre-commit>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -66,13 +71,119 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "build>=0.10.0",
-    "twine>=4.0.0"
+    "twine>=4.0.0",
+    "mypy>=1.0.0",
+    "bandit[toml]>=1.7.0",
+    "safety>=2.0.0",
+    "pre-commit>=3.0.0",
 ]
 
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
+test-cov = "pytest --cov=things_mcp --cov-report=term-missing --cov-report=html {args:tests}"
 lint = "ruff check ."
+lint-fix = "ruff check --fix ."
 format = "ruff format ."
+format-check = "ruff format --check ."
+type-check = "mypy src/"
+security = "bandit -r src/"
+deps-check = "safety check"
+all-checks = ["lint", "format-check", "type-check", "test-cov"]
 build = "python -m build"
 publish = "twine upload dist/*"
-clean = "rm -rf dist build *.egg-info"
+clean = "rm -rf dist build *.egg-info .coverage htmlcov .pytest_cache .mypy_cache .ruff_cache"
+
+# Enhanced Ruff Configuration
+[tool.ruff]
+target-version = "py312"
+line-length = 216
+extend-include = ["*.pyi"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "N",  # pep8-naming
+    "S",  # flake8-bandit
+    "T20", # flake8-print
+    "Q",  # flake8-quotes
+]
+ignore = [
+    "S101", # assert used - fine in tests
+    "T201", # print statements - sometimes needed for debugging
+    "S110", # try-except-pass - reasonable for optional operations
+    "S324", # hashlib MD5 - not used for security
+    "S603", # subprocess usage - needed for AppleScript
+    "S607", # partial executable path - osascript is system tool
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "T201"]  # Allow asserts and prints in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# MyPy Configuration
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false        # Relaxed: Allow Any returns
+warn_unused_configs = true
+disallow_untyped_defs = false  # Relaxed: Allow untyped function definitions
+disallow_incomplete_defs = false # Relaxed: Allow incomplete type definitions
+check_untyped_defs = true
+disallow_untyped_decorators = false # Relaxed: Allow untyped decorators
+no_implicit_optional = false   # Relaxed: Allow implicit Optional (fixes many issues)
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+disable_error_code = [
+    "import-untyped",    # Ignore missing stubs for external libraries
+    "attr-defined",      # Ignore decorator attribute issues
+    "assignment",        # Ignore type assignment mismatches
+    "return-value",      # Ignore return type mismatches
+    "var-annotated",     # Ignore variable annotation requirements
+    "arg-type"           # Ignore argument type mismatches
+]
+exclude = [
+    "things\\.py$",  # Exclude external things.py (not our code)
+]
+
+# Coverage Configuration
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+# Bandit Security Configuration
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]  # Skip assert_used test
+
+[dependency-groups]
+dev = [
+    "bandit[toml]>=1.8.6",
+    "mypy>=1.17.0",
+    "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.12.3",
+    "safety>=3.6.0",
+]

@@ -10,6 +10,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
+
 def update_applescript_with_due_date(script_parts: list, deadline: str, item_var: str = "theProject") -> None:
     """
     Update an AppleScript command list with the correct due date syntax.
@@ -34,17 +35,13 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
         return
 
     # Step 1: Accept an ISO string, validate it in Python
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', deadline):
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", deadline):
         logger.error(f"Invalid deadline format: {deadline}. Expected YYYY-MM-DD")
         return
 
     try:
         # Parse and validate the ISO date
         target_date = datetime.datetime.strptime(deadline, "%Y-%m-%d")
-
-        year = target_date.year
-        month = target_date.month
-        day = target_date.day
 
         # Step 2: Convert to AppleScript using the official arithmetic format
         # Calculate days difference from today
@@ -64,7 +61,7 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
 
         logger.debug(f"Generated arithmetic AppleScript date construction for {deadline} ({days_diff:+d} days)")
 
-    except ValueError as e:
+    except ValueError:
         logger.error(f"Invalid date: {deadline}")
     except Exception as e:
         logger.error(f"Error setting deadline: {str(e)}")

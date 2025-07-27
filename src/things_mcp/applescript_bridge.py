@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-import subprocess
-import logging
-import time
-import re
 import datetime
-from typing import Optional, List, Dict, Any, Union
+import logging
+import re
+import subprocess
+
 from .date_converter import update_applescript_with_due_date
 
 logger = logging.getLogger(__name__)
+
 
 def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
     """Run an AppleScript command and return its output."""
@@ -16,18 +16,20 @@ def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
     try:
         # Handle special characters by writing to a temporary file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.applescript', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".applescript", delete=False) as f:
             f.write(script)
             script_path = f.name
 
         logger.info(f"Running script from file: {script_path}")
 
         # Run the AppleScript from the file
-        process = subprocess.Popen(['osascript', script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(["osascript", script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate(timeout=timeout)
 
         # Clean up the temporary file
         import os
+
         os.unlink(script_path)
 
         # Log the results
@@ -37,12 +39,12 @@ def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
 
         # Check for errors
         if process.returncode != 0:
-            error_msg = stderr.decode('utf-8') if stderr else "Unknown error"
+            error_msg = stderr.decode("utf-8") if stderr else "Unknown error"
             logger.error(f"AppleScript error: {error_msg}")
             return error_msg
 
         # Return the output
-        output = stdout.decode('utf-8').strip()
+        output = stdout.decode("utf-8").strip()
         logger.debug(f"AppleScript output (raw): {output!r}")
 
         # Convert boolean responses to consistent string format
@@ -64,6 +66,7 @@ def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
         logger.error(f"Error running AppleScript: {str(e)}")
         return f"Error: {str(e)}"
 
+
 def ensure_things_ready() -> bool:
     """Ensure Things app is ready for AppleScript operations.
 
@@ -75,7 +78,7 @@ def ensure_things_ready() -> bool:
         check_script = 'tell application "System Events" to (name of processes) contains "Things3"'
         result = run_applescript(check_script, timeout=5, retries=2)
 
-        if not result or result.lower() != 'true':
+        if not result or result.lower() != "true":
             logger.warning("Things app is not running")
             return False
 
@@ -93,6 +96,7 @@ def ensure_things_ready() -> bool:
     except Exception as e:
         logger.error(f"Error checking Things readiness: {str(e)}")
         return False
+
 
 def escape_applescript_string(text: str) -> str:
     """Escape special characters in an AppleScript string with improved handling.
@@ -113,25 +117,31 @@ def escape_applescript_string(text: str) -> str:
     text = text.replace('"', '""')
 
     # Handle special characters that need escaping in AppleScript strings
-    text = text.replace('\\', '\\\\')  # Escape backslashes
-    text = text.replace('\n', '\\n')   # Escape newlines
-    text = text.replace('\r', '\\r')   # Escape carriage returns
-    text = text.replace('\t', '\\t')   # Escape tabs
+    text = text.replace("\\", "\\\\")  # Escape backslashes
+    text = text.replace("\n", "\\n")  # Escape newlines
+    text = text.replace("\r", "\\r")  # Escape carriage returns
+    text = text.replace("\t", "\\t")  # Escape tabs
 
     # No need to escape & in AppleScript strings - it's handled natively
     # Just ensure other special characters are properly escaped
-    text = text.replace('|', '\\|')    # Escape pipes
-    text = text.replace(';', '\\;')    # Escape semicolons
+    text = text.replace("|", "\\|")  # Escape pipes
+    text = text.replace(";", "\\;")  # Escape semicolons
 
     # Remove any null bytes or other problematic characters
-    text = text.replace('\x00', '')  # Remove null bytes
-    text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')  # Keep only printable chars
+    text = text.replace("\x00", "")  # Remove null bytes
+    text = "".join(char for char in text if ord(char) >= 32 or char in "\n\r\t")  # Keep only printable chars
 
     return text
 
-def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
-                   tags: Optional[List[str]] = None, list_title: Optional[str] = None,
-                   deadline: Optional[str] = None) -> str:
+
+def add_todo_direct(
+    title: str,
+    notes: str | None = None,
+    when: str | None = None,
+    tags: list[str] | None = None,
+    list_title: str | None = None,
+    deadline: str | None = None,
+) -> str:
     """Add a todo to Things directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid encoding issues.
@@ -158,10 +168,7 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
         return False
 
     # Build the AppleScript command
-    script_parts = [
-        'tell application "Things3"',
-        'try'
-    ]
+    script_parts = ['tell application "Things3"', "try"]
 
     # Create the todo with basic properties first
     properties = [f'name:"{escape_applescript_string(title)}"']
@@ -191,15 +198,15 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
         script_parts.append(f'set project of newTodo to project "{escaped_list}"')
 
     # Get the ID of the created todo
-    script_parts.append('return id of newTodo')
-    script_parts.append('on error errMsg')
+    script_parts.append("return id of newTodo")
+    script_parts.append("on error errMsg")
     script_parts.append('  log "Error creating todo: " & errMsg')
-    script_parts.append('  return false')
-    script_parts.append('end try')
-    script_parts.append('end tell')
+    script_parts.append("  return false")
+    script_parts.append("end try")
+    script_parts.append("end tell")
 
     # Execute the script
-    script = '\n'.join(script_parts)
+    script = "\n".join(script_parts)
     logger.debug(f"Executing simplified AppleScript: {script}")
 
     result = run_applescript(script, timeout=8, retries=3)
@@ -210,7 +217,8 @@ def add_todo_direct(title: str, notes: Optional[str] = None, when: Optional[str]
         logger.error("Failed to create todo")
         return False
 
-def _handle_when_scheduling(script_parts: List[str], when: Optional[str], item_ref: str) -> None:
+
+def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref: str) -> None:
     """Standardized handling of 'when' scheduling for todos and projects.
 
     Args:
@@ -224,55 +232,48 @@ def _handle_when_scheduling(script_parts: List[str], when: Optional[str], item_r
     logger.info(f"Handling scheduling: when='{when}', item_ref='{item_ref}'")
 
     # Check if when is a YYYY-MM-DD date
-    is_date_format = re.match(r'^\d{4}-\d{2}-\d{2}$', when)
+    is_date_format = re.match(r"^\d{4}-\d{2}-\d{2}$", when)
 
-    if when == 'today':
-        script_parts.extend([
-            f'    tell (list \"Today\")',
-            f'        set container of {item_ref} to it',
-            '    end tell'
-        ])
-    elif when == 'tomorrow':
-        script_parts.append(f'    schedule {item_ref} for (current date) + 1 * days')
-    elif when == 'anytime':
-        script_parts.extend([
-            f'    tell (list \"Anytime\")',
-            f'        set container of {item_ref} to it',
-            '    end tell'
-        ])
-    elif when == 'someday':
-        script_parts.extend([
-            f'    tell (list \"Someday\")',
-            f'        set container of {item_ref} to it',
-            '    end tell'
-        ])
+    if when == "today":
+        script_parts.extend(['    tell (list "Today")', f"        set container of {item_ref} to it", "    end tell"])
+    elif when == "tomorrow":
+        script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
+    elif when == "anytime":
+        script_parts.extend(['    tell (list "Anytime")', f"        set container of {item_ref} to it", "    end tell"])
+    elif when == "someday":
+        script_parts.extend(['    tell (list "Someday")', f"        set container of {item_ref} to it", "    end tell"])
     elif is_date_format:
         # Parse the date and calculate days difference
         try:
-            target_date = datetime.datetime.strptime(when, '%Y-%m-%d').date()
+            target_date = datetime.datetime.strptime(when, "%Y-%m-%d").date()
             current_date = datetime.datetime.now().date()
             days_diff = (target_date - current_date).days
             logger.debug(f"Date calculation: target={target_date}, current={current_date}, diff={days_diff} days")
 
             if days_diff <= 0:
-                script_parts.extend([
-                    f'    tell (list \"Today\")',
-                    f'        set container of {item_ref} to it',
-                    '    end tell'
-                ])
+                script_parts.extend(['    tell (list "Today")', f"        set container of {item_ref} to it", "    end tell"])
             else:
-                script_parts.append(f'    schedule {item_ref} for (current date) + {days_diff} * days')
+                script_parts.append(f"    schedule {item_ref} for (current date) + {days_diff} * days")
         except ValueError as e:
             logger.error(f"Date parsing error: {e}")
             logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
     else:
         logger.warning(f"Unsupported when value: {when}")
 
-def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str] = None,
-                     when: Optional[str] = None, deadline: Optional[str] = None,
-                     tags: Optional[Union[List[str], str]] = None, add_tags: Optional[Union[List[str], str]] = None,
-                     completed: Optional[bool] = None, canceled: Optional[bool] = None,
-                     project: Optional[str] = None, area_title: Optional[str] = None) -> str:
+
+def update_todo_direct(
+    id: str,
+    title: str | None = None,
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | str | None = None,
+    add_tags: list[str] | str | None = None,
+    completed: bool | None = None,
+    canceled: bool | None = None,
+    project: str | None = None,
+    area_title: str | None = None,
+) -> str:
     """Update a todo directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid authentication issues.
@@ -300,7 +301,7 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
 
     # Build the AppleScript command to find and update the todo
     script_parts = ['tell application "Things3"']
-    script_parts.append('try')
+    script_parts.append("try")
     script_parts.append(f'    set theTodo to to do id "{id}"')
 
     # Update properties one at a time (simplified)
@@ -329,47 +330,54 @@ def update_todo_direct(id: str, title: Optional[str] = None, notes: Optional[str
     # Handle project assignment
     if project:
         escaped_project = escape_applescript_string(project)
-        script_parts.append(f'    try')
+        script_parts.append("    try")
         script_parts.append(f'        set targetProject to project "{escaped_project}"')
-        script_parts.append(f'        set project of theTodo to targetProject')
-        script_parts.append(f'    on error')
+        script_parts.append("        set project of theTodo to targetProject")
+        script_parts.append("    on error")
         script_parts.append(f'        return "Error: Project not found - {escaped_project}"')
-        script_parts.append(f'    end try')
+        script_parts.append("    end try")
 
     # Handle area assignment
     if area_title:
         escaped_area = escape_applescript_string(area_title)
-        script_parts.append(f'    try')
+        script_parts.append("    try")
         script_parts.append(f'        set targetArea to first area whose name is "{escaped_area}"')
-        script_parts.append(f'        set area of theTodo to targetArea')
-        script_parts.append(f'    on error')
+        script_parts.append("        set area of theTodo to targetArea")
+        script_parts.append("    on error")
         script_parts.append(f'        return "Error: Area not found - {escaped_area}"')
-        script_parts.append(f'    end try')
+        script_parts.append("    end try")
 
     # Handle completion status
     if completed is not None:
         if completed:
-            script_parts.append('    set status of theTodo to completed')
+            script_parts.append("    set status of theTodo to completed")
         else:
-            script_parts.append('    set status of theTodo to open')
+            script_parts.append("    set status of theTodo to open")
 
     # Return true on success
-    script_parts.append('    return true')
-    script_parts.append('on error errMsg')
+    script_parts.append("    return true")
+    script_parts.append("on error errMsg")
     script_parts.append('    return "Error: " & errMsg')
-    script_parts.append('end try')
-    script_parts.append('end tell')
+    script_parts.append("end try")
+    script_parts.append("end tell")
 
     # Execute the script
-    script = '\n'.join(script_parts)
+    script = "\n".join(script_parts)
     logger.debug(f"Generated AppleScript:\n{script}")
     result = run_applescript(script)
     logger.debug(f"AppleScript result: {result!r}")
     return result
 
-def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[str] = None,
-                      tags: Optional[List[str]] = None, area_title: Optional[str] = None,
-                      deadline: Optional[str] = None, todos: Optional[List[str]] = None) -> str:
+
+def add_project_direct(
+    title: str,
+    notes: str | None = None,
+    when: str | None = None,
+    tags: list[str] | None = None,
+    area_title: str | None = None,
+    deadline: str | None = None,
+    todos: list[str] | None = None,
+) -> str:
     """Add a project to Things directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid encoding issues.
@@ -405,7 +413,7 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
         properties.append(f'notes:"{escape_applescript_string(notes)}"')
 
     # Create the project
-    script_parts.append(f'set newProject to make new project with properties {{{", ".join(properties)}}}')
+    script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")
 
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "newProject")
@@ -424,12 +432,12 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
     # Add to a specific area if specified
     if area_title:
         script_parts.append(f'set area_name to "{escape_applescript_string(area_title)}"')
-        script_parts.append('try')
-        script_parts.append('  set target_area to first area whose name is area_name')
-        script_parts.append('  set area of newProject to target_area')
-        script_parts.append('on error')
-        script_parts.append('  -- Area not found, project will remain unassigned')
-        script_parts.append('end try')
+        script_parts.append("try")
+        script_parts.append("  set target_area to first area whose name is area_name")
+        script_parts.append("  set area of newProject to target_area")
+        script_parts.append("on error")
+        script_parts.append("  -- Area not found, project will remain unassigned")
+        script_parts.append("end try")
 
     # Add initial todos if provided
     if todos and len(todos) > 0:
@@ -438,13 +446,13 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
             script_parts.append(f'tell newProject to make new to do with properties {{name:"{todo_title}"}}')
 
     # Get the ID of the created project
-    script_parts.append('return id of newProject')
+    script_parts.append("return id of newProject")
 
     # Close the tell block
-    script_parts.append('end tell')
+    script_parts.append("end tell")
 
     # Execute the script
-    script = '\n'.join(script_parts)
+    script = "\n".join(script_parts)
     logger.debug(f"Executing AppleScript: {script}")
 
     result = run_applescript(script, timeout=8, retries=3)
@@ -455,7 +463,8 @@ def add_project_direct(title: str, notes: Optional[str] = None, when: Optional[s
         logger.error("Failed to create project")
         return False
 
-def move_project_to_list(script_parts: List[str], list_name: str, project_ref: str) -> bool:
+
+def move_project_to_list(script_parts: list[str], list_name: str, project_ref: str) -> bool:
     """Handle moving a project to a specific built-in list.
 
     Args:
@@ -479,11 +488,19 @@ def move_project_to_list(script_parts: List[str], list_name: str, project_ref: s
     script_parts.append(f'    move {project_ref} to list "{list_name}"')
     return True
 
-def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[str] = None,
-                          when: Optional[str] = None, deadline: Optional[str] = None,
-                          tags: Optional[List[str]] = None, completed: Optional[bool] = None,
-                          canceled: Optional[bool] = None, list_name: Optional[str] = None,
-                          area_title: Optional[str] = None) -> str:
+
+def update_project_direct(
+    id: str,
+    title: str | None = None,
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | None = None,
+    completed: bool | None = None,
+    canceled: bool | None = None,
+    list_name: str | None = None,
+    area_title: str | None = None,
+) -> str:
     """Update an existing project in Things.
 
     Args:
@@ -508,12 +525,10 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
     Returns:
         "true" if successful, error message if failed
     """
-    logger.info(f"Updating project {id} with title={title}, notes={notes}, when={when}, deadline={deadline}, "
-                f"tags={tags}, completed={completed}, canceled={canceled}, list_name={list_name}, "
-                f"area_title={area_title}")
+    logger.info(f"Updating project {id} with title={title}, notes={notes}, when={when}, deadline={deadline}, tags={tags}, completed={completed}, canceled={canceled}, list_name={list_name}, area_title={area_title}")
 
     script_parts = ['tell application "Things3"']
-    script_parts.append('try')
+    script_parts.append("try")
     script_parts.append(f'    set theProject to project id "{id}"')
 
     # Handle list moves first
@@ -532,12 +547,12 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
     # Handle area changes
     if area_title:
         escaped_area = escape_applescript_string(area_title)
-        script_parts.append(f'    try')
+        script_parts.append("    try")
         script_parts.append(f'        set targetArea to first area whose name is "{escaped_area}"')
-        script_parts.append(f'        set area of theProject to targetArea')
-        script_parts.append(f'    on error')
+        script_parts.append("        set area of theProject to targetArea")
+        script_parts.append("    on error")
         script_parts.append(f'        return "Error: Area not found - {escaped_area}"')
-        script_parts.append(f'    end try')
+        script_parts.append("    end try")
 
     # Handle other property updates
     if title:
@@ -552,18 +567,18 @@ def update_project_direct(id: str, title: Optional[str] = None, notes: Optional[
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "theProject")
     if completed is not None:
-        script_parts.append('    set status of theProject to completed')
+        script_parts.append("    set status of theProject to completed")
     if canceled is not None:
-        script_parts.append('    set status of theProject to canceled')
+        script_parts.append("    set status of theProject to canceled")
 
-    script_parts.append('    return true')
-    script_parts.append('on error errMsg')
+    script_parts.append("    return true")
+    script_parts.append("on error errMsg")
     script_parts.append('    return "Error: " & errMsg')
-    script_parts.append('end try')
-    script_parts.append('end tell')
+    script_parts.append("end try")
+    script_parts.append("end tell")
 
     # Execute the script
-    script = '\n'.join(script_parts)
+    script = "\n".join(script_parts)
     logger.debug(f"Generated AppleScript:\n{script}")
     result = run_applescript(script)
     logger.debug(f"AppleScript result: {result!r}")

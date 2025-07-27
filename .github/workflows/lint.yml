@@ -1,0 +1,47 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      run: pip install uv
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Check imports and syntax
+      run: uv run python -m py_compile src/**/*.py
+
+    - name: Run linting
+      run: uv run ruff check .
+
+    - name: Check formatting
+      run: uv run ruff format --check .
+
+    - name: Run type checking
+      run: uv run mypy src/
+
+    - name: Security scan
+      run: uv run bandit -r src/
+
+    - name: Check dependencies for vulnerabilities
+      run: uv run safety check

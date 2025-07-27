@@ -3,28 +3,39 @@
 Things MCP Server implementation using the FastMCP pattern.
 This provides a more modern and maintainable approach to the Things integration.
 """
-import logging
-import asyncio
-import traceback
-import json
-from typing import Dict, Any, Optional, List, Union
-import things
 
+import json
+import traceback
+
+import things
 from mcp.server.fastmcp import FastMCP
-import mcp.types as types
+
+from .applescript_bridge import (
+    add_project_direct,
+    add_todo_direct,
+    ensure_things_ready,
+    update_project_direct,
+    update_todo_direct,
+)
+
+# Import caching
+from .cache import get_cache_stats, invalidate_caches_for
 
 # Import supporting modules
-from .formatters import format_todo, format_project, format_area, format_tag
-from .applescript_bridge import add_todo_direct, update_todo_direct, add_project_direct, update_project_direct, ensure_things_ready
+from .formatters import format_area, format_project, format_tag, format_todo
 
 # Import and configure enhanced logging
-from .logging_config import setup_logging, get_logger, log_operation_start, log_operation_end
-# Import caching
-from .cache import cached, invalidate_caches_for, get_cache_stats, CACHE_TTL
+from .logging_config import (
+    get_logger,
+    log_operation_end,
+    log_operation_start,
+    setup_logging,
+)
 
 # Configure enhanced logging
 setup_logging(console_level="INFO", file_level="DEBUG", structured_logs=True)
 logger = get_logger(__name__)
+
 
 def preprocess_array_params(**kwargs):
     """Preprocess parameters to handle MCP framework array serialization issues.
@@ -36,7 +47,7 @@ def preprocess_array_params(**kwargs):
     for key, value in kwargs.items():
         if value is None:
             result[key] = None
-        elif isinstance(value, str) and value.startswith('[') and value.endswith(']'):
+        elif isinstance(value, str) and value.startswith("[") and value.endswith("]"):
             # Looks like a stringified array, try to parse it
             try:
                 parsed = json.loads(value)
@@ -53,19 +64,18 @@ def preprocess_array_params(**kwargs):
             result[key] = value
     return result
 
+
 # Create the FastMCP server
-mcp = FastMCP(
-    "Things",
-    description="Interact with the Things task management app",
-    version="0.1.1"
-)
+mcp = FastMCP("Things", description="Interact with the Things task management app", version="2.0.0")
 
 # LIST VIEWS
+
 
 @mcp.tool(name="get_inbox")
 def get_inbox() -> str:
     """Get todos from Inbox"""
     import time
+
     start_time = time.time()
     log_operation_start("get-inbox")
 
@@ -83,10 +93,12 @@ def get_inbox() -> str:
         log_operation_end("get-inbox", False, time.time() - start_time, error=str(e))
         raise
 
+
 @mcp.tool(name="get_today")
 def get_today() -> str:
     """Get todos due today"""
     import time
+
     start_time = time.time()
     log_operation_start("get-today")
 
@@ -107,7 +119,8 @@ def get_today() -> str:
             try:
                 # Replicate the exact logic from things.today() but with safe sorting
                 import datetime
-                today_str = datetime.date.today().strftime('%Y-%m-%d')
+
+                datetime.date.today().strftime("%Y-%m-%d")
 
                 # Replicate the three categories from things.today():
                 # 1. regular_today_tasks: start_date=True (today), start="Anytime", index="todayIndex"
@@ -115,24 +128,14 @@ def get_today() -> str:
                     start_date=True,  # today
                     start="Anytime",
                     index="todayIndex",
-                    status="incomplete"
+                    status="incomplete",
                 )
 
                 # 2. unconfirmed_scheduled_tasks: start_date="past", start="Someday", index="todayIndex"
-                unconfirmed_scheduled_tasks = things.tasks(
-                    start_date="past",
-                    start="Someday",
-                    index="todayIndex",
-                    status="incomplete"
-                )
+                unconfirmed_scheduled_tasks = things.tasks(start_date="past", start="Someday", index="todayIndex", status="incomplete")
 
                 # 3. unconfirmed_overdue_tasks: start_date=False, deadline="past", deadline_suppressed=False
-                unconfirmed_overdue_tasks = things.tasks(
-                    start_date=False,
-                    deadline="past",
-                    deadline_suppressed=False,
-                    status="incomplete"
-                )
+                unconfirmed_overdue_tasks = things.tasks(start_date=False, deadline="past", deadline_suppressed=False, status="incomplete")
 
                 # Combine all three categories like the original
                 result = [
@@ -167,6 +170,7 @@ def get_today() -> str:
         log_operation_end("get-today", False, time.time() - start_time, error=str(e))
         raise
 
+
 @mcp.tool(name="get_upcoming")
 def get_upcoming() -> str:
     """Get upcoming todos"""
@@ -177,6 +181,7 @@ def get_upcoming() -> str:
 
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
+
 
 @mcp.tool(name="get_anytime")
 def get_anytime() -> str:
@@ -189,6 +194,7 @@ def get_anytime() -> str:
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
+
 @mcp.tool(name="get_someday")
 def get_someday() -> str:
     """Get todos from Someday list"""
@@ -200,6 +206,7 @@ def get_someday() -> str:
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
+
 @mcp.tool(name="get_logbook")
 def get_logbook(period: str = "7d", limit: int = 50) -> str:
     """
@@ -209,7 +216,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'
         limit: Maximum number of entries to return. Defaults to 50
     """
-    todos = things.last(period, status='completed')
+    todos = things.last(period, status="completed")
 
     if not todos:
         return "No completed items found"
@@ -219,6 +226,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
+
 
 @mcp.tool(name="get_trash")
 def get_trash() -> str:
@@ -231,10 +239,12 @@ def get_trash() -> str:
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
+
 # BASIC TODO OPERATIONS
 
+
 @mcp.tool(name="get_todos")
-def get_todos(project_uuid: Optional[str] = None) -> str:
+def get_todos(project_uuid: str | None = None) -> str:
     """
     Get todos from Things, optionally filtered by project
 
@@ -243,7 +253,7 @@ def get_todos(project_uuid: Optional[str] = None) -> str:
     """
     if project_uuid:
         project = things.get(project_uuid)
-        if not project or project.get('type') != 'project':
+        if not project or project.get("type") != "project":
             return f"Error: Invalid project UUID '{project_uuid}'"
 
     todos = things.todos(project=project_uuid, start=None)
@@ -253,6 +263,7 @@ def get_todos(project_uuid: Optional[str] = None) -> str:
 
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
+
 
 @mcp.tool(name="get_projects")
 def get_projects(include_items: bool = False) -> str:
@@ -270,6 +281,7 @@ def get_projects(include_items: bool = False) -> str:
     formatted_projects = [format_project(project, include_items) for project in projects]
     return "\n\n---\n\n".join(formatted_projects)
 
+
 @mcp.tool(name="get_areas")
 def get_areas(include_items: bool = False) -> str:
     """
@@ -286,7 +298,9 @@ def get_areas(include_items: bool = False) -> str:
     formatted_areas = [format_area(area, include_items) for area in areas]
     return "\n\n---\n\n".join(formatted_areas)
 
+
 # TAG OPERATIONS
+
 
 @mcp.tool(name="get_tags")
 def get_tags(include_items: bool = False) -> str:
@@ -304,6 +318,7 @@ def get_tags(include_items: bool = False) -> str:
     formatted_tags = [format_tag(tag, include_items) for tag in tags]
     return "\n\n---\n\n".join(formatted_tags)
 
+
 @mcp.tool(name="get_tagged_items")
 def get_tagged_items(tag: str) -> str:
     """
@@ -320,7 +335,9 @@ def get_tagged_items(tag: str) -> str:
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
+
 # SEARCH OPERATIONS
+
 
 @mcp.tool(name="search_todos")
 def search_todos(query: str) -> str:
@@ -338,14 +355,15 @@ def search_todos(query: str) -> str:
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
 
+
 @mcp.tool(name="search_advanced")
 def search_advanced(
-    status: Optional[str] = None,
-    start_date: Optional[str] = None,
-    deadline: Optional[str] = None,
-    tag: Optional[str] = None,
-    area: Optional[str] = None,
-    type: Optional[str] = None
+    status: str | None = None,
+    start_date: str | None = None,
+    deadline: str | None = None,
+    tag: str | None = None,
+    area: str | None = None,
+    type: str | None = None,
 ) -> str:
     """
     Advanced todo search with multiple filters
@@ -363,17 +381,17 @@ def search_advanced(
 
     # Add filters that are provided
     if status:
-        kwargs['status'] = status
+        kwargs["status"] = status
     if deadline:
-        kwargs['deadline'] = deadline
+        kwargs["deadline"] = deadline
     if start_date:
-        kwargs['start'] = start_date
+        kwargs["start"] = start_date
     if tag:
-        kwargs['tag'] = tag
+        kwargs["tag"] = tag
     if area:
-        kwargs['area'] = area
+        kwargs["area"] = area
     if type:
-        kwargs['type'] = type
+        kwargs["type"] = type
 
     # Execute search with applicable filters
     try:
@@ -387,17 +405,19 @@ def search_advanced(
     except Exception as e:
         return f"Error in advanced search: {str(e)}"
 
+
 # MODIFICATION OPERATIONS
+
 
 @mcp.tool(name="add_todo")
 def add_task(
     title: str,
-    notes: Optional[str] = None,
-    when: Optional[str] = None,
-    deadline: Optional[str] = None,
-    tags: Optional[Union[List[str], str]] = None,
-    list_id: Optional[str] = None,
-    list_title: Optional[str] = None,
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | str | None = None,
+    list_id: str | None = None,
+    list_title: str | None = None,
 ) -> str:
     """Create a new todo in Things.
 
@@ -406,16 +426,16 @@ def add_task(
         notes: Notes for the todo
         when: When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
         deadline: Deadline for the todo (YYYY-MM-DD)
-        tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
+        tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of
+            strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
+            Passing as a string will treat each character as a separate tag.
         list_id: ID of project/area to add to
         list_title: Title of project/area to add to
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
-        params = preprocess_array_params(
-            tags=tags
-        )
-        tags = params['tags']
+        params = preprocess_array_params(tags=tags)
+        tags = params["tags"]
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
@@ -445,19 +465,21 @@ def add_task(
     except Exception as e:
         logger.error(f"Error creating todo: {str(e)}")
         import traceback
+
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error creating todo: {str(e)}"
+
 
 @mcp.tool(name="add_project")
 def add_new_project(
     title: str,
-    notes: Optional[str] = None,
-    when: Optional[str] = None,
-    deadline: Optional[str] = None,
-    tags: Optional[Union[List[str], str]] = None,
-    area_id: Optional[str] = None,
-    area_title: Optional[str] = None,
-    todos: Optional[Union[List[str], str]] = None
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | str | None = None,
+    area_id: str | None = None,
+    area_title: str | None = None,
+    todos: list[str] | str | None = None,
 ) -> str:
     """
     Create a new project in Things
@@ -467,19 +489,18 @@ def add_new_project(
         notes: Notes for the project
         when: When to schedule the project
         deadline: Deadline for the project
-        tags: Tags to apply to the project. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
+        tags: Tags to apply to the project. IMPORTANT: Always pass as an array of
+            strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
+            Passing as a string will treat each character as a separate tag.
         area_id: ID of area to add to
         area_title: Title of area to add to
         todos: Initial todos to create in the project
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
-        params = preprocess_array_params(
-            tags=tags,
-            todos=todos
-        )
-        tags = params['tags']
-        todos = params['todos']
+        params = preprocess_array_params(tags=tags, todos=todos)
+        tags = params["tags"]
+        todos = params["todos"]
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
@@ -493,15 +514,7 @@ def add_new_project(
 
         # Call the AppleScript bridge directly
         try:
-            project_id = add_project_direct(
-                title=title,
-                notes=notes,
-                when=when,
-                deadline=deadline,
-                tags=tags,
-                area_title=area_title,
-                todos=todos
-            )
+            project_id = add_project_direct(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, todos=todos)
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
@@ -517,21 +530,23 @@ def add_new_project(
     except Exception as e:
         logger.error(f"Error creating project: {str(e)}")
         import traceback
+
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error creating project: {str(e)}"
+
 
 @mcp.tool(name="update_todo")
 def update_task(
     id: str,
-    title: Optional[str] = None,
-    notes: Optional[str] = None,
-    when: Optional[str] = None,
-    deadline: Optional[str] = None,
-    tags: Optional[Union[List[str], str]] = None,
-    completed: Optional[bool] = None,
-    canceled: Optional[bool] = None,
-    project: Optional[str] = None,
-    area_title: Optional[str] = None
+    title: str | None = None,
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | str | None = None,
+    completed: bool | None = None,
+    canceled: bool | None = None,
+    project: str | None = None,
+    area_title: str | None = None,
 ) -> str:
     """
     Update an existing todo in Things
@@ -550,10 +565,8 @@ def update_task(
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
-        params = preprocess_array_params(
-            tags=tags
-        )
-        tags = params['tags']
+        params = preprocess_array_params(tags=tags)
+        tags = params["tags"]
 
         # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
@@ -580,7 +593,7 @@ def update_task(
                 completed=completed,
                 canceled=canceled,
                 project=project,
-                area_title=area_title
+                area_title=area_title,
             )
             logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
 
@@ -607,18 +620,19 @@ def update_task(
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error updating todo: {str(e)}"
 
+
 @mcp.tool(name="update_project")
 def update_existing_project(
     id: str,
-    title: Optional[str] = None,
-    notes: Optional[str] = None,
-    when: Optional[str] = None,
-    deadline: Optional[str] = None,
-    tags: Optional[Union[List[str], str]] = None,
-    completed: Optional[bool] = None,
-    canceled: Optional[bool] = None,
-    list_name: Optional[str] = None,
-    area_title: Optional[str] = None
+    title: str | None = None,
+    notes: str | None = None,
+    when: str | None = None,
+    deadline: str | None = None,
+    tags: list[str] | str | None = None,
+    completed: bool | None = None,
+    canceled: bool | None = None,
+    list_name: str | None = None,
+    area_title: str | None = None,
 ) -> str:
     """
     Update an existing project in Things
@@ -646,12 +660,12 @@ def update_existing_project(
         # Log all input parameters for debugging
         logger.info("Raw input parameters for update_project:")
         for param_name, param_value in locals().items():
-            if param_name != 'self':  # Skip self parameter
+            if param_name != "self":  # Skip self parameter
                 logger.info(f"  {param_name}: {param_value!r}")
 
         # Preprocess only the tags parameter
         params = preprocess_array_params(tags=tags)
-        tags = params['tags']
+        tags = params["tags"]
 
         # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
@@ -677,7 +691,7 @@ def update_existing_project(
                 completed=completed,
                 canceled=canceled,
                 list_name=list_name,
-                area_title=area_title
+                area_title=area_title,
             )
             logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
 
@@ -704,19 +718,18 @@ def update_existing_project(
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error updating project: {str(e)}"
 
+
 @mcp.tool(name="show_item")
-def show_item(
-    id: str,
-    query: Optional[str] = None,
-    filter_tags: Optional[List[str]] = None
-) -> str:
+def show_item(id: str, query: str | None = None, filter_tags: list[str] | None = None) -> str:
     """
     Show a specific item or list in Things
 
     Args:
         id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
         query: Optional query to filter by
-        filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
+        filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an
+        array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated
+        string. Passing as a string will treat each character as a separate tag.
     """
     try:
         # For built-in lists, return the appropriate data
@@ -739,11 +752,11 @@ def show_item(
             try:
                 item = things.get(id)
                 if item:
-                    if item.get('type') == 'to-do':
+                    if item.get("type") == "to-do":
                         return format_todo(item)
-                    elif item.get('type') == 'project':
+                    elif item.get("type") == "project":
                         return format_project(item, include_items=True)
-                    elif item.get('type') == 'area':
+                    elif item.get("type") == "area":
                         return format_area(item, include_items=True)
                     else:
                         return f"Found item: {item}"
@@ -754,6 +767,7 @@ def show_item(
     except Exception as e:
         logger.error(f"Error showing item: {str(e)}")
         return f"Error showing item: {str(e)}"
+
 
 @mcp.tool(name="search_items")
 def search_all_items(query: str) -> str:
@@ -776,6 +790,7 @@ def search_all_items(query: str) -> str:
         logger.error(f"Error searching: {str(e)}")
         return f"Error searching: {str(e)}"
 
+
 @mcp.tool(name="get_recent")
 def get_recent(period: str) -> str:
     """
@@ -786,7 +801,7 @@ def get_recent(period: str) -> str:
     """
     try:
         # Check if period format is valid
-        if not period or not any(period.endswith(unit) for unit in ['d', 'w', 'm', 'y']):
+        if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
             return "Error: Period must be in format '3d', '1w', '2m', '1y'"
 
         # Get recent items
@@ -797,9 +812,9 @@ def get_recent(period: str) -> str:
 
         formatted_items = []
         for item in items:
-            if item.get('type') == 'to-do':
+            if item.get("type") == "to-do":
                 formatted_items.append(format_todo(item))
-            elif item.get('type') == 'project':
+            elif item.get("type") == "project":
                 formatted_items.append(format_project(item, include_items=False))
 
         return "\n\n---\n\n".join(formatted_items)
@@ -807,18 +822,18 @@ def get_recent(period: str) -> str:
         logger.error(f"Error getting recent items: {str(e)}")
         return f"Error getting recent items: {str(e)}"
 
+
 @mcp.tool(name="get_cache_stats")
 def get_cache_statistics() -> str:
     """Get cache performance statistics"""
     stats = get_cache_stats()
 
     return f"""Cache Statistics:
-- Total entries: {stats['entries']}
-- Cache hits: {stats['hits']}
-- Cache misses: {stats['misses']}
-- Hit rate: {stats['hit_rate']}
-- Total requests: {stats['total_requests']}"""
-
+- Total entries: {stats["entries"]}
+- Cache hits: {stats["hits"]}
+- Cache misses: {stats["misses"]}
+- Hit rate: {stats["hit_rate"]}
+- Total requests: {stats["total_requests"]}"""
 
 
 # Main entry point
@@ -832,6 +847,7 @@ def run_things_mcp_server():
 
     # Run the MCP server
     mcp.run()
+
 
 if __name__ == "__main__":
     run_things_mcp_server()
