@@ -124,6 +124,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "T201"]  # Allow asserts and prints in tests
+"src/things_mcp/applescript_bridge.py" = ["Q000", "Q001", "Q002", "Q003", "W291", "E501"]  # AppleScript has different quote/string requirements
 
 [tool.ruff.format]
 quote-style = "double"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import datetime
 import logging
-import re
 import subprocess
+import tempfile
+from datetime import datetime
 
 from .date_converter import update_applescript_with_due_date
 
@@ -15,8 +15,6 @@ def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
 
     try:
         # Handle special characters by writing to a temporary file
-        import tempfile
-
         with tempfile.NamedTemporaryFile(mode="w", suffix=".applescript", delete=False) as f:
             f.write(script)
             script_path = f.name
@@ -98,50 +96,59 @@ def ensure_things_ready() -> bool:
         return False
 
 
-def escape_applescript_string(text: str) -> str:
-    """Escape special characters in an AppleScript string with improved handling.
+def escape_applescript_string(text: str) -> str:  # noqa: C901, Q000, W291
+    """Escape special characters in an AppleScript string.
+
+    AppleScript doesn't support traditional quote escaping. Instead, we handle
+    quotes by breaking the string and using ASCII character codes.
 
     Args:
         text: The string to escape
 
     Returns:
-        The escaped string
+        The escaped string ready for AppleScript concatenation
     """
     if not text:
-        return ""
+        return '""'  # noqa: Q000
 
-    # Replace any "+" with spaces first
+    # Replace any "+" with spaces (URL decoding)
     text = text.replace("+", " ")
 
-    # Escape quotes by doubling them (AppleScript style)
-    text = text.replace('"', '""')
+    # Handle newlines and other whitespace that can break AppleScript syntax
+    text = text.replace('\n', ' ')  # Replace newlines with spaces
+    text = text.replace('\r', ' ')  # Replace carriage returns with spaces
+    text = text.replace('\t', ' ')  # Replace tabs with spaces
 
-    # Handle special characters that need escaping in AppleScript strings
-    text = text.replace("\\", "\\\\")  # Escape backslashes
-    text = text.replace("\n", "\\n")  # Escape newlines
-    text = text.replace("\r", "\\r")  # Escape carriage returns
-    text = text.replace("\t", "\\t")  # Escape tabs
+    # Handle quotes by breaking the string and using ASCII character 34
+    if '"' in text:
+        # Split on quotes and rebuild with ASCII character concatenation
+        parts = text.split('"')
+        # Join parts with quote character (ASCII 34)
+        result_parts = []
+        for i, part in enumerate(parts):
+            if i > 0:  # Add quote character before each part (except first)
+                result_parts.append('(ASCII character 34)')  # noqa: Q000
+            if part:  # Only add non-empty parts as quoted strings
+                result_parts.append(f'"{part}"')  # noqa: Q000
 
-    # No need to escape & in AppleScript strings - it's handled natively
-    # Just ensure other special characters are properly escaped
-    text = text.replace("|", "\\|")  # Escape pipes
-    text = text.replace(";", "\\;")  # Escape semicolons
-
-    # Remove any null bytes or other problematic characters
-    text = text.replace("\x00", "")  # Remove null bytes
-    text = "".join(char for char in text if ord(char) >= 32 or char in "\n\r\t")  # Keep only printable chars
-
-    return text
+        if result_parts:
+            return ' & '.join(result_parts)  # noqa: Q000
+        else:
+            return '""'  # noqa: Q000
+    else:
+        # No quotes, just return the quoted string
+        return f'"{text}"'  # noqa: Q000
 
 
-def add_todo_direct(
+def add_todo_direct(  # noqa: C901, PLR0913
     title: str,
     notes: str | None = None,
     when: str | None = None,
-    tags: list[str] | None = None,
-    list_title: str | None = None,
     deadline: str | None = None,
-) -> str:
+    tags: list[str] | None = None,
+    list_id: str | None = None,
+    list_title: str | None = None,
+) -> str | bool:
     """Add a todo to Things directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid encoding issues.
@@ -171,22 +178,22 @@ def add_todo_direct(
     script_parts = ['tell application "Things3"', "try"]
 
     # Create the todo with basic properties first
-    properties = [f'name:"{escape_applescript_string(title)}"']
+    properties = [f'name:{escape_applescript_string(title)}']  # noqa: Q000
     if notes:
-        properties.append(f'notes:"{escape_applescript_string(notes)}"')
+        properties.append(f'notes:{escape_applescript_string(notes)}')  # noqa: Q000
 
     # Create in Inbox first (simplest approach)
-    script_parts.append(f'set newTodo to make new to do with properties {{{", ".join(properties)}}} at beginning of list "Inbox"')
+    script_parts.append(f'set newTodo to make new to do with properties {{{", ".join(properties)}}} at beginning of list "Inbox"')  # noqa: Q000, E501
 
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "newTodo")
 
-    # Add tags if provided (simplified)
+    # Add tags if provided
     if tags and len(tags) > 0:
-        # Add each tag individually
-        for tag in tags:
-            escaped_tag = escape_applescript_string(tag)
-            script_parts.append(f'add tag "{escaped_tag}" to newTodo')
+        # Tags should be set as a comma-separated string according to Things documentation
+        tag_string = ", ".join(tags)
+        escaped_tag_string = escape_applescript_string(tag_string)
+        script_parts.append(f'set tag names of newTodo to {escaped_tag_string}')  # noqa: Q000
 
     # Handle deadline using the date converter
     if deadline:
@@ -195,7 +202,7 @@ def add_todo_direct(
     # Handle project/area assignment
     if list_title:
         escaped_list = escape_applescript_string(list_title)
-        script_parts.append(f'set project of newTodo to project "{escaped_list}"')
+        script_parts.append(f'set project of newTodo to project {escaped_list}')  # noqa: Q000
 
     # Get the ID of the created todo
     script_parts.append("return id of newTodo")
@@ -210,7 +217,7 @@ def add_todo_direct(
     logger.debug(f"Executing simplified AppleScript: {script}")
 
     result = run_applescript(script, timeout=8, retries=3)
-    if result and result != "false":
+    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
         logger.info(f"Successfully created todo via AppleScript with ID: {result}")
         return result
     else:
@@ -218,35 +225,38 @@ def add_todo_direct(
         return False
 
 
-def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref: str) -> None:
-    """Standardized handling of 'when' scheduling for todos and projects.
+def is_valid_date_format(date_string: str) -> bool:
+    """Check if a string matches YYYY-MM-DD date format."""
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
-    Args:
-        script_parts: List of AppleScript commands being built
-        when: When value (today, tomorrow, anytime, someday, or YYYY-MM-DD)
-        item_ref: AppleScript reference to the item (e.g., "newTodo" or "theTodo")
-    """
+
+def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref: str) -> None:  # noqa: C901
+    """Handle when/scheduling for todos and projects with consistent approach."""
     if not when:
         return
 
     logger.info(f"Handling scheduling: when='{when}', item_ref='{item_ref}'")
 
-    # Check if when is a YYYY-MM-DD date
-    is_date_format = re.match(r"^\d{4}-\d{2}-\d{2}$", when)
+    # Check if it's a valid date format first
+    is_date_format = is_valid_date_format(when)
 
     if when == "today":
-        script_parts.extend(['    tell (list "Today")', f"        set container of {item_ref} to it", "    end tell"])
+        script_parts.extend(['    tell (list "Today")', f"        set container of {item_ref} to it", "    end tell"])  # noqa: Q000, E501
     elif when == "tomorrow":
-        script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
+        script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")  # noqa: Q000
     elif when == "anytime":
-        script_parts.extend(['    tell (list "Anytime")', f"        set container of {item_ref} to it", "    end tell"])
+        script_parts.extend(['    tell (list "Anytime")', f"        set container of {item_ref} to it", "    end tell"])  # noqa: Q000, E501
     elif when == "someday":
-        script_parts.extend(['    tell (list "Someday")', f"        set container of {item_ref} to it", "    end tell"])
+        script_parts.extend(['    tell (list "Someday")', f"        set container of {item_ref} to it", "    end tell"])  # noqa: Q000, E501
     elif is_date_format:
         # Parse the date and calculate days difference
         try:
-            target_date = datetime.datetime.strptime(when, "%Y-%m-%d").date()
-            current_date = datetime.datetime.now().date()
+            target_date = datetime.strptime(when, "%Y-%m-%d").date()
+            current_date = datetime.now().date()
             days_diff = (target_date - current_date).days
             logger.debug(f"Date calculation: target={target_date}, current={current_date}, diff={days_diff} days")
 
@@ -306,10 +316,10 @@ def update_todo_direct(
 
     # Update properties one at a time (simplified)
     if title:
-        script_parts.append(f'    set name of theTodo to "{escape_applescript_string(title)}"')
+        script_parts.append(f'    set name of theTodo to {escape_applescript_string(title)}')  # noqa: Q000
 
     if notes:
-        script_parts.append(f'    set notes of theTodo to "{escape_applescript_string(notes)}"')
+        script_parts.append(f'    set notes of theTodo to {escape_applescript_string(notes)}')  # noqa: Q000
 
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "theTodo")
@@ -324,28 +334,29 @@ def update_todo_direct(
             tags = [tags]
         if tags:
             # Set all tags at once using comma-separated string
-            tag_string = ", ".join([escape_applescript_string(tag) for tag in tags])
-            script_parts.append(f'    set tag names of theTodo to "{tag_string}"')
+            tag_string = ", ".join(tags)
+            escaped_tag_string = escape_applescript_string(tag_string)
+            script_parts.append(f'    set tag names of theTodo to {escaped_tag_string}')  # noqa: Q000
 
     # Handle project assignment
     if project:
         escaped_project = escape_applescript_string(project)
-        script_parts.append("    try")
-        script_parts.append(f'        set targetProject to project "{escaped_project}"')
-        script_parts.append("        set project of theTodo to targetProject")
-        script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Project not found - {escaped_project}"')
-        script_parts.append("    end try")
+        script_parts.append("    try")  # noqa: Q000
+        script_parts.append(f'        set targetProject to project {escaped_project}')  # noqa: Q000
+        script_parts.append("        set project of theTodo to targetProject")  # noqa: Q000
+        script_parts.append("    on error")  # noqa: Q000
+        script_parts.append(f'        return "Error: Project not found - {project}"')  # noqa: Q000
+        script_parts.append("    end try")  # noqa: Q000
 
     # Handle area assignment
     if area_title:
         escaped_area = escape_applescript_string(area_title)
-        script_parts.append("    try")
-        script_parts.append(f'        set targetArea to first area whose name is "{escaped_area}"')
-        script_parts.append("        set area of theTodo to targetArea")
-        script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found - {escaped_area}"')
-        script_parts.append("    end try")
+        script_parts.append("    try")  # noqa: Q000
+        script_parts.append(f'        set targetArea to first area whose name is {escaped_area}')  # noqa: Q000
+        script_parts.append("        set area of theTodo to targetArea")  # noqa: Q000
+        script_parts.append("    on error")  # noqa: Q000
+        script_parts.append(f'        return "Error: Area not found - {area_title}"')  # noqa: Q000
+        script_parts.append("    end try")  # noqa: Q000
 
     # Handle completion status
     if completed is not None:
@@ -408,22 +419,22 @@ def add_project_direct(
     script_parts = ['tell application "Things3"']
 
     # Build properties for the project
-    properties = [f'name:"{escape_applescript_string(title)}"']
+    properties = [f'name:{escape_applescript_string(title)}']  # noqa: Q000
     if notes:
-        properties.append(f'notes:"{escape_applescript_string(notes)}"')
+        properties.append(f'notes:{escape_applescript_string(notes)}')  # noqa: Q000
 
     # Create the project
-    script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")
+    script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")  # noqa: Q000, E501
 
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "newProject")
 
     # Add tags if provided
     if tags and len(tags) > 0:
-        # Add each tag individually
-        for tag in tags:
-            escaped_tag = escape_applescript_string(tag)
-            script_parts.append(f'add tag "{escaped_tag}" to newProject')
+        # Tags should be set as a comma-separated string according to Things documentation
+        tag_string = ", ".join(tags)
+        escaped_tag_string = escape_applescript_string(tag_string)
+        script_parts.append(f'set tag names of newProject to {escaped_tag_string}')  # noqa: Q000
 
     # Handle deadline
     if deadline:
@@ -431,19 +442,19 @@ def add_project_direct(
 
     # Add to a specific area if specified
     if area_title:
-        script_parts.append(f'set area_name to "{escape_applescript_string(area_title)}"')
-        script_parts.append("try")
-        script_parts.append("  set target_area to first area whose name is area_name")
-        script_parts.append("  set area of newProject to target_area")
-        script_parts.append("on error")
-        script_parts.append("  -- Area not found, project will remain unassigned")
-        script_parts.append("end try")
+        script_parts.append(f'set area_name to {escape_applescript_string(area_title)}')  # noqa: Q000
+        script_parts.append("try")  # noqa: Q000
+        script_parts.append("  set target_area to first area whose name is area_name")  # noqa: Q000
+        script_parts.append("  set area of newProject to target_area")  # noqa: Q000
+        script_parts.append("on error")  # noqa: Q000
+        script_parts.append("  -- Area not found, project will remain unassigned")  # noqa: Q000
+        script_parts.append("end try")  # noqa: Q000
 
     # Add initial todos if provided
     if todos and len(todos) > 0:
         for todo in todos:
             todo_title = escape_applescript_string(todo)
-            script_parts.append(f'tell newProject to make new to do with properties {{name:"{todo_title}"}}')
+            script_parts.append(f'tell newProject to make new to do with properties {{name:{todo_title}}}')  # noqa: Q000, E501
 
     # Get the ID of the created project
     script_parts.append("return id of newProject")
@@ -456,7 +467,7 @@ def add_project_direct(
     logger.debug(f"Executing AppleScript: {script}")
 
     result = run_applescript(script, timeout=8, retries=3)
-    if result and result != "false":
+    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
         logger.info(f"Successfully created project via AppleScript with ID: {result}")
         return result
     else:
@@ -547,23 +558,25 @@ def update_project_direct(
     # Handle area changes
     if area_title:
         escaped_area = escape_applescript_string(area_title)
-        script_parts.append("    try")
-        script_parts.append(f'        set targetArea to first area whose name is "{escaped_area}"')
-        script_parts.append("        set area of theProject to targetArea")
-        script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found - {escaped_area}"')
-        script_parts.append("    end try")
+        script_parts.append("    try")  # noqa: Q000
+        script_parts.append(f'        set targetArea to first area whose name is {escaped_area}')  # noqa: Q000
+        script_parts.append("        set area of theProject to targetArea")  # noqa: Q000
+        script_parts.append("    on error")  # noqa: Q000
+        script_parts.append(f'        return "Error: Area not found - {area_title}"')  # noqa: Q000
+        script_parts.append("    end try")  # noqa: Q000
 
     # Handle other property updates
     if title:
-        script_parts.append(f'    set name of theProject to "{escape_applescript_string(title)}"')
+        script_parts.append(f'    set name of theProject to {escape_applescript_string(title)}')  # noqa: Q000
     if notes:
-        script_parts.append(f'    set notes of theProject to "{escape_applescript_string(notes)}"')
+        script_parts.append(f'    set notes of theProject to {escape_applescript_string(notes)}')  # noqa: Q000
     if tags is not None:
         if tags:
-            script_parts.append(f'    set tag names of theProject to "{", ".join(escape_applescript_string(tag) for tag in tags)}"')
+            tag_string = ", ".join(tags)
+            escaped_tag_string = escape_applescript_string(tag_string)
+            script_parts.append(f'    set tag names of theProject to {escaped_tag_string}')  # noqa: Q000
         else:
-            script_parts.append('    set tag names of theProject to ""')
+            script_parts.append('    set tag names of theProject to ""')  # noqa: Q000
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "theProject")
     if completed is not None:

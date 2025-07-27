@@ -431,9 +431,20 @@ def add_task(
         list_title: Title of project/area to add to
     """
     try:
+        # Debug: Log all input parameters
+        logger.debug("MCP add_todo called with parameters:")
+        logger.debug(f"  title: {title!r}")
+        logger.debug(f"  notes: {notes!r}")
+        logger.debug(f"  when: {when!r}")
+        logger.debug(f"  deadline: {deadline!r}")
+        logger.debug(f"  tags: {tags!r} (type: {type(tags)})")
+        logger.debug(f"  list_id: {list_id!r}")
+        logger.debug(f"  list_title: {list_title!r}")
+
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
+        logger.debug(f"  processed tags: {tags!r} (type: {type(tags)})")
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
@@ -452,8 +463,14 @@ def add_task(
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
 
+        # Check if the returned value is actually an error message rather than a valid task ID
         if not task_id:
             return "Error: Failed to create todo using AppleScript"
+
+        # Check if the returned value is actually an error message rather than a valid task ID
+        if isinstance(task_id, str) and ("script error" in task_id or task_id.startswith("/var/folders/")):
+            logger.error("AppleScript returned error instead of task ID: %s", task_id)
+            return f"⚠️ AppleScript error: {task_id}"
 
         return f"✅ Successfully created todo: {title} (ID: {task_id})"
 
