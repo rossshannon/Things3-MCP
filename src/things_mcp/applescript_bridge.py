@@ -114,8 +114,8 @@ def escape_applescript_string(text: str) -> str:  # noqa: C901, Q000, W291
     # Replace any "+" with spaces (URL decoding)
     text = text.replace("+", " ")
 
-    # Handle newlines and other whitespace that can break AppleScript syntax
-    text = text.replace('\n', ' ')  # Replace newlines with spaces
+    # Handle carriage returns and tabs that can break AppleScript syntax
+    # Preserve newlines as they're valid in AppleScript strings
     text = text.replace('\r', ' ')  # Replace carriage returns with spaces
     text = text.replace('\t', ' ')  # Replace tabs with spaces
 
