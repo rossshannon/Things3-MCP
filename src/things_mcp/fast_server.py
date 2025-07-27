@@ -19,8 +19,6 @@ from .applescript_bridge import (
 )
 
 # Import caching
-from .cache import get_cache_stats, invalidate_caches_for
-
 # Import supporting modules
 from .formatters import format_area, format_project, format_tag, format_todo
 
@@ -457,9 +455,6 @@ def add_task(
         if not task_id:
             return "Error: Failed to create todo using AppleScript"
 
-        # Invalidate relevant caches after creating a todo
-        invalidate_caches_for(["get-inbox", "get-today", "get-upcoming", "get-todos"])
-
         return f"✅ Successfully created todo: {title} (ID: {task_id})"
 
     except Exception as e:
@@ -521,9 +516,6 @@ def add_new_project(
 
         if not project_id:
             return "Error: Failed to create project using AppleScript"
-
-        # Invalidate relevant caches after creating a project
-        invalidate_caches_for(["get-projects", "get-areas"])
 
         return f"✅ Successfully created project: {title} (ID: {project_id})"
 
@@ -600,8 +592,7 @@ def update_task(
             # Handle various success cases
             if "true" in str(success).lower():
                 logger.debug("Success case matched: 'true' in result")
-                # Invalidate relevant caches after updating a todo
-                invalidate_caches_for(["get-todos", "get-projects", "get-areas"])
+
                 return f"✅ Successfully updated todo with ID: {id}"
             elif success.startswith("Error:"):
                 logger.error(f"AppleScript error: {success}")
@@ -698,8 +689,7 @@ def update_existing_project(
             # Handle various success cases
             if "true" in str(success).lower():
                 logger.debug("Success case matched: 'true' in result")
-                # Invalidate relevant caches after updating a project
-                invalidate_caches_for(["get-projects", "get-areas", "get-todos"])
+
                 return f"✅ Successfully updated project with ID: {id}"
             elif success.startswith("Error:"):
                 logger.error(f"AppleScript error: {success}")
@@ -821,19 +811,6 @@ def get_recent(period: str) -> str:
     except Exception as e:
         logger.error(f"Error getting recent items: {str(e)}")
         return f"Error getting recent items: {str(e)}"
-
-
-@mcp.tool(name="get_cache_stats")
-def get_cache_statistics() -> str:
-    """Get cache performance statistics"""
-    stats = get_cache_stats()
-
-    return f"""Cache Statistics:
-- Total entries: {stats["entries"]}
-- Cache hits: {stats["hits"]}
-- Cache misses: {stats["misses"]}
-- Hit rate: {stats["hit_rate"]}
-- Total requests: {stats["total_requests"]}"""
 
 
 # Main entry point
