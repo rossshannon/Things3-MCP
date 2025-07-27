@@ -9,7 +9,6 @@ import logging
 import logging.handlers
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = Path.home() / ".things-mcp" / "logs"

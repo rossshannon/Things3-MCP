@@ -419,7 +419,6 @@ def add_project_direct(
     script_parts = ['tell application "Things3"']
 
     # Handle area assignment BEFORE creating the project
-    area_ref = None
     if area_title:
         script_parts.append(f'set area_name to {escape_applescript_string(area_title)}')  # noqa: Q000
         script_parts.append("try")  # noqa: Q000
