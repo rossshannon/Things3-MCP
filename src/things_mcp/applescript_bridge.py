@@ -258,15 +258,19 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
     is_date_format = is_valid_date_format(when)
 
     if when == "today":
-        script_parts.append(f"    schedule {item_ref} for (current date)")
+        # Move to Today list
+        script_parts.append(f"    move {item_ref} to list \"Today\"")
     elif when == "tomorrow":
+        # Schedule for tomorrow
         script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
     elif when == "anytime":
-        script_parts.extend(['    tell (list "Anytime")', f"        set container of {item_ref} to it", "    end tell"])
+        # Move to Anytime list
+        script_parts.append(f"    move {item_ref} to list \"Anytime\"")
     elif when == "someday":
-        script_parts.extend(['    tell (list "Someday")', f"        set container of {item_ref} to it", "    end tell"])
+        # Move to Someday list
+        script_parts.append(f"    move {item_ref} to list \"Someday\"")
     elif is_date_format:
-        # Parse the date and calculate days difference
+        # Schedule for specific date
         try:
             target_date = datetime.strptime(when, "%Y-%m-%d").date()
             current_date = datetime.now().date()
@@ -282,6 +286,47 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
             logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
     else:
         logger.warning(f"Unsupported when value: {when}")
+
+
+def _handle_project_when_scheduling(script_parts: list[str], when: str | None, project_ref: str) -> None:
+    """Handle when/scheduling specifically for projects."""
+    if not when:
+        return
+
+    logger.info(f"Handling project scheduling: when='{when}', project_ref='{project_ref}'")
+
+    # Check if it's a valid date format first
+    is_date_format = is_valid_date_format(when)
+
+    if when == "today":
+        # Move project to Today list
+        move_project_to_list(script_parts, "Today", project_ref)
+    elif when == "tomorrow":
+        # Schedule project for tomorrow
+        script_parts.append(f"    schedule {project_ref} for (current date) + 1 * days")
+    elif when == "anytime":
+        # Move project to Anytime list
+        move_project_to_list(script_parts, "Anytime", project_ref)
+    elif when == "someday":
+        # Move project to Someday list
+        move_project_to_list(script_parts, "Someday", project_ref)
+    elif is_date_format:
+        # Schedule project for specific date
+        try:
+            target_date = datetime.strptime(when, "%Y-%m-%d").date()
+            current_date = datetime.now().date()
+            days_diff = (target_date - current_date).days
+            logger.debug(f"Project date calculation: target={target_date}, current={current_date}, diff={days_diff} days")
+
+            if days_diff <= 0:
+                script_parts.append(f"    schedule {project_ref} for (current date)")
+            else:
+                script_parts.append(f"    schedule {project_ref} for (current date) + {days_diff} * days")
+        except ValueError as e:
+            logger.error(f"Project date parsing error: {e}")
+            logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
+    else:
+        logger.warning(f"Unsupported when value for project: {when}")
 
 
 def update_todo(
@@ -470,8 +515,8 @@ def add_project(
         # Create the project without area
         script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")
 
-    # Handle scheduling using the standardized helper
-    _handle_when_scheduling(script_parts, when, "newProject")
+    # Handle scheduling using the project-specific helper
+    _handle_project_when_scheduling(script_parts, when, "newProject")
 
     # Add tags if provided
     if tags and len(tags) > 0:
@@ -592,7 +637,7 @@ def update_project(
             logger.error(error_msg)
             return f"Error: {error_msg}"
     elif when:
-        _handle_when_scheduling(script_parts, when, "theProject")
+        _handle_project_when_scheduling(script_parts, when, "theProject")
 
     # Handle area changes
     if area_title:

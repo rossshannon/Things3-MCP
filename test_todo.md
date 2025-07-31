@@ -39,15 +39,16 @@
 - [x] Test moving tasks between different types of lists
 - [x] Test deadline parameter in `add_todo()`
 - [x] Test deadline parameter in `update_todo()`
-- [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- [x] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - [x] Test tag operations (adding/removing multiple tags)
 - [x] Test task completion
-- [ ] Test moving tasks between different types of lists
+- [x] Test moving tasks between projects
+- [x] Test moving tasks between areas
 
 ## Project Operations
 - [x] Test deadline parameter in `add_project()`
 - [x] Test deadline parameter in `update_project()`
-- [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- [x] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - [x] Test tag operations (adding/removing multiple tags)
 - [x] Test project completion
 - [x] Test moving projects between areas

@@ -50,17 +50,19 @@ pytest tests/test_applescript_bridge.py -v
 
 - ✅ **Basic Creation**: Title, notes, verification
 - ✅ **Tag Assignment**: Multiple tags, verification
-- ✅ **Scheduling**: Today, tomorrow, custom dates
+- ✅ **Scheduling**: Today, tomorrow, anytime, someday, custom dates (YYYY-MM-DD)
 - ✅ **Special Characters**: Emojis, Unicode, quotes
 - ✅ **Title/Notes Updates**: Content modification
 - ✅ **Tag Updates**: Replacing existing tags
 - ✅ **Completion Status**: Marking as done
+- ✅ **Moving Between Lists**: Today ↔ Anytime ↔ Someday
 
 ### Project Operations (`TestProjectOperations`)
 
 - ✅ **Basic Creation**: Title, notes, verification
 - ✅ **Complex Creation**: Tags + initial todos
 - ✅ **Area Assignment**: Organizing projects
+- ✅ **Scheduling**: Today, tomorrow, anytime, someday, custom dates (YYYY-MM-DD)
 - ✅ **Title/Notes Updates**: Content modification
 - ✅ **Tag Updates**: Replacing existing tags
 - ✅ **Completion Status**: Marking as done

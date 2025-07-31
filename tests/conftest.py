@@ -243,6 +243,7 @@ def delete_test_areas():
 
 def delete_test_todos():
     """Delete all test todos with the MCP namespace from all lists."""
+    # First try the AppleScript approach
     script = f"""
     tell application "Things3"
         try
@@ -324,14 +325,34 @@ def delete_test_todos():
     end tell
     """
     result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test todos")
+
+    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
+    if not result or "error" in result.lower() or "0" in result:
+        try:
+            import things
+
+            all_todos = things.todos()
+            test_todos = [t for t in all_todos if t.get("title", "").startswith(TEST_NAMESPACE)]
+
+            if test_todos:
+                print(f"⚠️  AppleScript cleanup found 0 todos, but Python found {len(test_todos)}. Using Python cleanup...")
+                for todo in test_todos:
+                    try:
+                        delete_todo_by_id(todo["uuid"])
+                    except Exception as e:
+                        print(f"⚠️  Failed to delete todo {todo.get('title', 'unknown')}: {e}")
+                print(f"✅ Python cleanup completed for {len(test_todos)} todos")
+            else:
+                print("✅ No test todos found via Python")
+        except Exception as e:
+            print(f"⚠️  Python cleanup failed: {e}")
     else:
-        print(f"⚠️  Todo cleanup result: {result}")
+        print("✅ Successfully cleaned up test todos via AppleScript")
 
 
 def delete_test_projects():
     """Delete all test projects with the MCP namespace."""
+    # First try the AppleScript approach
     script = f"""
     tell application "Things3"
         try
@@ -366,17 +387,36 @@ def delete_test_projects():
                 end try
             end repeat
 
-            return "success"
+            return "Successfully cleaned up " & (count of projectList) & " test projects"
         on error errMsg
             return "Error: " & errMsg
         end try
     end tell
     """
     result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test projects")
+
+    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
+    if not result or "error" in result.lower() or "0" in result:
+        try:
+            import things
+
+            all_projects = things.projects()
+            test_projects = [p for p in all_projects if p.get("title", "").startswith(TEST_NAMESPACE)]
+
+            if test_projects:
+                print(f"⚠️  AppleScript cleanup found 0 projects, but Python found {len(test_projects)}. Using Python cleanup...")
+                for project in test_projects:
+                    try:
+                        delete_project_by_id(project["uuid"])
+                    except Exception as e:
+                        print(f"⚠️  Failed to delete project {project.get('title', 'unknown')}: {e}")
+                print(f"✅ Python cleanup completed for {len(test_projects)} projects")
+            else:
+                print("✅ No test projects found via Python")
+        except Exception as e:
+            print(f"⚠️  Python cleanup failed: {e}")
     else:
-        print(f"⚠️  Project cleanup result: {result}")
+        print("✅ Successfully cleaned up test projects via AppleScript")
 
 
 class CleanupTracker:
