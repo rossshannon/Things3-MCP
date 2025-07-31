@@ -4,6 +4,7 @@ Tests various todo operations including creation, updates, tag management,
 and moving between areas/projects. Parallel to test_project_operations.py
 which handles project-specific tests.
 """
+
 import os
 import random
 import string
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
 import things  # noqa: E402
+
 from things_mcp.applescript_bridge import (  # noqa: E402
     add_project_direct,
     add_todo_direct,

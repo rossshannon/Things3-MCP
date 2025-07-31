@@ -1,6 +1,7 @@
 """Integration tests for Things MCP.
 Tests complex workflows and interactions between different operations.
 """
+
 import os
 import sys
 
@@ -8,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import things  # noqa: E402
+
 from things_mcp.applescript_bridge import (  # noqa: E402
     add_project_direct,
     add_todo_direct,
