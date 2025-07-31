@@ -153,6 +153,7 @@ Restart the Claude Desktop app to apply the changes.
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` or `list_id` (optional) - Title or ID of project/area to add to
+- Note that Things’ checklist feature (subtasks) is not supported in AppleScript.
 
 ### update_todo
 - `id` - ID of the todo to update

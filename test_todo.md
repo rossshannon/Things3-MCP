@@ -34,58 +34,46 @@
 - [x] Test multiple tag filtering
 - [x] Test searching by emoji
 
-## Project Operations
-- [ ] Test deadline parameter in `add_project()`
-- [ ] Test deadline parameter in `update_project()`
-- [ ] Test complex tag operations (adding/removing multiple tags)
-- [ ] Test project completion with subtasks
-- [ ] Test project scheduling with specific dates
-
 ## Task Operations
-- [ ] Test deadline parameter in `add_todo()`
-- [ ] Test deadline parameter in `update_todo()`
-- [ ] Test complex scheduling scenarios (specific dates)
-- [ ] Test task completion with checklist items
-- [ ] Test task relationships (dependencies)
+- [x] Test task completion states
+- [x] Test moving tasks between different types of lists
+- [x] Test deadline parameter in `add_todo()`
+- [x] Test deadline parameter in `update_todo()`
+- [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- [x] Test tag operations (adding/removing multiple tags)
+- [ ] Test task completion
 - [ ] Test moving tasks between different types of lists
-- [ ] Test task completion states
-- [ ] Test task priority levels
+
+## Project Operations
+- [x] Test deadline parameter in `add_project()`
+- [x] Test deadline parameter in `update_project()`
+- [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- [x] Test tag operations (adding/removing multiple tags)
+- [ ] Test project completion
+- [x] Test moving projects between areas
 
 ## AppleScript Bridge Functionality
-- [ ] Test rate limiting functionality
-- [ ] Test circuit breaker functionality
-- [ ] Test cache invalidation scenarios
-- [ ] Test complex error recovery scenarios
-- [ ] Test date conversion edge cases
-- [ ] Test AppleScript timeout handling
-- [ ] Test AppleScript error message parsing
-- [ ] Test special character handling in AppleScript strings
+- [x] Test AppleScript error message parsing
+- [x] Test special character handling in AppleScript strings
 
 ## Edge Cases and Error Handling
 - [ ] Test invalid date formats
-- [ ] Test invalid list names
-- [ ] Test nonexistent projects/areas
-- [ ] Test concurrent operations limits
-- [ ] Test network timeout scenarios
-- [ ] Test Things app not running scenarios
-- [ ] Test recovery from Things app crashes
-- [ ] Test large data set handling
-
-## Performance and Reliability
-- [ ] Test concurrent operation handling
-- [ ] Test long-running operation stability
+- [x] Test invalid list names
+- [x] Test nonexistent projects/areas
+- [x] Test concurrent operations limits
+- [x] Test Things app not running scenarios
+- [x] Test large data set handling
 
 ## Documentation and Maintenance
-- [ ] Document test setup requirements
-- [ ] Document test cleanup procedures
-- [ ] Document known limitations
-- [ ] Document performance characteristics
-- [ ] Create test data generators
-- [ ] Create test helper functions
-- [ ] Document test coverage metrics
-- [ ] Create test run automation scripts
+- [x] Document test setup requirements
+- [x] Document known limitations
+- [x] Create test data generators
+- [x] Create test helper functions
+- [x] Document test coverage metrics
+- [x] Create test run automation scripts
+- [x] Create test run automation scripts
 
 ## Data Integrity Verification
-- [ ] Verify no unintended tag creation
-- [ ] Verify no unintended project/area creation
-- [ ] Verify no modification of existing items
+- [x] Verify no unintended tag creation
+- [x] Verify no unintended project/area creation
+- [x] Verify no modification of existing items
