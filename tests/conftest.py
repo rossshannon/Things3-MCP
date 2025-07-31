@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Shared test fixtures and utilities for Things MCP tests.
+"""Shared test fixtures and utilities for Things MCP tests.
 """
 import os
 import sys
@@ -18,7 +17,7 @@ from things_mcp.applescript_bridge import (  # noqa: E402
 TEST_NAMESPACE = "mcp-test"
 
 
-@pytest.fixture
+@pytest.fixture()
 def test_namespace():
     """Fixture to provide the test namespace to all tests."""
     return TEST_NAMESPACE
@@ -199,13 +198,12 @@ def verify_cleanup():
     end tell
     """
     result = run_applescript(script)
-    if result == "success":
-        print("✅ Verified: All test items cleaned up")
-        return True
-    else:
+    if result != "success":
         print("⚠️  Cleanup verification failed:")
         print(result)
         return False
+    print("✅ Verified: All test items cleaned up")
+    return True
 
 
 def delete_test_areas():
@@ -383,46 +381,46 @@ def delete_test_projects():
 class CleanupTracker:
     """Enhanced helper class to track and clean up test items, tags, and areas"""
 
-    def __init__(self):
+    def __init__(self: "CleanupTracker") -> None:
         self.test_todos: list[str] = []
         self.test_projects: list[str] = []
         self.test_areas: list[str] = []
         self.test_tags_created: list[str] = []
 
-    def add_todo(self, todo_id: str):
+    def add_todo(self: "CleanupTracker", todo_id: str) -> None:
         """Track a todo for cleanup"""
         if todo_id:
             self.test_todos.append(todo_id)
 
-    def add_project(self, project_id: str):
+    def add_project(self: "CleanupTracker", project_id: str) -> None:
         """Track a project for cleanup"""
         if project_id:
             self.test_projects.append(project_id)
 
-    def add_area(self, area_id: str):
+    def add_area(self: "CleanupTracker", area_id: str) -> None:
         """Track an area for cleanup"""
         if area_id:
             self.test_areas.append(area_id)
 
-    def add_tag(self, tag_name: str):
+    def add_tag(self: "CleanupTracker", tag_name: str) -> None:
         """Track a tag for cleanup"""
         if tag_name:
             self.test_tags_created.append(tag_name)
 
-    def cleanup(self):
+    def cleanup(self: "CleanupTracker") -> None:
         """Clean up all test items, tags, and areas"""
         # Clean up todos first
         for todo_id in self.test_todos:
             try:
                 delete_todo_by_id(todo_id)
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError) as e:
                 print(f"Failed to clean up todo {todo_id}: {e}")
 
         # Then clean up projects
         for project_id in self.test_projects:
             try:
                 delete_project_by_id(project_id)
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError) as e:
                 print(f"Failed to clean up project {project_id}: {e}")
 
         # Clean up all test tags and areas (these are cleaned up globally)
@@ -434,7 +432,7 @@ class CleanupTracker:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
+def _setup_test_environment():
     """Set up test environment and clean up after all tests."""
     # Ensure Things is ready
     assert ensure_things_ready(), "Things app is not ready for testing"
@@ -456,7 +454,7 @@ def setup_test_environment():
     verify_cleanup()  # Verify final cleanup
 
 
-@pytest.fixture
+@pytest.fixture()
 def cleanup_tracker():
     """Fixture to provide cleanup tracking"""
     tracker = CleanupTracker()

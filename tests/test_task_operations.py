@@ -1,5 +1,4 @@
-"""
-Test suite for Things task (todo) operations.
+"""Test suite for Things task (todo) operations.
 
 Tests various todo operations including creation, updates, tag management,
 and moving between areas/projects. Parallel to test_project_operations.py
@@ -34,18 +33,18 @@ from .conftest import (  # noqa: E402
 )
 
 
-def generate_random_string(length: int = 10) -> str:  # noqa: S311
+def generate_random_string(length: int = 10) -> str:
     """Generate a random string for testing."""
     return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 @pytest.fixture(scope="session", autouse=True)
-def check_things_ready():
+def _check_things_ready():
     """Ensure Things is ready before running any tests."""
     assert ensure_things_ready(), "Things app is not ready for testing"
 
 
-@pytest.fixture
+@pytest.fixture()
 def test_todo(test_namespace) -> Generator[str, None, None]:
     """Create a test todo and clean it up after the test."""
     todo_id = add_todo_direct(title=f"{test_namespace} Test Todo {generate_random_string(5)}")
@@ -55,7 +54,7 @@ def test_todo(test_namespace) -> Generator[str, None, None]:
     delete_todo_by_id(todo_id)
 
 
-@pytest.fixture
+@pytest.fixture()
 def test_project(test_namespace) -> Generator[str, None, None]:
     """Create a test project and clean it up after the test."""
     project_id = add_project_direct(title=f"{test_namespace} Test Project {generate_random_string(5)}")

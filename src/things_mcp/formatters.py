@@ -1,3 +1,9 @@
+"""Formatters for converting Things objects to human-readable strings.
+
+This module provides functions to format todos, projects, areas, and tags
+into consistent, readable string representations for display to users.
+"""
+
 import logging
 
 import things
@@ -42,7 +48,7 @@ def format_todo(todo: dict) -> str:
             project = things.get(todo["project"])
             if project:
                 todo_text += f"\nProject: {project['title']}"
-        except Exception:
+        except Exception:  # nosec B110 - Ignore missing project info, not all todos have projects
             pass
 
     # Add area info if present
@@ -51,7 +57,7 @@ def format_todo(todo: dict) -> str:
             area = things.get(todo["area"])
             if area:
                 todo_text += f"\nArea: {area['title']}"
-        except Exception:
+        except Exception:  # nosec B110 - Ignore missing area info, not all todos have areas
             pass
 
     # Add tags if present
@@ -77,7 +83,7 @@ def format_project(project: dict, include_items: bool = False) -> str:
             area = things.get(project["area"])
             if area:
                 project_text += f"\nArea: {area['title']}"
-        except Exception:
+        except Exception:  # nosec B110 - Ignore missing area info, not all projects have areas
             pass
 
     if project.get("notes"):

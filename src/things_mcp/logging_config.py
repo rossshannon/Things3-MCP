@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Enhanced logging configuration for Things MCP server.
+"""Enhanced logging configuration for Things MCP server.
+
 Provides structured logging with multiple outputs and log levels.
 """
 
@@ -19,6 +19,14 @@ class StructuredFormatter(logging.Formatter):
     """Custom formatter that outputs structured JSON logs for better analysis."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format a log record as a JSON string.
+
+        Args:
+            record: The log record to format.
+
+        Returns:
+            str: The formatted log record as a JSON string.
+        """
         log_data = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
@@ -50,6 +58,7 @@ class OperationLogFilter(logging.Filter):
     """Filter to add operation context to log records."""
 
     def __init__(self):
+        """Initialize the operation log filter."""
         super().__init__()
         self.operation_context = {}
 
@@ -62,6 +71,14 @@ class OperationLogFilter(logging.Filter):
         self.operation_context = {}
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Add operation context to log records.
+
+        Args:
+            record: The log record to filter.
+
+        Returns:
+            bool: Always returns True to allow the record.
+        """
         # Add operation context to the record
         for key, value in self.operation_context.items():
             setattr(record, key, value)
@@ -79,10 +96,10 @@ def setup_logging(
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
 ) -> None:
-    """
-    Configure comprehensive logging for the Things MCP server.
+    """Configure comprehensive logging for the Things MCP server.
 
     Args:
+    ----
         console_level: Log level for console output
         file_level: Log level for file output
         structured_logs: Whether to use structured JSON logging

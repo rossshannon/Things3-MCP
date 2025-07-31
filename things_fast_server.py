@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Main entry point for running the Things MCP server.
+"""Main entry point for running the Things MCP server.
+
 This version uses the modern FastMCP pattern for better maintainability.
 """
 
@@ -21,5 +21,5 @@ if __name__ == "__main__":
         logger.info("Server stopped by user")
         sys.exit(0)
     except Exception as e:
-        logger.error(f"Error running server: {str(e)}")
+        logger.error(f"Error running server: {e!s}")
         sys.exit(1)

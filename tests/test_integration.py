@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""
-Integration tests for Things MCP.
+"""Integration tests for Things MCP.
 Tests complex workflows and interactions between different operations.
 """
 import os
@@ -20,7 +18,6 @@ from things_mcp.applescript_bridge import (  # noqa: E402
 
 def test_integration_workflow(cleanup_tracker, test_namespace):
     """Test a complete workflow: create, update, and verify consistency"""
-
     # Create test tags first
     initial_tags = ["integration", "test"]
     new_project_tags = ["integration", "test", "updated", "boost"]

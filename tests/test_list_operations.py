@@ -1,5 +1,5 @@
-"""
-Test suite for Things list view operations.
+"""Test suite for Things list view operations.
+
 Focuses on verifying API response format and structure without exposing actual data.
 """
 
@@ -31,32 +31,69 @@ from .conftest import (
 
 
 def verify_todo_format(todo_str: str) -> bool:
-    """Verify a todo string has the expected format without checking specific content."""
+    """Verify a todo string has the expected format without checking specific content.
+
+    Args:
+        todo_str: The todo string to verify.
+
+    Returns:
+        bool: True if the format is valid, False otherwise.
+    """
     # Check for required fields
     required_fields = ["Title:", "UUID:"]
     return all(field in todo_str for field in required_fields)
 
 
 def verify_project_format(project_str: str) -> bool:
-    """Verify a project string has the expected format without checking specific content."""
+    """Verify a project string has the expected format without checking specific content.
+
+    Args:
+        project_str: The project string to verify.
+
+    Returns:
+        bool: True if the format is valid, False otherwise.
+    """
     required_fields = ["Title:", "UUID:"]
     return all(field in project_str for field in required_fields)
 
 
 def verify_area_format(area_str: str) -> bool:
-    """Verify an area string has the expected format without checking specific content."""
+    """Verify an area string has the expected format without checking specific content.
+
+    Args:
+        area_str: The area string to verify.
+
+    Returns:
+        bool: True if the format is valid, False otherwise.
+    """
     required_fields = ["Title:", "UUID:"]
     return all(field in area_str for field in required_fields)
 
 
 def verify_tag_format(tag_str: str) -> bool:
-    """Verify a tag string has the expected format without checking specific content."""
+    """Verify a tag string has the expected format without checking specific content.
+
+    Args:
+        tag_str: The tag string to verify.
+
+    Returns:
+        bool: True if the format is valid, False otherwise.
+    """
     required_fields = ["Title:"]
     return all(field in tag_str for field in required_fields)
 
 
 def verify_item_format(item_str: str) -> bool:
-    """Verify any item string has the expected format without checking specific content."""
+    """Verify any item string has the expected format without checking specific content.
+
+    This function checks if the string matches either a todo or project format.
+
+    Args:
+        item_str: The item string to verify.
+
+    Returns:
+        bool: True if the format is valid, False otherwise.
+    """
     return verify_todo_format(item_str) or verify_project_format(item_str)
 
 

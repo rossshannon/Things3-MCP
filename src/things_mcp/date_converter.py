@@ -1,5 +1,4 @@
-"""
-Functions for converting between ISO datetime and AppleScript date formats.
+"""Functions for converting between ISO datetime and AppleScript date formats.
 
 Based on the official Things AppleScript Commands documentation.
 """
@@ -12,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def update_applescript_with_due_date(script_parts: list, deadline: str, item_var: str = "theProject") -> None:
-    """
-    Update an AppleScript command list with the correct due date syntax.
+    """Update an AppleScript command list with the correct due date syntax.
 
     Uses the safe step-by-step date construction method to avoid edge cases:
     set deadlineDate to current date
@@ -26,6 +24,7 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
     set due date of itemVar to deadlineDate
 
     Args:
+    ----
         script_parts: List of AppleScript commands being built
         deadline: Deadline in YYYY-MM-DD format
         item_var: The AppleScript variable name to set the due date on
@@ -64,4 +63,4 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
     except ValueError:
         logger.error(f"Invalid date: {deadline}")
     except Exception as e:
-        logger.error(f"Error setting deadline: {str(e)}")
+        logger.error(f"Error setting deadline: {e!s}")

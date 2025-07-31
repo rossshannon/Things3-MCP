@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Things MCP Server implementation using the FastMCP pattern.
+"""Things MCP Server implementation using the FastMCP pattern.
+
 This provides a more modern and maintainable approach to the Things integration.
 """
 
@@ -17,11 +17,7 @@ from .applescript_bridge import (
     update_project_direct,
     update_todo_direct,
 )
-
-# Import supporting modules
 from .formatters import format_area, format_project, format_tag, format_todo
-
-# Import and configure enhanced logging
 from .logging_config import (
     get_logger,
     log_operation_end,
@@ -70,7 +66,7 @@ mcp = FastMCP("Things", description="Interact with the Things task management ap
 
 @mcp.tool(name="get_inbox")
 def get_inbox() -> str:
-    """Get todos from Inbox"""
+    """Get todos from Inbox."""
     import time
 
     start_time = time.time()
@@ -93,7 +89,7 @@ def get_inbox() -> str:
 
 @mcp.tool(name="get_today")
 def get_today() -> str:
-    """Get todos due today"""
+    """Get todos due today."""
     import time
 
     start_time = time.time()
@@ -158,8 +154,8 @@ def get_today() -> str:
                 formatted_todos = [format_todo(todo) for todo in result]
                 return "\n\n---\n\n".join(formatted_todos)
             except Exception as fallback_error:
-                log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {str(fallback_error)}")
-                return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {str(fallback_error)}"
+                log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {fallback_error!s}")
+                return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {fallback_error!s}"
         else:
             log_operation_end("get-today", False, time.time() - start_time, error=str(e))
             raise
@@ -170,7 +166,7 @@ def get_today() -> str:
 
 @mcp.tool(name="get_upcoming")
 def get_upcoming() -> str:
-    """Get all upcoming todos (those with a start date in the future)"""
+    """Get all upcoming todos (those with a start date in the future)."""
     todos = things.upcoming()
 
     if not todos:
@@ -194,7 +190,7 @@ def get_anytime() -> str:
 
 @mcp.tool(name="get_someday")
 def get_someday() -> str:
-    """Get todos from Someday list"""
+    """Get todos from Someday list."""
     todos = things.someday()
 
     if not todos:
@@ -206,12 +202,12 @@ def get_someday() -> str:
 
 @mcp.tool(name="get_logbook")
 def get_logbook(period: str = "7d", limit: int = 50) -> str:
-    """
-    Get completed todos from Logbook, defaults to last 7 days
+    """Get completed todos from Logbook, defaults to last 7 days.
 
     Args:
-        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'
-        limit: Maximum number of entries to return. Defaults to 50
+    ----
+        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
+        limit: Maximum number of entries to return. Defaults to 50.
     """
     todos = things.last(period, status="completed")
 
@@ -227,7 +223,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
 @mcp.tool(name="get_trash")
 def get_trash() -> str:
-    """Get trashed todos"""
+    """Get trashed todos."""
     todos = things.trash()
 
     if not todos:
@@ -239,11 +235,11 @@ def get_trash() -> str:
 
 @mcp.tool(name="get_todos")
 def get_todos(project_uuid: str | None = None) -> str:
-    """
-    Get todos from Things, optionally filtered by project
+    """Get todos from Things, optionally filtered by project.
 
     Args:
-        project_uuid: Optional UUID of a specific project to get todos from
+    ----
+        project_uuid: Optional UUID of a specific project to get todos from.
     """
     if project_uuid:
         project = things.get(project_uuid)
@@ -261,11 +257,11 @@ def get_todos(project_uuid: str | None = None) -> str:
 
 @mcp.tool(name="get_projects")
 def get_projects(include_items: bool = False) -> str:
-    """
-    Get all projects from Things
+    """Get all projects from Things.
 
     Args:
-        include_items: Include tasks within projects
+    ----
+        include_items: Include tasks within projects.
     """
     projects = things.projects()
 
@@ -278,10 +274,10 @@ def get_projects(include_items: bool = False) -> str:
 
 @mcp.tool(name="get_areas")
 def get_areas(include_items: bool = False) -> str:
-    """
-    Get all areas from Things. Use these names when assigning a task or project to an area.
+    """Get all areas from Things. Use these names when assigning a task or project to an area.
 
     Args:
+    ----
         include_items: Include projects and tasks within areas
     """
     areas = things.areas()
@@ -298,10 +294,10 @@ def get_areas(include_items: bool = False) -> str:
 
 @mcp.tool(name="get_tags")
 def get_tags(include_items: bool = False) -> str:
-    """
-    Get all tags
+    """Get all tags.
 
     Args:
+    ----
         include_items: Include items tagged with each tag
     """
     tags = things.tags()
@@ -315,10 +311,10 @@ def get_tags(include_items: bool = False) -> str:
 
 @mcp.tool(name="get_tagged_items")
 def get_tagged_items(tag: str) -> str:
-    """
-    Get items with a specific tag
+    """Get items with a specific tag.
 
     Args:
+    ----
         tag: Tag title to filter by
     """
     todos = things.todos(tag=tag)
@@ -335,10 +331,10 @@ def get_tagged_items(tag: str) -> str:
 
 @mcp.tool(name="search_todos")
 def search_todos(query: str) -> str:
-    """
-    Search todos by title or notes
+    """Search todos by title or notes.
 
     Args:
+    ----
         query: Search term to look for in todo titles and notes
     """
     todos = things.search(query)
@@ -359,10 +355,10 @@ def search_advanced(
     area: str | None = None,
     type: str | None = None,
 ) -> str:
-    """
-    Advanced todo search with multiple filters
+    """Advanced todo search with multiple filters.
 
     Args:
+    ----
         status: Filter by todo status (incomplete/completed/canceled)
         start_date: Filter by start date (YYYY-MM-DD)
         deadline: Filter by deadline (YYYY-MM-DD)
@@ -397,7 +393,7 @@ def search_advanced(
         formatted_todos = [format_todo(todo) for todo in todos]
         return "\n\n---\n\n".join(formatted_todos)
     except Exception as e:
-        return f"Error in advanced search: {str(e)}"
+        return f"Error in advanced search: {e!s}"
 
 
 # MODIFICATION OPERATIONS
@@ -416,6 +412,7 @@ def add_task(
     """Create a new todo in Things.
 
     Args:
+    ----
         title: Title of the todo
         notes: Notes for the todo
         when: When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
@@ -471,11 +468,11 @@ def add_task(
         return f"✅ Successfully created todo: {title} (ID: {task_id})"
 
     except Exception as e:
-        logger.error(f"Error creating todo: {str(e)}")
+        logger.error(f"Error creating todo: {e!s}")
         import traceback
 
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return f"⚠️ Error creating todo: {str(e)}"
+        return f"⚠️ Error creating todo: {e!s}"
 
 
 @mcp.tool(name="add_project")
@@ -489,10 +486,10 @@ def add_new_project(
     area_title: str | None = None,
     todos: list[str] | str | None = None,
 ) -> str:
-    """
-    Create a new project in Things
+    """Create a new project in Things.
 
     Args:
+    ----
         title: Title of the project
         notes: Notes for the project
         when: When to schedule the project
@@ -533,11 +530,11 @@ def add_new_project(
         return f"✅ Successfully created project: {title} (ID: {project_id})"
 
     except Exception as e:
-        logger.error(f"Error creating project: {str(e)}")
+        logger.error(f"Error creating project: {e!s}")
         import traceback
 
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return f"⚠️ Error creating project: {str(e)}"
+        return f"⚠️ Error creating project: {e!s}"
 
 
 @mcp.tool(name="update_todo")
@@ -553,20 +550,20 @@ def update_task(
     project: str | None = None,
     area_title: str | None = None,
 ) -> str:
-    """
-    Update an existing todo in Things
+    """Update an existing todo in Things.
 
     Args:
-        id: ID of the todo to update
-        title: New title
-        notes: New notes
-        when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
-        deadline: New deadline (YYYY-MM-DD)
+    ----
+        id: ID of the todo to update.
+        title: New title.
+        notes: New notes.
+        when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD).
+        deadline: New deadline (YYYY-MM-DD).
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
-        completed: Mark as completed
-        canceled: Mark as canceled
-        project: Project name to move the todo to
-        area_title: Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas)
+        completed: Mark as completed.
+        canceled: Mark as canceled.
+        project: Project name to move the todo to.
+        area_title: Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas).
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
@@ -620,9 +617,9 @@ def update_task(
             return f"⚠️ AppleScript bridge error: {bridge_error}"
 
     except Exception as e:
-        logger.error(f"Error updating todo: {str(e)}")
+        logger.error(f"Error updating todo: {e!s}")
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return f"⚠️ Error updating todo: {str(e)}"
+        return f"⚠️ Error updating todo: {e!s}"
 
 
 @mcp.tool(name="update_project")
@@ -638,10 +635,10 @@ def update_existing_project(
     list_name: str | None = None,
     area_title: str | None = None,
 ) -> str:
-    """
-    Update an existing project in Things
+    """Update an existing project in Things.
 
     Args:
+    ----
         id: ID of the project to update
         title: New title
         notes: New notes
@@ -717,17 +714,17 @@ def update_existing_project(
             return f"⚠️ AppleScript bridge error: {bridge_error}"
 
     except Exception as e:
-        logger.error(f"Error updating project: {str(e)}")
+        logger.error(f"Error updating project: {e!s}")
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        return f"⚠️ Error updating project: {str(e)}"
+        return f"⚠️ Error updating project: {e!s}"
 
 
 @mcp.tool(name="show_item")
 def show_item(id: str, query: str | None = None, filter_tags: list[str] | None = None) -> str:
-    """
-    Show a specific item or list in Things
+    """Show a specific item or list in Things.
 
     Args:
+    ----
         id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
         query: Optional query to filter by
         filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an
@@ -766,18 +763,18 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
                 else:
                     return f"No item found with ID: {id}"
             except Exception as e:
-                return f"Error retrieving item '{id}': {str(e)}"
+                return f"Error retrieving item '{id}': {e!s}"
     except Exception as e:
-        logger.error(f"Error showing item: {str(e)}")
-        return f"Error showing item: {str(e)}"
+        logger.error(f"Error showing item: {e!s}")
+        return f"Error showing item: {e!s}"
 
 
 @mcp.tool(name="search_items")
 def search_all_items(query: str) -> str:
-    """
-    Search for items in Things
+    """Search for items in Things.
 
     Args:
+    ----
         query: Search query
     """
     try:
@@ -790,16 +787,16 @@ def search_all_items(query: str) -> str:
         formatted_todos = [format_todo(todo) for todo in todos]
         return "\n\n---\n\n".join(formatted_todos)
     except Exception as e:
-        logger.error(f"Error searching: {str(e)}")
-        return f"Error searching: {str(e)}"
+        logger.error(f"Error searching: {e!s}")
+        return f"Error searching: {e!s}"
 
 
 @mcp.tool(name="get_recent")
 def get_recent(period: str) -> str:
-    """
-    Get recently created items
+    """Get recently created items.
 
     Args:
+    ----
         period: Time period (e.g., '3d', '1w', '2m', '1y')
     """
     try:
@@ -822,13 +819,13 @@ def get_recent(period: str) -> str:
 
         return "\n\n---\n\n".join(formatted_items)
     except Exception as e:
-        logger.error(f"Error getting recent items: {str(e)}")
-        return f"Error getting recent items: {str(e)}"
+        logger.error(f"Error getting recent items: {e!s}")
+        return f"Error getting recent items: {e!s}"
 
 
 # Main entry point
 def run_things_mcp_server():
-    """Run the Things MCP server"""
+    """Run the Things MCP server."""
     # Check if Things app is available
     if ensure_things_ready():
         logger.info("Things app is running and ready for operations")

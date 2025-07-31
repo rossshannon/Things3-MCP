@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-things3-enhanced-mcp = "src.things_mcp.fast_server:run_things_mcp_server"
+things3-enhanced-mcp = "things_mcp.fast_server:run_things_mcp_server"
 
 [project.urls]
 "Homepage" = "https://github.com/rossshannon/things-fastmcp"
@@ -101,17 +101,18 @@ extend-include = ["*.pyi"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-    "N",  # pep8-naming
-    "S",  # flake8-bandit
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "S",   # flake8-bandit
     "T20", # flake8-print
-    "Q",  # flake8-quotes
+    "Q",   # flake8-quotes
+    "D",   # pydocstyle
 ]
 ignore = [
     "S101", # assert used - fine in tests
@@ -122,8 +123,34 @@ ignore = [
     "S607", # partial executable path - osascript is system tool
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"  # Use Google style
+ignore-decorators = ["pytest.fixture"]  # Don't require docstrings for pytest fixtures
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "T201", "S311"]  # Allow asserts, prints, and random for tests
+"tests/*" = [
+    "S101",  # Allow asserts in tests
+    "T201",  # Allow prints in tests
+    "S311",  # Allow random in tests
+    "ANN001",  # Allow missing argument type annotations in tests
+    "ANN201",  # Allow missing return type annotations in tests
+    "ANN202",  # Allow missing return type annotations for private functions in tests
+    "ANN204",  # Allow missing return type annotations for special methods in tests
+    "D100",  # Allow missing module docstrings in tests
+    "D101",  # Allow missing class docstrings in tests
+    "D102",  # Allow missing method docstrings in tests
+    "D103",  # Allow missing function docstrings in tests
+    "D104",  # Allow missing package docstrings in tests
+    "D107",  # Allow missing __init__ docstrings in tests
+    "D200",  # Allow one-line docstrings in tests
+    "D205",  # Allow missing blank line between summary and description in tests
+    "D400",  # Allow first line without period in tests
+    "D401",  # Allow non-imperative mood in docstrings in tests
+    "D415",  # Allow first line without period in tests
+    "PLR2004",  # Allow magic numbers in tests
+    "PTH118",  # Allow os.path.join in tests
+    "PTH120",  # Allow os.path.dirname in tests
+]
 "src/things_mcp/applescript_bridge.py" = ["Q000", "Q001", "Q002", "Q003", "W291", "E501"]  # AppleScript has different quote/string requirements
 
 [tool.ruff.format]
@@ -160,6 +187,8 @@ disable_error_code = [
 exclude = [
     "things\\.py$",  # Exclude external things.py (not our code)
 ]
+explicit_package_bases = true  # Use explicit package bases to avoid import conflicts
+ignore_missing_imports = true  # Ignore missing stubs for external libraries
 
 # Coverage Configuration
 [tool.coverage.run]
@@ -179,7 +208,16 @@ exclude_lines = [
 # Bandit Security Configuration
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
-skips = ["B101"]  # Skip assert_used test
+skips = [
+    "B101",  # Skip assert_used test
+    "B404",  # Skip subprocess import check for AppleScript
+    "B603",  # Skip subprocess shell check for AppleScript
+    "B607",  # Skip subprocess path check for AppleScript
+]
+per_file_ignores = [
+    "src/things_mcp/applescript_bridge.py:B404,B603,B607",  # Required for AppleScript
+    "src/things_mcp/formatters.py:B110",  # Ignore missing project/area info
+]
 
 [dependency-groups]
 dev = [
