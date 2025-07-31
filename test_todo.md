@@ -49,7 +49,7 @@
 - [x] Test deadline parameter in `update_project()`
 - [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - [x] Test tag operations (adding/removing multiple tags)
-- [ ] Test project completion
+- [x] Test project completion
 - [x] Test moving projects between areas
 
 ## AppleScript Bridge Functionality
@@ -57,7 +57,7 @@
 - [x] Test special character handling in AppleScript strings
 
 ## Edge Cases and Error Handling
-- [ ] Test invalid date formats
+- [x] Test invalid date formats
 - [x] Test invalid list names
 - [x] Test nonexistent projects/areas
 - [x] Test concurrent operations limits

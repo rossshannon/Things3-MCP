@@ -211,18 +211,3 @@ def test_invalid_completion_operations(test_namespace):
     fake_project_id = "fake-project-id-12345"
     result = update_project(id=fake_project_id, completed=True)
     assert "error" in str(result).lower(), "Completing non-existent project should return error"
-
-
-def cleanup_leftover_test_items():
-    """Clean up any leftover test items after completion tests."""
-    from tests.conftest import delete_test_projects, delete_test_todos
-
-    print("🧹 Cleaning up leftover test items...")
-    delete_test_todos()
-    delete_test_projects()
-    print("✅ Cleanup complete")
-
-
-# Run cleanup after all tests
-if __name__ == "__main__":
-    cleanup_leftover_test_items()
