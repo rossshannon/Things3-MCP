@@ -2,11 +2,11 @@
 
 ![Things3 MCP Logo](docs/images/Things3-MCP-logo.png)
 
-# Things MCP Server
+# Things 3 MCP Server
 
 </div>
 
-This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things 3](https://culturedcode.com/things). You can ask Claude or your MCP client of choiceto create tasks, analyze projects, help manage priorities, and more.
+This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things 3](https://culturedcode.com/things). You can ask Claude or your MCP client of choice to create tasks, analyze projects, help manage priorities, and more.
 
 This MCP server leverages a combination of the [Things.py](https://github.com/thingsapi/things.py) library and [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/), enabling reading and writing to Things 3.
 
@@ -21,51 +21,19 @@ This MCP server unlocks the power of AI for your task management:
 
 ## Features
 
-- Access to all major Things lists (Inbox, Today, Upcoming, etc.)
-- Project and area management
+- Access to all major Things lists (Inbox, Today, Upcoming, Logbook, Someday, etc.)
+- Project and Area management and assignment
 - Tag operations
 - Advanced search capabilities
 - Recent items tracking
-- Detailed item information including checklists
 - Support for nested data (projects within areas, todos within projects)
 
-## Installation Options
-
-There are multiple ways to install and use the Things MCP server:
-
-### Option 1: Install from PyPI (Recommended)
+## Installation
 
 #### Prerequisites
 * Python 3.12+
 * Claude Desktop
 * Things 3 for MacOS
-
-#### Installation
-
-```bash
-pip install things-mcp
-```
-
-Or using uv (recommended):
-
-```bash
-uv pip install things-mcp
-```
-
-#### Running
-
-After installation, you can run the server directly:
-
-```bash
-things-mcp
-```
-
-### Option 2: Manual Installation
-
-#### Prerequisites
-* Python 3.12+
-* Claude Desktop
-* Things 3
 
 #### Step 1: Install uv
 Install uv if you haven't already:
@@ -114,13 +82,13 @@ Restart the Claude Desktop app to apply the changes.
 
 ### Sample Usage with Claude Desktop
 * “What's on my todo list today?”
-* “Create a todo to pack for my beach vacation next week, include a packing checklist.”
-* “Evaluate my current todos using the Eisenhower matrix.”
+* “Create a todo to pack for my beach vacation next week”
+* “Evaluate my todos scheduled for today using the Eisenhower matrix.”
 * “Help me conduct a GTD-style weekly review using Things.”
 
 #### Tips
-* Create a project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (e.g., asking it to include relevant details in the task description might be helpful).
-* Try adding another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create todos from upcoming calendar events (e.g., prep for a meeting), etc.
+* Create a Project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (e.g., asking it to include relevant details in the task description might be helpful).
+* Try adding another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create tasks that relate to upcoming calendar events (e.g., prep for a meeting), etc.
 
 
 ### Available Tools
@@ -162,7 +130,6 @@ Restart the Claude Desktop app to apply the changes.
 
 ### get_todos
 - `project_uuid` (optional) - Filter todos by project
-- `include_items` (optional, default: true) - Include checklist items
 
 ### get_projects / get_areas / get_tags
 - `include_items` (optional, default: false) - Include contained items
@@ -196,6 +163,8 @@ Restart the Claude Desktop app to apply the changes.
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
+- `project` (optional) - Name of project to move the todo to (must exactly match an existing project title — look them up with get_projects)
+- `area_title` (optional) - Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas)
 
 ### add_project
 - `title` - Title of the project
@@ -203,7 +172,7 @@ Restart the Claude Desktop app to apply the changes.
 - `when` (optional) - When to schedule the project
 - `deadline` (optional) - Deadline for the project
 - `tags` (optional) - Tags to apply to the project
-- `area_title` or `area_id` (optional) - Title or ID of area to add to
+- `area_title` or `area_id` (optional) - Title or ID of area to add to (must exactly match an existing area title — look them up with get_areas)
 - `todos` (optional) - Initial todos to create in the project
 
 ### update_project
@@ -255,11 +224,8 @@ uv pip install -e ".[dev]"  # Install in development mode with extra dependencie
 Use the MCP development server to test changes:
 
 ```bash
-# Test the FastMCP implementation
+# Test the implementation
 mcp dev things_fast_server.py
-
-# Or test the traditional implementation
-mcp dev things_server.py
 ```
 
 #### Building the package for PyPI
@@ -274,19 +240,6 @@ python -m build
 twine upload dist/*
 ```
 
-Requires Python 3.12+.
-
-## Reliability Features
-
-### Monitoring & Debugging
-- **Structured Logging**: JSON-formatted logs for better analysis
-- **Operation Tracking**: Each operation is logged with timing and status
-- **Comprehensive Error Handling**: Graceful handling of Things database access errors
-- **Log Locations**:
-  - Main logs: `~/.things-mcp/logs/things_mcp.log`
-  - Structured logs: `~/.things-mcp/logs/things_mcp_structured.json`
-  - Error logs: `~/.things-mcp/logs/things_mcp_errors.log`
-
 ## Troubleshooting
 
 The server includes error handling for:
@@ -295,7 +248,6 @@ The server includes error handling for:
 - Things database access errors
 - Data formatting errors
 - Authentication token issues
-- Network timeouts
 - AppleScript execution failures
 
 ### Common Issues

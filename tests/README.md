@@ -2,17 +2,17 @@
 
 This test suite validates the core AppleScript bridge functions for the Things MCP integration:
 
-- `add_todo_direct` (add_task)
-- `update_todo_direct` (update_task)
-- `add_project_direct` (add_new_project)
-- `update_project_direct` (update_existing_project)
+- `add_todo` (add_task)
+- `update_todo` (update_task)
+- `add_project` (add_new_project)
+- `update_project` (update_existing_project)
 
 ## Prerequisites
 
 - **Things 3** must be installed and running
 - **Python 3.8+**
-- **pytest** (automatically installed if missing)
-- **things.py library** (automatically installed if missing)
+- **pytest**
+- **things.py library**
 
 ## Running Tests
 

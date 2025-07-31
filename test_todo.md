@@ -1,19 +1,20 @@
 # Things FastMCP Test Suite Todo List
 
+- [ ] Allow tasks and projects to be created directly in an existing Area.
+
 ## Critical Requirement
 > **⚠️ IMPORTANT**: The test suite MUST be fully self-contained with no dependency on existing Projects, Areas or Tags, and MUST NOT have any side-effects on existing data.
 
 ## Core Requirements
-- [ ] Ensure test suite is fully self-contained
-  - [ ] Create all required test data within tests
-  - [ ] No dependencies on existing Projects
-  - [ ] No dependencies on existing Areas
-  - [ ] No dependencies on existing Tags
-- [ ] Prevent side-effects on existing data
-  - [ ] Verify no modifications to existing items
-  - [ ] Clean up all test data after tests
-  - [ ] Handle test failures without leaving artifacts
-  - [ ] Implement proper rollback mechanisms
+- [x] Ensure test suite is fully self-contained
+  - [x] Create all required test data within tests
+  - [x] No dependencies on existing Projects
+  - [x] No dependencies on existing Areas
+  - [x] No dependencies on existing Tags
+- [x] Prevent side-effects on existing data
+  - [x] Verify no modifications to existing items
+  - [x] Clean up all test data after tests
+  - [x] Handle test failures without leaving artifacts
 
 ## List View Operations
 - [x] Test `get_inbox()`
@@ -34,18 +35,15 @@
 - [x] Test searching by emoji
 
 ## Project Operations
-- [ ] Test deadline parameter in `add_project_direct()`
-- [ ] Test deadline parameter in `update_project_direct()`
+- [ ] Test deadline parameter in `add_project()`
+- [ ] Test deadline parameter in `update_project()`
 - [ ] Test complex tag operations (adding/removing multiple tags)
 - [ ] Test project completion with subtasks
-- [ ] Test project cancellation scenarios
 - [ ] Test project scheduling with specific dates
-- [ ] Test project completion states
-- [ ] Test project dependencies
 
 ## Task Operations
-- [ ] Test deadline parameter in `add_todo_direct()`
-- [ ] Test deadline parameter in `update_todo_direct()`
+- [ ] Test deadline parameter in `add_todo()`
+- [ ] Test deadline parameter in `update_todo()`
 - [ ] Test complex scheduling scenarios (specific dates)
 - [ ] Test task completion with checklist items
 - [ ] Test task relationships (dependencies)

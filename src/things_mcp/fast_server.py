@@ -11,11 +11,11 @@ import things
 from mcp.server.fastmcp import FastMCP
 
 from .applescript_bridge import (
-    add_project_direct,
-    add_todo_direct,
+    add_project,
+    add_todo,
     ensure_things_ready,
-    update_project_direct,
-    update_todo_direct,
+    update_project,
+    update_todo,
 )
 from .formatters import format_area, format_project, format_tag, format_todo
 from .logging_config import (
@@ -449,9 +449,8 @@ def add_task(
         # Use the direct AppleScript approach which is more reliable
         logger.info(f"Creating todo using AppleScript: {title}")
 
-        # Simple direct call to test
         try:
-            task_id = add_todo_direct(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_title=list_title)
+            task_id = add_todo(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_title=list_title)
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
@@ -519,7 +518,7 @@ def add_new_project(
 
         # Call the AppleScript bridge directly
         try:
-            project_id = add_project_direct(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, todos=todos)
+            project_id = add_project(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, todos=todos)
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
@@ -580,12 +579,11 @@ def update_task(
         if isinstance(area_title, str):
             area_title = area_title.replace("+", " ").replace("%20", " ")
 
-        # Use the direct AppleScript approach which is more reliable
         logger.info(f"Updating todo using AppleScript: {id}")
 
         # Call the AppleScript bridge directly
         try:
-            success = update_todo_direct(
+            success = update_todo(
                 id=id,
                 title=title,
                 notes=notes,
@@ -682,7 +680,7 @@ def update_existing_project(
 
         # Call the AppleScript bridge directly
         try:
-            success = update_project_direct(
+            success = update_project(
                 id=id,
                 title=title,
                 notes=notes,

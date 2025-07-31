@@ -150,7 +150,7 @@ def escape_applescript_string(text: str) -> str:
         return f'"{text}"'
 
 
-def add_todo_direct(  # noqa: PLR0913
+def add_todo(  # noqa: PLR0913
     title: str,
     notes: str | None = None,
     when: str | None = None,
@@ -284,7 +284,7 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
         logger.warning(f"Unsupported when value: {when}")
 
 
-def update_todo_direct(
+def update_todo(
     id: str,
     title: str | None = None,
     notes: str | None = None,
@@ -395,7 +395,7 @@ def update_todo_direct(
     return result
 
 
-def add_project_direct(
+def add_project(
     title: str,
     notes: str | None = None,
     when: str | None = None,
@@ -530,7 +530,7 @@ def move_project_to_list(script_parts: list[str], list_name: str, project_ref: s
     return True
 
 
-def update_project_direct(
+def update_project(
     id: str,
     title: str | None = None,
     notes: str | None = None,
