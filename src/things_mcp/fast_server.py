@@ -170,7 +170,7 @@ def get_today() -> str:
 
 @mcp.tool(name="get_upcoming")
 def get_upcoming() -> str:
-    """Get upcoming todos"""
+    """Get all upcoming todos (those with a start date in the future)"""
     todos = things.upcoming()
 
     if not todos:
@@ -182,7 +182,7 @@ def get_upcoming() -> str:
 
 @mcp.tool(name="get_anytime")
 def get_anytime() -> str:
-    """Get todos from Anytime list"""
+    """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
     todos = things.anytime()
 
     if not todos:
@@ -237,9 +237,6 @@ def get_trash() -> str:
     return "\n\n---\n\n".join(formatted_todos)
 
 
-# BASIC TODO OPERATIONS
-
-
 @mcp.tool(name="get_todos")
 def get_todos(project_uuid: str | None = None) -> str:
     """
@@ -282,7 +279,7 @@ def get_projects(include_items: bool = False) -> str:
 @mcp.tool(name="get_areas")
 def get_areas(include_items: bool = False) -> str:
     """
-    Get all areas from Things
+    Get all areas from Things. Use these names when assigning a task or project to an area.
 
     Args:
         include_items: Include projects and tasks within areas
@@ -427,7 +424,7 @@ def add_task(
             strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
             Passing as a string will treat each character as a separate tag.
         list_id: ID of project/area to add to
-        list_title: Title of project/area to add to
+        list_title: Title of project/area to add to (must exactly match an existing area or project title — look them up with get_areas or get_projects)
     """
     try:
         # Debug: Log all input parameters
@@ -504,7 +501,7 @@ def add_new_project(
             strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
             Passing as a string will treat each character as a separate tag.
         area_id: ID of area to add to
-        area_title: Title of area to add to
+        area_title: Title of area to add to (must exactly match an existing area title — look them up with get_areas)
         todos: Initial todos to create in the project
     """
     try:
@@ -569,7 +566,7 @@ def update_task(
         completed: Mark as completed
         canceled: Mark as canceled
         project: Project name to move the todo to
-        area_title: Title of the area to move the todo to
+        area_title: Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas)
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
