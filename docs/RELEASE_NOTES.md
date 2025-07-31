@@ -11,16 +11,16 @@
 - **Task Management**
   - `add-todo` - Create tasks with rich metadata and checklist items
   - `update-todo` - Update existing tasks with comprehensive options
-  
+
 - **Project Management**
   - `add-project` - Create projects with initial todos and metadata
   - `update-project` - Update existing projects with full control
-  
+
 - **Enhanced Search**
   - `search-advanced` - Multi-criteria search with filtering
   - `search-items` - Global search across all Things items
   - `search-todos` - Targeted todo search
-  
+
 - **Navigation & Time-based Features**
   - `show-item` - Open specific items directly in Things
   - `get-recent` - View recently created items

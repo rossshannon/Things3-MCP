@@ -155,6 +155,7 @@ def log_operation_end(operation: str, success: bool, duration: float = None, **k
 
     operation_filter.clear_operation_context()
 
+
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance with the given name."""
     return logging.getLogger(name)

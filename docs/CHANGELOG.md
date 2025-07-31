@@ -42,4 +42,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Attribution
 Based on the original [things-mcp](https://github.com/hald/things-mcp) by Harald Lindstrøm
 
-[1.0.0]: https://github.com/excelsier/things-fastmcp/releases/tag/v1.0.0 
+[1.0.0]: https://github.com/excelsier/things-fastmcp/releases/tag/v1.0.0

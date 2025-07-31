@@ -90,7 +90,7 @@ things-fastmcp/
 ## Next Steps (Optional)
 
 1. **Publish to PyPI**: Update version and publish the enhanced server
-2. **Advanced Features**: 
+2. **Advanced Features**:
    - Batch operations
    - More sophisticated tag management
    - Project templates

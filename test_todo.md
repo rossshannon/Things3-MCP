@@ -74,13 +74,7 @@
 - [ ] Test large data set handling
 
 ## Performance and Reliability
-- [ ] Test cache hit rates
-- [ ] Test operation timing thresholds
-- [ ] Test memory usage patterns
 - [ ] Test concurrent operation handling
-- [ ] Test rate limiting effectiveness
-- [ ] Test circuit breaker triggering
-- [ ] Test recovery after circuit breaker trips
 - [ ] Test long-running operation stability
 
 ## Documentation and Maintenance
@@ -94,9 +88,6 @@
 - [ ] Create test run automation scripts
 
 ## Data Integrity Verification
-- [ ] Create snapshots of Things database before tests
-- [ ] Verify database integrity after tests
-- [ ] Implement rollback mechanisms for failed tests
 - [ ] Verify no unintended tag creation
 - [ ] Verify no unintended project/area creation
 - [ ] Verify no modification of existing items
