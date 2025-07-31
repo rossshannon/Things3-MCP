@@ -3,8 +3,6 @@ Test suite for Things list view operations.
 Focuses on verifying API response format and structure without exposing actual data.
 """
 
-import pytest
-from things_mcp.applescript_bridge import ensure_things_ready
 from things_mcp.fast_server import (
     get_anytime,
     get_areas,
@@ -26,272 +24,10 @@ from things_mcp.fast_server import (
     show_item,
 )
 
-# Test namespace for tags and areas
-TEST_NAMESPACE = "mcp-test"
-
-
-def create_test_tag(tag_name: str) -> bool:
-    """Create a test tag with the MCP namespace."""
-    full_tag_name = f"{TEST_NAMESPACE}-{tag_name}"
-    script = f"""
-    tell application "Things3"
-        try
-            make new tag with properties {{name:"{full_tag_name}"}}
-            return "true"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    from things_mcp.applescript_bridge import run_applescript
-
-    result = run_applescript(script)
-    return result == "true"
-
-
-def delete_test_tags():
-    """Delete all test tags with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set tagList to {{}}
-            repeat with theTag in tags
-                if name of theTag starts with "{TEST_NAMESPACE}-" then
-                    set end of tagList to id of theTag
-                end if
-            end repeat
-
-            repeat with tagId in tagList
-                try
-                    set theTag to first tag whose id is tagId
-                    delete theTag
-                on error
-                    -- Tag might already be deleted, continue
-                end try
-            end repeat
-
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    from things_mcp.applescript_bridge import run_applescript
-
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test tags")
-    else:
-        print(f"⚠️  Tag cleanup result: {result}")
-
-
-def delete_test_areas():
-    """Delete all test areas with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set areaList to {{}}
-            repeat with theArea in areas
-                if name of theArea starts with "{TEST_NAMESPACE}-" then
-                    set end of areaList to id of theArea
-                end if
-            end repeat
-
-            repeat with areaId in areaList
-                try
-                    set theArea to first area whose id is areaId
-                    delete theArea
-                on error
-                    -- Area might already be deleted, continue
-                end try
-            end repeat
-
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    from things_mcp.applescript_bridge import run_applescript
-
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test areas")
-    else:
-        print(f"⚠️  Area cleanup result: {result}")
-
-
-def delete_test_todos():
-    """Delete all test todos with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set todoList to {{}}
-
-                        -- Check inbox specifically (most common location for test todos)
-            repeat with theTodo in to dos of list "Inbox"
-                try
-                    if title of theTodo starts with "{TEST_NAMESPACE}" then
-                        set end of todoList to id of theTodo
-                        log "Found test todo in inbox: " & title of theTodo
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-
-
-            -- Delete collected todos
-            repeat with todoId in todoList
-                try
-                    set theTodo to first to do whose id is todoId
-                    log "Deleting todo: " & title of theTodo
-                    delete theTodo
-                on error
-                    -- Todo might already be deleted, continue
-                    log "Error deleting todo: " & todoId
-                end try
-            end repeat
-
-            return "Successfully cleaned up " & (count of todoList) & " test todos from inbox"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    from things_mcp.applescript_bridge import run_applescript
-
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test todos")
-    else:
-        print(f"⚠️  Todo cleanup result: {result}")
-
-
-def delete_test_projects():
-    """Delete all test projects with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set projectList to {{}}
-
-            -- Check inbox
-            repeat with theProject in projects
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-                        -- Check today
-            repeat with theProject in projects of list "Today"
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-            -- Check anytime
-            repeat with theProject in projects of list "Anytime"
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-            -- Check upcoming
-            repeat with theProject in projects of list "Upcoming"
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-            -- Check someday
-            repeat with theProject in projects of list "Someday"
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-            -- Check logbook
-            repeat with theProject in projects of list "Logbook"
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                    end if
-                on error
-                    -- Skip items that can't be accessed
-                end try
-            end repeat
-
-            -- Delete collected projects
-            repeat with projectId in projectList
-                try
-                    set theProject to first project whose id is projectId
-                    delete theProject
-                on error
-                    -- Project might already be deleted, continue
-                end try
-            end repeat
-
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    from things_mcp.applescript_bridge import run_applescript
-
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test projects")
-    else:
-        print(f"⚠️  Project cleanup result: {result}")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
-    """Set up test environment and clean up after all tests."""
-    # Ensure Things is ready
-    assert ensure_things_ready(), "Things app is not ready for testing"
-
-    # Clean up any existing test data before starting
-    delete_test_tags()
-    delete_test_areas()
-    delete_test_todos()
-    delete_test_projects()
-
-    yield
-
-    # Clean up all test data after all tests complete
-    delete_test_tags()
-    delete_test_areas()
-    delete_test_todos()
-    delete_test_projects()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def check_things_ready():
-    """Ensure Things is ready before running any tests."""
-    assert ensure_things_ready(), "Things app is not ready for testing"
+from .conftest import (
+    create_test_tag,
+    delete_test_tags,
+)
 
 
 def verify_todo_format(todo_str: str) -> bool:
@@ -322,9 +58,6 @@ def verify_tag_format(tag_str: str) -> bool:
 def verify_item_format(item_str: str) -> bool:
     """Verify any item string has the expected format without checking specific content."""
     return verify_todo_format(item_str) or verify_project_format(item_str)
-
-
-# === EXISTING TESTS ===
 
 
 def test_get_inbox():
@@ -505,7 +238,7 @@ def test_search_todos():
             assert verify_todo_format(todo), f"Todo format is incorrect: {todo}"
 
 
-def test_search_advanced():
+def test_search_advanced(test_namespace):
     """Test search_advanced() returns data in expected format."""
     # Create a test tag first
     test_tag_name = "search-test"
@@ -513,7 +246,7 @@ def test_search_advanced():
         try:
             result = search_advanced(
                 status="incomplete",
-                tag=f"{TEST_NAMESPACE}-{test_tag_name}",
+                tag=f"{test_namespace}-{test_tag_name}",
             )
             assert isinstance(result, str), "Should return a string"
 
@@ -633,7 +366,7 @@ def test_search_advanced_with_emoji():
                 assert verify_item_format(item), f"Item format is incorrect for emoji tag {emoji}: {item}"
 
 
-# === NEW MCP INTEGRATION TESTS ===
+# === MCP INTEGRATION TESTS ===
 
 
 def test_mcp_search_items_basic():

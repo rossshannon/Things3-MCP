@@ -170,12 +170,7 @@ cython_debug/
 .LSOverride
 
 # Test files and temporary development files
-test_*.py
 test_*.sh
-minimal_test.py
-quick_test.py
-run_simple_server.py
-set_token_directly.py
 
 # MCP development
 *.log
