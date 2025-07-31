@@ -73,7 +73,7 @@ def get_inbox() -> str:
     log_operation_start("get-inbox")
 
     try:
-        todos = things.inbox()
+        todos = things.inbox(include_items=True)
 
         if not todos:
             log_operation_end("get-inbox", True, time.time() - start_time, count=0)
@@ -96,7 +96,7 @@ def get_today() -> str:
     log_operation_start("get-today")
 
     try:
-        todos = things.today()
+        todos = things.today(include_items=True)
 
         if not todos:
             log_operation_end("get-today", True, time.time() - start_time, count=0)
@@ -122,13 +122,14 @@ def get_today() -> str:
                     start="Anytime",
                     index="todayIndex",
                     status="incomplete",
+                    include_items=True,
                 )
 
                 # 2. unconfirmed_scheduled_tasks: start_date="past", start="Someday", index="todayIndex"
-                unconfirmed_scheduled_tasks = things.tasks(start_date="past", start="Someday", index="todayIndex", status="incomplete")
+                unconfirmed_scheduled_tasks = things.tasks(start_date="past", start="Someday", index="todayIndex", status="incomplete", include_items=True)
 
                 # 3. unconfirmed_overdue_tasks: start_date=False, deadline="past", deadline_suppressed=False
-                unconfirmed_overdue_tasks = things.tasks(start_date=False, deadline="past", deadline_suppressed=False, status="incomplete")
+                unconfirmed_overdue_tasks = things.tasks(start_date=False, deadline="past", deadline_suppressed=False, status="incomplete", include_items=True)
 
                 # Combine all three categories like the original
                 result = [
@@ -167,7 +168,7 @@ def get_today() -> str:
 @mcp.tool(name="get_upcoming")
 def get_upcoming() -> str:
     """Get all upcoming todos (those with a start date in the future)."""
-    todos = things.upcoming()
+    todos = things.upcoming(include_items=True)
 
     if not todos:
         return "No upcoming items"
@@ -179,7 +180,7 @@ def get_upcoming() -> str:
 @mcp.tool(name="get_anytime")
 def get_anytime() -> str:
     """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
-    todos = things.anytime()
+    todos = things.anytime(include_items=True)
 
     if not todos:
         return "No items in Anytime list"
@@ -191,7 +192,7 @@ def get_anytime() -> str:
 @mcp.tool(name="get_someday")
 def get_someday() -> str:
     """Get todos from Someday list."""
-    todos = things.someday()
+    todos = things.someday(include_items=True)
 
     if not todos:
         return "No items in Someday list"
@@ -209,7 +210,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
         limit: Maximum number of entries to return. Defaults to 50.
     """
-    todos = things.last(period, status="completed")
+    todos = things.last(period, status="completed", include_items=True)
 
     if not todos:
         return "No completed items found"
@@ -224,7 +225,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 @mcp.tool(name="get_trash")
 def get_trash() -> str:
     """Get trashed todos."""
-    todos = things.trash()
+    todos = things.trash(include_items=True)
 
     if not todos:
         return "No items in trash"
@@ -246,7 +247,7 @@ def get_todos(project_uuid: str | None = None) -> str:
         if not project or project.get("type") != "project":
             return f"Error: Invalid project UUID '{project_uuid}'"
 
-    todos = things.todos(project=project_uuid, start=None)
+    todos = things.todos(project=project_uuid, start=None, include_items=True)
 
     if not todos:
         return "No todos found"
@@ -317,7 +318,7 @@ def get_tagged_items(tag: str) -> str:
     ----
         tag: Tag title to filter by
     """
-    todos = things.todos(tag=tag)
+    todos = things.todos(tag=tag, include_items=True)
 
     if not todos:
         return f"No items found with tag '{tag}'"
@@ -337,7 +338,7 @@ def search_todos(query: str) -> str:
     ----
         query: Search term to look for in todo titles and notes
     """
-    todos = things.search(query)
+    todos = things.search(query, include_items=True)
 
     if not todos:
         return f"No todos found matching '{query}'"
@@ -367,7 +368,7 @@ def search_advanced(
         type: Filter by item type (to-do/project/heading)
     """
     # Build filter parameters
-    kwargs = {}
+    kwargs = {"include_items": True}
 
     # Add filters that are provided
     if status:
@@ -777,7 +778,7 @@ def search_all_items(query: str) -> str:
     """
     try:
         # Use the Python things library for search (same as search_todos)
-        todos = things.search(query)
+        todos = things.search(query, include_items=True)
 
         if not todos:
             return f"No items found matching '{query}'"
@@ -803,7 +804,7 @@ def get_recent(period: str) -> str:
             return "Error: Period must be in format '3d', '1w', '2m', '1y'"
 
         # Get recent items
-        items = things.last(period)
+        items = things.last(period, include_items=True)
 
         if not items:
             return f"No items found in the last {period}"

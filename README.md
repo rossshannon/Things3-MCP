@@ -14,19 +14,20 @@ This MCP server leverages a combination of the [Things.py](https://github.com/th
 
 This MCP server unlocks the power of AI for your task management:
 
-- **Natural Language Task Creation**: Ask Claude to create tasks with all details in natural language
-- **Smart Task Analysis**: Get insights into your projects and productivity patterns
-- **GTD & Productivity Workflows**: Let Claude help you implement productivity systems
+- **Natural Language Task Creation**: Ask Claude to create richly-detailed tasks and descriptions in natural language
+- **Smart Task Analysis**: Let Claude explore your project lists and focus areas and provide insights into your work
+- **GTD & Productivity Workflows**: Let Claude help you implement productivity and prioritisation systems
 - **Seamless Integration**: Works directly with your existing Things 3 data
 
 ## Features
 
 - Access to all major Things lists (Inbox, Today, Upcoming, Logbook, Someday, etc.)
 - Project and Area management and assignment
-- Tag operations
+- Tagging operations for tasks and projects
 - Advanced search capabilities
 - Recent items tracking
 - Support for nested data (projects within areas, todos within projects)
+- Checklist/Subtask support - Read and display existing checklist items from todos
 
 ## Installation
 
@@ -78,17 +79,17 @@ Add the Things server to the mcpServers key in the configuration file (be sure t
 ```
 
 ### Step 5: Restart Claude Desktop
-Restart the Claude Desktop app to apply the changes.
+Restart the Claude Desktop app to enable the integration.
 
 ### Sample Usage with Claude Desktop
-* “What's on my todo list today?”
+* “What’s on my todo list today?”
 * “Create a todo to pack for my beach vacation next week”
 * “Evaluate my todos scheduled for today using the Eisenhower matrix.”
 * “Help me conduct a GTD-style weekly review using Things.”
 
 #### Tips
-* Create a Project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (e.g., asking it to include relevant details in the task description might be helpful).
-* Try adding another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create tasks that relate to upcoming calendar events (e.g., prep for a meeting), etc.
+* Create a Project in Claude with custom instructions that explains how you use Things and organize areas, projects, tags, etc. Tell Claude what information you want included when it creates a new task (e.g., asking it to include relevant details in the task description, whether to use emojis, etc.).
+* Try combining this with another MCP server that gives Claude access to your calendar. This will let you ask Claude to block time on your calendar for specific tasks, create tasks that relate to upcoming calendar events (e.g., prep for a meeting), etc.
 
 
 ### Available Tools
@@ -148,24 +149,24 @@ Restart the Claude Desktop app to apply the changes.
 
 ### add_todo
 - `title` - Title of the todo
-- `notes` (optional) - Notes for the todo
+- `notes` (optional) - Notes for the todo (supports Markdown formatting including checkboxes like `- [ ] Task`)
 - `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` or `list_id` (optional) - Title or ID of project/area to add to
-- Note that Things’ checklist feature (subtasks) is not supported in AppleScript.
+- **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](docs/images/Things3-subtasks-markdown-checklist.png)
 
 ### update_todo
 - `id` - ID of the todo to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - New schedule
-- `deadline` (optional) - New deadline
+- `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
-- `project` (optional) - Name of project to move the todo to (must exactly match an existing project title — look them up with get_projects)
-- `area_title` (optional) - Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas)
+- `project` (optional) - Name of project to move the todo to (must exactly match an existing project title — look them up with `get_projects`)
+- `area_title` (optional) - Title of the area to move the todo to (must exactly match an existing area title — look them up with `get_areas`)
 
 ### add_project
 - `title` - Title of the project
@@ -173,15 +174,15 @@ Restart the Claude Desktop app to apply the changes.
 - `when` (optional) - When to schedule the project
 - `deadline` (optional) - Deadline for the project
 - `tags` (optional) - Tags to apply to the project
-- `area_title` or `area_id` (optional) - Title or ID of area to add to (must exactly match an existing area title — look them up with get_areas)
+- `area_title` or `area_id` (optional) - Title or ID of area to add to (must exactly match an existing area title — look them up with `get_areas`)
 - `todos` (optional) - Initial todos to create in the project
 
 ### update_project
 - `id` - ID of the project to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - New schedule
-- `deadline` (optional) - New deadline
+- `when` (optional) - When to schedule the project (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `deadline` (optional) - Deadline for the project (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
@@ -192,19 +193,11 @@ Restart the Claude Desktop app to apply the changes.
 - `filter_tags` (optional) - Optional tags to filter by
 
 ## Using Tags
-- The MCP server will automatically create missing tags when they are added to a task or project. Configure your LLM to do a lookup of your tags first before making changes if you want to control this.
+Things will automatically create missing tags when they are added to a task or project. Configure your LLM to do a lookup of your tags first before making changes if you want to control this.
 
 ## Development
 
 This project uses `pyproject.toml` to manage dependencies and build configuration. It's built using the [Model Context Protocol](https://modelcontextprotocol.io), which allows Claude to securely access tools and data.
-
-### Implementation Options
-
-This project provides two different implementation approaches:
-
-1. **Standard MCP Server** (`things_server.py`) - The original implementation that uses the basic MCP server pattern.
-
-2. **FastMCP Server** (`things_fast_server.py`) - A modern implementation using the FastMCP pattern for cleaner, more maintainable code with decorator-based tool registration.
 
 ### Development Workflow
 
@@ -222,24 +215,16 @@ uv pip install -e ".[dev]"  # Install in development mode with extra dependencie
 
 #### Testing changes during development
 
-Use the MCP development server to test changes:
+Run the comprehensive test suite to ensure everything is working as expected:
 
 ```bash
 # Test the implementation
-mcp dev things_fast_server.py
+uv run pytest tests/
 ```
 
-#### Building the package for PyPI
+The tests clean up after themselves and don’t affect your existing data, so you can run them as often as you like.
 
-```bash
-python -m build
-```
-
-#### Publishing to PyPI
-
-```bash
-twine upload dist/*
-```
+![Things 3 MCP Test Suite](docs/images/Things3-mcp-test-suite.png)
 
 ## Troubleshooting
 
