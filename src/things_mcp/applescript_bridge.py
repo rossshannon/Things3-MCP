@@ -380,6 +380,13 @@ def update_todo(
         else:
             script_parts.append("    set status of theTodo to open")
 
+    # Handle canceled status
+    if canceled is not None:
+        if canceled:
+            script_parts.append("    set status of theTodo to canceled")
+        else:
+            script_parts.append("    set status of theTodo to open")
+
     # Return true on success
     script_parts.append("    return true")
     script_parts.append("on error errMsg")

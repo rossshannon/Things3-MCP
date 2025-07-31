@@ -41,7 +41,7 @@
 - [x] Test deadline parameter in `update_todo()`
 - [ ] Test scheduling scenarios (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - [x] Test tag operations (adding/removing multiple tags)
-- [ ] Test task completion
+- [x] Test task completion
 - [ ] Test moving tasks between different types of lists
 
 ## Project Operations
