@@ -29,8 +29,7 @@ def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
         logger.info(f"Running script from file: {script_path}")
 
         # Run the AppleScript from the file
-        # nosec B607 B603 - osascript is a trusted system tool, and we're not using shell=True
-        process = subprocess.Popen(["osascript", script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(["osascript", script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # nosec B607 B603
         stdout, stderr = process.communicate(timeout=timeout)
 
         # Clean up the temporary file
