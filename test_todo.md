@@ -79,3 +79,16 @@
 - [x] Verify no unintended tag creation
 - [x] Verify no unintended project/area creation
 - [x] Verify no modification of existing items
+
+📊 Test Coverage Matrix (from the original plan):
+
+| Operation | Container Type | By Name | By ID | Test Status |
+|-----------|----------------|---------|-------|-------------|
+| add_todo | Built-in List | ✅ when | N/A | Tested |
+| add_todo | Project | ✅ list_title | ✅ list_id | Tested |
+| add_todo | Area | ✅ list_title | ✅ list_id | Tested |
+| update_todo | Built-in List | ✅ list_name | N/A | Tested |
+| update_todo | Project | ✅ list_name | ✅ list_id | Tested |
+| update_todo | Area | ✅ list_name | ✅ list_id | Tested |
+| add_project | Area | ✅ area_title | ✅ area_id | Tested |
+| update_project | Area | ✅ area_title | ✅ area_id | Tested |

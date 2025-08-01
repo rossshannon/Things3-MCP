@@ -3,7 +3,7 @@
 
 This module provides a reliable interface for executing AppleScript commands
 to interact with the Things task management application on macOS. It handles
-all the complexities of string escaping, error handling, and retries.
+all the complexities of string escaping and error handling.
 """
 
 import logging
@@ -16,7 +16,7 @@ from .date_converter import update_applescript_with_due_date
 logger = logging.getLogger(__name__)
 
 
-def run_applescript(script: str, timeout: int = 8, retries: int = 3) -> str:
+def run_applescript(script: str, timeout: int = 8) -> str:
     """Run an AppleScript command and return its output."""
     logger.debug(f"Running AppleScript:\n{script}")
 
@@ -82,7 +82,7 @@ def ensure_things_ready() -> bool:
     try:
         # First check if Things is running
         check_script = 'tell application "System Events" to (name of processes) contains "Things3"'
-        result = run_applescript(check_script, timeout=5, retries=2)
+        result = run_applescript(check_script, timeout=5)
 
         if not result or result.lower() != "true":
             logger.warning("Things app is not running")
@@ -90,7 +90,7 @@ def ensure_things_ready() -> bool:
 
         # Then check if Things is responsive
         ping_script = 'tell application "Things3" to return name'
-        result = run_applescript(ping_script, timeout=5, retries=2)
+        result = run_applescript(ping_script, timeout=5)
 
         if not result:
             logger.warning("Things app is not responsive")
@@ -212,10 +212,39 @@ def add_todo(  # noqa: PLR0913
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "newTodo")
 
-    # Handle project/area assignment
+    # Handle project/area assignment by title
     if list_title:
         escaped_list = escape_applescript_string(list_title)
-        script_parts.append(f"set project of newTodo to project {escaped_list}")
+        script_parts.append(f"set list_name to {escaped_list}")
+        script_parts.append("try")
+        script_parts.append("  -- Try to find as project first")
+        script_parts.append("  set target_project to first project whose name is list_name")
+        script_parts.append("  set project of newTodo to target_project")
+        script_parts.append("on error")
+        script_parts.append("  try")
+        script_parts.append("    -- Try to find as area")
+        script_parts.append("    set target_area to first area whose name is list_name")
+        script_parts.append("    set area of newTodo to target_area")
+        script_parts.append("  on error")
+        script_parts.append("    -- Neither project nor area found, will create todo without assignment")
+        script_parts.append("  end try")
+        script_parts.append("end try")
+
+    # Handle project/area assignment by ID
+    if list_id:
+        script_parts.append("try")
+        script_parts.append("  -- Try to find as project by ID")
+        script_parts.append(f"  set target_project to first project whose id is \"{list_id}\"")
+        script_parts.append("  set project of newTodo to target_project")
+        script_parts.append("on error")
+        script_parts.append("  try")
+        script_parts.append("    -- Try to find as area by ID")
+        script_parts.append(f"    set target_area to first area whose id is \"{list_id}\"")
+        script_parts.append("    set area of newTodo to target_area")
+        script_parts.append("  on error")
+        script_parts.append("    -- Neither project nor area found with ID, will create todo without assignment")
+        script_parts.append("  end try")
+        script_parts.append("end try")
 
     # Get the ID of the created todo
     script_parts.append("return id of newTodo")
@@ -229,7 +258,7 @@ def add_todo(  # noqa: PLR0913
     script = "\n".join(script_parts)
     logger.debug(f"Executing simplified AppleScript: {script}")
 
-    result = run_applescript(script, timeout=8, retries=3)
+    result = run_applescript(script, timeout=8)
     if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
         logger.info(f"Successfully created todo via AppleScript with ID: {result}")
         return result
@@ -339,8 +368,8 @@ def update_todo(
     add_tags: list[str] | str | None = None,
     completed: bool | None = None,
     canceled: bool | None = None,
-    project: str | None = None,
-    area_title: str | None = None,
+    list_id: str | None = None,
+    list_name: str | None = None,
 ) -> str:
     """Update a todo directly using AppleScript with improved reliability.
 
@@ -357,8 +386,8 @@ def update_todo(
         add_tags: Tags to add to the todo (preserves existing tags)
         completed: Mark as completed
         canceled: Mark as canceled
-        project: Name of project to move the todo into
-        area_title: Title of the area to move the todo to
+        list_id: ID of project/area to move the todo to
+        list_name: Name of built-in list, project, or area to move the todo to
 
     Returns:
     -------
@@ -398,24 +427,43 @@ def update_todo(
             escaped_tag_string = escape_applescript_string(tag_string)
             script_parts.append(f"    set tag names of theTodo to {escaped_tag_string}")
 
-    # Handle project assignment
-    if project:
-        escaped_project = escape_applescript_string(project)
+    # Handle list assignment (built-in lists, projects, or areas)
+    if list_name:
+        escaped_list = escape_applescript_string(list_name)
         script_parts.append("    try")
-        script_parts.append(f"        set targetProject to project {escaped_project}")
-        script_parts.append("        set project of theTodo to targetProject")
+        # First try to find as built-in list
+        script_parts.append(f"        set targetList to list {escaped_list}")
+        script_parts.append("        move theTodo to targetList")
         script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Project not found - {project}"')
+        script_parts.append("        try")
+        # Then try to find as project
+        script_parts.append(f"            set targetProject to first project whose name is {escaped_list}")
+        script_parts.append("            set project of theTodo to targetProject")
+        script_parts.append("        on error")
+        script_parts.append("            try")
+        # Finally try to find as area
+        script_parts.append(f"                set targetArea to first area whose name is {escaped_list}")
+        script_parts.append("                set area of theTodo to targetArea")
+        script_parts.append("            on error")
+        script_parts.append(f'                return "Error: List/Project/Area not found - {list_name}"')
+        script_parts.append("            end try")
+        script_parts.append("        end try")
         script_parts.append("    end try")
 
-    # Handle area assignment
-    if area_title:
-        escaped_area = escape_applescript_string(area_title)
+    # Handle list assignment by ID (projects or areas only)
+    if list_id:
         script_parts.append("    try")
-        script_parts.append(f"        set targetArea to first area whose name is {escaped_area}")
-        script_parts.append("        set area of theTodo to targetArea")
+        # Try to find as project by ID
+        script_parts.append(f"        set targetProject to first project whose id is \"{list_id}\"")
+        script_parts.append("        set project of theTodo to targetProject")
         script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found - {area_title}"')
+        script_parts.append("        try")
+        # Try to find as area by ID
+        script_parts.append(f"            set targetArea to first area whose id is \"{list_id}\"")
+        script_parts.append("            set area of theTodo to targetArea")
+        script_parts.append("        on error")
+        script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')
+        script_parts.append("        end try")
         script_parts.append("    end try")
 
     # Handle completion status
@@ -453,6 +501,7 @@ def add_project(
     when: str | None = None,
     tags: list[str] | None = None,
     area_title: str | None = None,
+    area_id: str | None = None,
     deadline: str | None = None,
     todos: list[str] | None = None,
 ) -> str:
@@ -467,6 +516,7 @@ def add_project(
         when: When to schedule the project (today, tomorrow, anytime, someday, or YYYY-MM-DD)
         tags: Tags to apply to the project
         area_title: Name of area to add to
+        area_id: ID of area to add to
         deadline: Deadline for the project (YYYY-MM-DD format)
         todos: Initial todos to create in the project
 
@@ -488,15 +538,27 @@ def add_project(
     script_parts = ['tell application "Things3"']
 
     # Handle area assignment BEFORE creating the project
-    if area_title:
-        script_parts.append(f"set area_name to {escape_applescript_string(area_title)}")
-        script_parts.append("try")
-        script_parts.append("  set target_area to first area whose name is area_name")
-        script_parts.append("  set area_ref to target_area")
-        script_parts.append("on error")
-        script_parts.append("  -- Area not found, will create project without area")
-        script_parts.append("  set area_ref to missing value")
-        script_parts.append("end try")
+    if area_id or area_title:
+        if area_id:
+            # Try to find area by ID first
+            script_parts.append(f'set area_id to "{area_id}"')
+            script_parts.append("try")
+            script_parts.append("  set target_area to first area whose id is area_id")
+            script_parts.append("  set area_ref to target_area")
+            script_parts.append("on error")
+            script_parts.append("  -- Area not found by ID, will create project without area")
+            script_parts.append("  set area_ref to missing value")
+            script_parts.append("end try")
+        else:
+            # Find area by title
+            script_parts.append(f"set area_name to {escape_applescript_string(area_title)}")
+            script_parts.append("try")
+            script_parts.append("  set target_area to first area whose name is area_name")
+            script_parts.append("  set area_ref to target_area")
+            script_parts.append("on error")
+            script_parts.append("  -- Area not found, will create project without area")
+            script_parts.append("  set area_ref to missing value")
+            script_parts.append("end try")
 
     # Build properties for the project
     properties = [f"name:{escape_applescript_string(title)}"]
@@ -504,7 +566,7 @@ def add_project(
         properties.append(f"notes:{escape_applescript_string(notes)}")
 
     # Add area to properties if found
-    if area_title:
+    if area_id or area_title:
         script_parts.append("if area_ref is not missing value then")
         script_parts.append("  set area_property to {area:area_ref}")
         script_parts.append("else")
@@ -545,7 +607,7 @@ def add_project(
     script = "\n".join(script_parts)
     logger.debug(f"Executing AppleScript: {script}")
 
-    result = run_applescript(script, timeout=8, retries=3)
+    result = run_applescript(script, timeout=8)
     if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
         logger.info(f"Successfully created project via AppleScript with ID: {result}")
         return result
@@ -560,7 +622,7 @@ def move_project_to_list(script_parts: list[str], list_name: str, project_ref: s
     Args:
     ----
         script_parts: List of AppleScript commands being built
-        list_name: Name of the built-in list to move to (must be one of: "Today", "Upcoming", "Anytime", "Someday", "Trash")
+        list_name: Name of the built-in list to move to (must be one of: "Today", "Anytime", "Someday", "Trash")
         project_ref: AppleScript reference to the project (e.g., "newProject" or "theProject")
 
     Note:
@@ -572,7 +634,7 @@ def move_project_to_list(script_parts: list[str], list_name: str, project_ref: s
     -------
         bool: True if the list name is valid and the move command was added, False otherwise
     """
-    valid_lists = ["Today", "Upcoming", "Anytime", "Someday", "Trash"]
+    valid_lists = ["Today", "Anytime", "Someday", "Trash"]
     if list_name not in valid_lists:
         logger.warning(f"Invalid list name: {list_name}. Must be one of: {', '.join(valid_lists)}")
         return False
@@ -593,6 +655,7 @@ def update_project(
     canceled: bool | None = None,
     list_name: str | None = None,
     area_title: str | None = None,
+    area_id: str | None = None,
 ) -> str:
     """Update an existing project in Things.
 
@@ -608,13 +671,13 @@ def update_project(
         canceled: Mark as canceled
         list_name: Move project directly to a built-in list. Must be one of:
                   - "Today": Move to Today list
-                  - "Upcoming": Move to Upcoming list
                   - "Anytime": Move to Anytime list
                   - "Someday": Move to Someday list
                   - "Trash": Move to trash
                   Note: Projects cannot be moved to Inbox or Logbook. To move a project
                   to Logbook, mark it as completed instead.
         area_title: Title of the area to move the project to
+        area_id: ID of the area to move the project to
 
     Returns:
     -------
@@ -640,7 +703,15 @@ def update_project(
         _handle_project_when_scheduling(script_parts, when, "theProject")
 
     # Handle area changes
-    if area_title:
+    if area_id:
+        # Use area_id if provided (takes precedence over area_title)
+        script_parts.append("    try")
+        script_parts.append(f'        set targetArea to first area whose id is "{area_id}"')
+        script_parts.append("        set area of theProject to targetArea")
+        script_parts.append("    on error")
+        script_parts.append(f'        return "Error: Area not found with ID - {area_id}"')
+        script_parts.append("    end try")
+    elif area_title:
         escaped_area = escape_applescript_string(area_title)
         script_parts.append("    try")
         script_parts.append(f"        set targetArea to first area whose name is {escaped_area}")

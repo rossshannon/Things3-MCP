@@ -515,7 +515,7 @@ def add_new_project(
 
         # Call the AppleScript bridge directly
         try:
-            project_id = add_project(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, todos=todos)
+            project_id = add_project(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, area_id=area_id, todos=todos)
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
@@ -543,8 +543,8 @@ def update_task(
     tags: list[str] | str | None = None,
     completed: bool | None = None,
     canceled: bool | None = None,
-    project: str | None = None,
-    area_title: str | None = None,
+    list_id: str | None = None,
+    list_name: str | None = None,
 ) -> str:
     """Update an existing todo in Things.
 
@@ -558,8 +558,8 @@ def update_task(
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed.
         canceled: Mark as canceled.
-        project: Project name to move the todo to.
-        area_title: Title of the area to move the todo to (must exactly match an existing area title — look them up with get_areas).
+        list_id: ID of project/area to move the todo to.
+        list_name: Name of built-in list, project, or area to move the todo to. For built-in lists use: "Inbox", "Today", "Anytime", "Someday". For projects/areas, use the exact name.
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues
@@ -571,10 +571,8 @@ def update_task(
             title = title.replace("+", " ").replace("%20", " ")
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
-        if isinstance(project, str):
-            project = project.replace("+", " ").replace("%20", " ")
-        if isinstance(area_title, str):
-            area_title = area_title.replace("+", " ").replace("%20", " ")
+        if isinstance(list_name, str):
+            list_name = list_name.replace("+", " ").replace("%20", " ")
 
         logger.info(f"Updating todo using AppleScript: {id}")
 
@@ -589,8 +587,8 @@ def update_task(
                 tags=tags,
                 completed=completed,
                 canceled=canceled,
-                project=project,
-                area_title=area_title,
+                list_id=list_id,
+                list_name=list_name,
             )
             logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
 
@@ -629,6 +627,7 @@ def update_existing_project(
     canceled: bool | None = None,
     list_name: str | None = None,
     area_title: str | None = None,
+    area_id: str | None = None,
 ) -> str:
     """Update an existing project in Things.
 
@@ -644,13 +643,13 @@ def update_existing_project(
         canceled: Mark as canceled
         list_name: Move project directly to a built-in list. Must be one of:
                   - "Today": Move to Today list
-                  - "Upcoming": Move to Upcoming list
                   - "Anytime": Move to Anytime list
                   - "Someday": Move to Someday list
                   - "Trash": Move to trash
                   Note: Projects cannot be moved to Inbox or Logbook. To move a project
                   to Logbook, mark it as completed instead.
         area_title: Title of the area to move the project to
+        area_id: ID of the area to move the project to
     """
     try:
         # Log all input parameters for debugging
@@ -688,6 +687,7 @@ def update_existing_project(
                 canceled=canceled,
                 list_name=list_name,
                 area_title=area_title,
+                area_id=area_id,
             )
             logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
 

@@ -1,0 +1,129 @@
+# Idempotent Test Guidelines for Things3-MCP
+
+**IMPORTANT: Follow these rules whenever modifying any files in the `tests/*` directory.**
+
+## Test Namespace Convention
+
+All test items MUST use the test namespace prefix to ensure proper cleanup:
+- **Namespace**: `mcp-test`
+- **Access via**: The `test_namespace` fixture parameter
+- **Usage**: `f"{test_namespace} Item Name {generate_random_string(5)}"`
+
+## Cleanup Requirements
+
+### 1. Individual Test Cleanup
+Every test MUST clean up its own resources using try/finally blocks:
+
+```python
+def test_example(test_namespace):
+    todo_id = add_todo(title=f"{test_namespace} Test Todo {generate_random_string(5)}")
+    try:
+        # Test logic here
+        pass
+    finally:
+        delete_todo_by_id(todo_id)
+```
+
+### 2. Resource-Specific Cleanup Functions
+- **Todos**: `delete_todo_by_id(todo_id)`
+- **Projects**: `delete_project_by_id(project_id)`
+- **Areas**: Handled by session cleanup (add comment: `# Area cleanup handled by test framework`)
+- **Tags**: Handled by session cleanup
+
+### 3. Session-Level Cleanup
+The `conftest.py` provides automatic cleanup:
+- Runs before all tests to clear existing test data
+- Runs after all tests to ensure complete cleanup
+- Searches for items with `mcp-test` prefix
+
+## Test Item Naming Patterns
+
+### Todos
+```python
+title = f"{test_namespace} Todo Description {generate_random_string(5)}"
+```
+
+### Projects
+```python
+title = f"Test Project {generate_random_string(5)}"  # Can omit namespace for projects
+```
+
+### Areas
+```python
+# Create with temporary name first
+area_id = create_test_area(f"area-{generate_random_string(8)}")
+# Then rename with namespace
+rename_test_area(area_id, f"{test_namespace}-AreaName-{generate_random_string(5)}")
+```
+
+### Tags
+```python
+tag_name = f"{test_namespace}-tag-{generate_random_string(5)}"
+```
+
+## Required Imports
+
+```python
+from .conftest import (
+    create_test_area,
+    create_test_tag,
+    delete_project_by_id,
+    delete_test_tags,
+    delete_todo_by_id,
+    generate_random_string,
+    rename_test_area,
+)
+```
+
+## Best Practices
+
+1. **Always use unique names**: Append `generate_random_string(5)` to prevent conflicts
+2. **Test in isolation**: Each test should create its own test data
+3. **Verify cleanup**: Tests should not depend on data from other tests
+4. **Handle errors gracefully**: Cleanup should execute even if the test fails
+5. **Document special cases**: If cleanup is handled elsewhere, add a comment
+
+## Example Test Structure
+
+```python
+def test_comprehensive_example(test_namespace):
+    """Example showing proper test structure with cleanup."""
+    # Create test area
+    area_id = create_test_area(f"area-{generate_random_string(8)}")
+    rename_test_area(area_id, f"{test_namespace}-TestArea-{generate_random_string(5)}")
+
+    # Create test project
+    project_id = add_project(title=f"Test Project {generate_random_string(5)}")
+
+    # Create test todo
+    todo_id = add_todo(title=f"{test_namespace} Test Todo {generate_random_string(5)}")
+
+    try:
+        # Test logic here
+        assert todo_id is not None
+        assert project_id is not None
+        assert area_id is not None
+    finally:
+        # Clean up in reverse order of creation
+        delete_todo_by_id(todo_id)
+        delete_project_by_id(project_id)
+        # Area cleanup handled by test framework
+```
+
+## Common Pitfalls to Avoid
+
+1. **Don't forget the namespace**: Without it, items won't be cleaned up automatically
+2. **Don't skip try/finally**: Even simple tests need proper cleanup
+3. **Don't hardcode IDs**: Always use returned IDs from creation functions
+4. **Don't assume order**: Tests may run in any order, so don't depend on previous test state
+5. **Don't create items without cleanup**: Every create operation needs a corresponding delete
+
+## Verification
+
+After running tests, verify cleanup by checking:
+- No test todos remain (titles starting with "mcp-test")
+- No test projects remain
+- No test areas remain (names starting with "mcp-test-")
+- No test tags remain (names starting with "mcp-test-")
+
+The session cleanup will report any remaining test items as a warning.

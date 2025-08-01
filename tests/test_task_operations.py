@@ -6,8 +6,6 @@ which handles project-specific tests.
 """
 
 import os
-import random
-import string
 import sys
 import time
 from collections.abc import Generator
@@ -36,13 +34,9 @@ from .conftest import (  # noqa: E402
     delete_project_by_id,
     delete_test_tags,
     delete_todo_by_id,
+    generate_random_string,
     rename_test_area,
 )
-
-
-def generate_random_string(length: int = 10) -> str:
-    """Generate a random string for testing."""
-    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -186,21 +180,21 @@ def test_move_todo_between_areas(test_todo, test_namespace):
     rename_test_area(area3_id, f"{test_namespace}-🏃🏽‍♂️ Fitness")
 
     # Move to first area
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-Family")
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-Family")
     assert result, "Failed to move todo to Family area"
 
     # Move to area with special characters
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-AI & Automation")
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-AI & Automation")
     assert result, "Failed to move todo to AI & Automation area"
 
     # Move to area with emoji
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-🏃🏽‍♂️ Fitness")
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-🏃🏽‍♂️ Fitness")
     assert result, "Failed to move todo to emoji area"
 
 
 def test_move_todo_to_nonexistent_area(test_todo):
     """Test moving a todo to a nonexistent area."""
-    result = update_todo(id=test_todo, area_title="NonexistentArea123")
+    result = update_todo(id=test_todo, list_name="NonexistentArea123")
     assert "area not found" in str(result).lower(), "Should return appropriate error message"
 
 
@@ -214,7 +208,7 @@ def test_area_move_with_other_updates(test_todo, test_namespace):
     for tag in test_tags:
         create_test_tag(tag)
 
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-area1", title=f"Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags])
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-area1", title=f"Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags])
     assert result, "Failed to move todo with other updates"
 
 
@@ -232,7 +226,7 @@ def test_move_todo_between_areas_and_projects(test_todo, test_namespace):
     rename_test_area(area2_id, f"{test_namespace}-AI & Automation")
 
     # First move to an area
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-Family")
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-Family")
     assert result, "Failed to move todo to Family area"
 
     # Create a project and move todo to it (should clear area)
@@ -240,11 +234,11 @@ def test_move_todo_between_areas_and_projects(test_todo, test_namespace):
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
-    result = update_todo(id=test_todo, project=project_title)
+    result = update_todo(id=test_todo, list_name=project_title)
     assert result, "Failed to move todo to project"
 
     # Move back to an area
-    result = update_todo(id=test_todo, area_title=f"{test_namespace}-AI & Automation")
+    result = update_todo(id=test_todo, list_name=f"{test_namespace}-AI & Automation")
     assert result, "Failed to move todo to new area"
 
     # Clean up project
@@ -345,3 +339,27 @@ def test_create_tag_independently(test_namespace):
 
     for expected_tag in expected_tags:
         assert f"Title: {expected_tag}" not in all_tags_after_cleanup, f"Tag '{expected_tag}' should be cleaned up"
+
+
+def test_add_todo_to_area_via_list_title(test_namespace):
+    """Test adding a todo directly to an area using list_title parameter."""
+    # Create test area with unique name
+    unique_area_name = f"area-{generate_random_string(8)}"
+    area_id = create_test_area(unique_area_name)
+    assert area_id, "Failed to create test area"
+
+    # Rename area for testing with unique name
+    unique_area_title = f"{test_namespace}-DIY-{generate_random_string(5)}"
+    rename_test_area(area_id, unique_area_title)
+
+    # Create todo directly in the area using list_title
+    todo_title = f"Test Todo in Area {generate_random_string(5)}"
+    todo_id = add_todo(title=todo_title, list_title=unique_area_title)
+    assert todo_id, "Failed to create todo in area using list_title"
+
+    # Verify the todo was created in the correct area
+    todo = things.get(todo_id)
+    assert todo["area"] == area_id, f"Todo should be in area {area_id}, but is in {todo.get('area')}"
+
+    # Clean up
+    delete_todo_by_id(todo_id)

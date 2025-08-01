@@ -1,6 +1,6 @@
 <div align="center">
 
-![Things3 MCP Logo](docs/images/Things3-MCP-logo.png)
+![Things3 MCP Logo](https://github.com/rossshannon/Things3-MCP/raw/main/docs/images/Things3-MCP-logo.png)
 
 # Things 3 MCP Server
 
@@ -243,7 +243,7 @@ uv run pytest tests/
 
 The tests clean up after themselves and don’t affect your existing data, so you can run them as often as you like.
 
-![Things 3 MCP Test Suite](docs/images/Things3-mcp-test-suite.png)
+![Things 3 MCP Test Suite](https://github.com/rossshannon/Things3-MCP/raw/main/docs/images/Things3-mcp-test-suite.png)
 
 ## Troubleshooting
 

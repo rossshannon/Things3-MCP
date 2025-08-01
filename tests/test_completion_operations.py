@@ -5,8 +5,6 @@ canceled, and verifying completion status.
 """
 
 import os
-import random
-import string
 import sys
 
 # Add the src directory to the path so we can import our modules
@@ -17,6 +15,7 @@ import things  # noqa: E402
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
+    generate_random_string,
 )
 from things_mcp.applescript_bridge import (  # noqa: E402
     add_project,
@@ -24,11 +23,6 @@ from things_mcp.applescript_bridge import (  # noqa: E402
     update_project,
     update_todo,
 )
-
-
-def generate_random_string(length: int = 10) -> str:
-    """Generate a random string of specified length."""
-    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 def get_item_safely(item_id: str, expected_status: str = None) -> dict:

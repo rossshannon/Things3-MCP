@@ -2,6 +2,8 @@
 """Shared test fixtures and utilities for Things MCP tests."""
 
 import os
+import random
+import string
 import sys
 
 # Add the src directory to the path so we can import our modules
@@ -16,6 +18,18 @@ from things_mcp.applescript_bridge import (  # noqa: E402
 
 # Test namespace for tags and areas - centralized here for all tests
 TEST_NAMESPACE = "mcp-test"
+
+
+def generate_random_string(length: int = 10) -> str:
+    """Generate a random string for testing.
+
+    Args:
+        length: The length of the random string to generate.
+
+    Returns:
+        A random string containing letters and digits.
+    """
+    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 @pytest.fixture()

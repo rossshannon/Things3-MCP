@@ -5,8 +5,6 @@ today, tomorrow, anytime, someday, and specific date scheduling.
 """
 
 import os
-import random
-import string
 import sys
 from datetime import datetime, timedelta
 
@@ -18,6 +16,7 @@ import things  # noqa: E402
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
+    generate_random_string,
 )
 from things_mcp.applescript_bridge import (  # noqa: E402
     add_project,
@@ -25,11 +24,6 @@ from things_mcp.applescript_bridge import (  # noqa: E402
     update_project,
     update_todo,
 )
-
-
-def generate_random_string(length: int = 10) -> str:
-    """Generate a random string of specified length."""
-    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 def verify_todo_in_list(todo_id: str, expected_list: str) -> bool:
