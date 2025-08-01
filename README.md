@@ -279,4 +279,4 @@ tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
 
 ## Acknowledgements
 
-This MCP server was originally based on the Applescript bridge method from [things-mcp](https://github.com/excelsier/things-mcp) by [excelsier](https://github.com/excelsier/), which was in turn based on [things-mcp](https://github.com/hald/things-mcp) by [hald](https://github.com/hald/).
+This MCP server was originally based on the Applescript bridge method from [things-mcp](https://github.com/excelsier/things-fastmcp) by [excelsier](https://github.com/excelsier/), which was in turn based on [things-mcp](https://github.com/hald/things-mcp) by [hald](https://github.com/hald/).

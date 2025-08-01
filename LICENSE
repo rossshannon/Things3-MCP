@@ -1,6 +1,9 @@
 MIT License
 
-Copyright (c) 2024 Yaroslav Krempovych
+Copyright (c) 2025 Ross Shannon
+
+Based on "things-enhanced-mcp" project by Yaroslav Krempovych
+Original repository: https://github.com/excelsier/things-fastmcp
 
 Based on the original "things-mcp" project by Harald Lindstrøm
 Original repository: https://github.com/hald/things-mcp

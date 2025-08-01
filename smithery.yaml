@@ -1,26 +1,29 @@
-name: things3-enhanced-mcp
-version: 1.0.0
-description: "Enhanced FastMCP server for Things 3 app integration with Claude Desktop and Windsurf - featuring reliability improvements, caching, and AppleScript bridge"
+name: Things3-MCP-server
+version: 2.0.1
+description: "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 
 # Smithery configuration
 registry:
-  displayName: "Things 3 Enhanced MCP"
-  shortDescription: "Advanced Things 3 integration with enterprise reliability features"
+  displayName: "Things3 MCP Server"
+  shortDescription: "Comprehensive Things 3 integration with full CRUD operations"
   longDescription: |
-    Enhanced Model Context Protocol server for seamless Things 3 app integration with AI assistants.
-    Features production-ready reliability with circuit breaker patterns, intelligent caching, AppleScript
-    bridge, and comprehensive error handling. Perfect for macOS users wanting robust task management
-    automation with Claude Desktop or Windsurf.
+    Advanced Model Context Protocol server for seamless Things 3 app integration with AI assistants.
+    Features comprehensive task management capabilities including reading from all built-in lists,
+    creating and updating todos and projects, advanced search functionality, tag management,
+    and intelligent scheduling. Perfect for macOS users wanting robust task management
+    automation with Claude Desktop, Claude Code, and Cursor.
 
   tags:
+    - mcp
+    - anthropic
+    - claude
+    - things3
+    - things
     - task-management
     - productivity
-    - things3
+    - fastmcp
     - macos
     - apple
-    - fastmcp
-    - reliability
-    - gtd
 
   category: "Task Management"
 
@@ -30,15 +33,15 @@ registry:
     platform: ["local"]
 
   # Documentation
-  homepage: "https://github.com/excelsier/things-fastmcp"
-  repository: "https://github.com/excelsier/things-fastmcp"
-  documentation: "https://github.com/excelsier/things-fastmcp#readme"
+  homepage: "https://github.com/rossshannon/Things3-MCP"
+  repository: "https://github.com/rossshannon/Things3-MCP"
+  documentation: "https://github.com/rossshannon/Things3-MCP#readme"
 
   # Installation
   installation:
     type: "pip"
-    package: "things3-enhanced-mcp"
-    command: "things3-enhanced-mcp"
+    package: "Things3-MCP-server"
+    command: "Things3-MCP-server"
 
   # Configuration requirements
   configuration:
@@ -59,7 +62,7 @@ build:
   python_version: "3.12"
 
   # Entry point
-  entry_point: "src.things_mcp.fast_server:run_things_mcp_server"
+  entry_point: "things_mcp.fast_server:run_things_mcp_server"
 
   # Dependencies from pyproject.toml
   dependencies:
@@ -80,23 +83,56 @@ health:
 
 # Features/Tools provided by this MCP
 tools:
-  - name: "get-inbox"
+  # List Views
+  - name: "get_inbox"
     description: "Get todos from Things 3 Inbox"
-  - name: "get-today"
+  - name: "get_today"
     description: "Get todos due today"
-  - name: "get-upcoming"
+  - name: "get_upcoming"
     description: "Get upcoming todos"
-  - name: "get-anytime"
+  - name: "get_anytime"
     description: "Get todos from Anytime list"
-  - name: "get-someday"
+  - name: "get_someday"
     description: "Get todos from Someday list"
-  - name: "add-todo"
-    description: "Create a new todo with full parameter support"
-  - name: "add-project"
-    description: "Create a new project with tags and todos"
-  - name: "update-todo"
-    description: "Update an existing todo"
-  - name: "search-todos"
-    description: "Search for todos by title/notes"
-  - name: "get-tags"
+  - name: "get_logbook"
+    description: "Get completed todos"
+  - name: "get_trash"
+    description: "Get trashed todos"
+
+  # Basic Operations
+  - name: "get_todos"
+    description: "Get todos, optionally filtered by project"
+  - name: "get_projects"
+    description: "Get all projects with optional item inclusion"
+  - name: "get_areas"
+    description: "Get all areas with optional item inclusion"
+
+  # Tag Operations
+  - name: "get_tags"
     description: "Get all available tags"
+  - name: "get_tagged_items"
+    description: "Get items with a specific tag"
+
+  # Search Operations
+  - name: "search_todos"
+    description: "Simple search by title/notes"
+  - name: "search_advanced"
+    description: "Advanced search with multiple filters (status, dates, tags, areas)"
+  - name: "search_items"
+    description: "Search for items in Things"
+
+  # Time-based Operations
+  - name: "get_recent"
+    description: "Get recently created items"
+
+  # Modification Operations
+  - name: "add_todo"
+    description: "Create a new todo with full parameter support (title, notes, scheduling, tags, deadlines)"
+  - name: "add_project"
+    description: "Create a new project with tags and todos"
+  - name: "update_todo"
+    description: "Update an existing todo with comprehensive parameter support"
+  - name: "update_project"
+    description: "Update an existing project"
+  - name: "show_item"
+    description: "Show a specific item or list in Things"
