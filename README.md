@@ -36,33 +36,27 @@ This MCP server unlocks the power of AI for your task management:
 * Claude Desktop
 * Things 3 for MacOS
 
-#### Step 1: Install uv
-Install uv if you haven't already:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-Restart your terminal afterwards.
+#### Step 1: Install the package
 
-#### Step 2: Clone this repository
-```bash
-git clone https://github.com/rossshannon/Things3-MCP
-cd Things3-MCP
-```
-
-#### Step 3: Install the package
-
-**Option A: Install from PyPI (recommended for users)**
+**Option A: Install from PyPI (recommended for most users)**
 ```bash
 pip install Things3-MCP-server
 ```
 
 **Option B: Install from source (for development/contributors)**
 ```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Restart your terminal afterwards
+
+# Clone and install the package
+git clone https://github.com/rossshannon/Things3-MCP
+cd Things3-MCP
 uv venv
-uv pip install -e .
+uv pip install -e ".[dev]" # Install in development mode with dependencies
 ```
 
-### Step 4: Configure Claude Desktop
+### Step 2: Configure Claude Desktop
 Edit the Claude Desktop configuration file:
 ```bash
 code ~/Library/Application\ Support/Claude/claude_desktop_config.json
@@ -70,7 +64,7 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 Add the Things server to the mcpServers key in the configuration file:
 
-**Option A: Using PyPI package (recommended for users)**
+**Option A: Using PyPI package (recommended for most users)**
 ```json
 {
     "mcpServers": {
@@ -98,12 +92,12 @@ Add the Things server to the mcpServers key in the configuration file:
 }
 ```
 
-### Step 5: Restart Claude Desktop
+### Step 3: Restart Claude Desktop
 Restart the Claude Desktop app to enable the integration.
 
 ### Sample Usage with Claude Desktop
 * “What’s on my todo list today?”
-* “Create a todo to pack for my beach vacation next week”
+* “Create a todo to prepare for each of my 1-on-1s next week”
 * “Evaluate my todos scheduled for today using the Eisenhower matrix.”
 * “Help me conduct a GTD-style weekly review using Things.”
 
