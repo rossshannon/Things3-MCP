@@ -31,6 +31,39 @@ def generate_random_string(length: int = 10) -> str:
     return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
+def get_item_safely(item_id: str, expected_status: str = None) -> dict:
+    """Safely retrieve an item by ID, handling completed/canceled items that might not be found by things.get().
+
+    Args:
+        item_id: The ID of the item to retrieve
+        expected_status: Expected status of the item (e.g., 'completed', 'canceled')
+
+    Returns:
+        The item dict if found, None otherwise
+    """
+    # First try the direct approach
+    item = things.get(item_id)
+    if item:
+        return item
+
+    # If not found and we have an expected status, try searching by status
+    if expected_status:
+        if expected_status in ["completed", "canceled"]:
+            # Search in todos with the specific status
+            items = things.todos(status=expected_status)
+            for found_item in items:
+                if found_item.get("uuid") == item_id:
+                    return found_item
+
+            # Also try projects if it might be a project
+            projects = things.projects()
+            for found_project in projects:
+                if found_project.get("uuid") == item_id:
+                    return found_project
+
+    return None
+
+
 def test_mark_todo_as_completed(test_namespace):
     """Test marking a todo as completed."""
     # Create a todo
@@ -43,7 +76,7 @@ def test_mark_todo_as_completed(test_namespace):
     assert result, "Failed to mark todo as completed"
 
     # Verify the todo was marked as completed
-    todo = things.get(todo_id)
+    todo = get_item_safely(todo_id, "completed")
     assert todo, "Failed to retrieve todo"
     assert todo.get("status") == "completed", f"Todo status should be 'completed', got {todo.get('status')}"
 
@@ -63,7 +96,7 @@ def test_mark_project_as_completed(test_namespace):
     assert result, "Failed to mark project as completed"
 
     # Verify the project was marked as completed
-    project = things.get(project_id)
+    project = get_item_safely(project_id, "completed")
     assert project, "Failed to retrieve project"
     assert project.get("status") == "completed", f"Project status should be 'completed', got {project.get('status')}"
 
@@ -83,7 +116,7 @@ def test_mark_todo_as_canceled(test_namespace):
     assert result, "Failed to mark todo as canceled"
 
     # Verify the todo was marked as canceled
-    todo = things.get(todo_id)
+    todo = get_item_safely(todo_id, "canceled")
     assert todo, "Failed to retrieve todo"
     assert todo.get("status") == "canceled", f"Todo status should be 'canceled', got {todo.get('status')}"
 
@@ -103,7 +136,7 @@ def test_mark_project_as_canceled(test_namespace):
     assert result, "Failed to mark project as canceled"
 
     # Verify the project was marked as canceled
-    project = things.get(project_id)
+    project = get_item_safely(project_id, "canceled")
     assert project, "Failed to retrieve project"
     assert project.get("status") == "canceled", f"Project status should be 'canceled', got {project.get('status')}"
 
@@ -129,7 +162,7 @@ def test_completion_with_other_updates(test_namespace):
     assert result, "Failed to update and complete todo"
 
     # Verify all updates were applied
-    todo = things.get(todo_id)
+    todo = get_item_safely(todo_id, "completed")
     assert todo, "Failed to retrieve todo"
     assert todo.get("status") == "completed", "Todo should be completed"
     assert todo.get("title") == new_title, "Todo title should be updated"
@@ -155,8 +188,9 @@ def test_completion_edge_cases(test_namespace):
         result = update_todo(id=todo_id, completed=True)
         assert result, "Failed to mark already completed todo as completed again"
 
-        # Verify still completed
-        todo = things.get(todo_id)
+        # Verify still completed - use the helper function to safely retrieve completed items
+        todo = get_item_safely(todo_id, "completed")
+        assert todo, f"Completed todo with ID {todo_id} not found"
         assert todo.get("status") == "completed", "Todo should still be completed"
     finally:
         # Clean up
@@ -176,8 +210,8 @@ def test_completion_status_verification(test_namespace):
 
     try:
         # Verify initial status is incomplete
-        todo = things.get(todo_id)
-        project = things.get(project_id)
+        todo = get_item_safely(todo_id, "incomplete")
+        project = get_item_safely(project_id, "incomplete")
         assert todo.get("status") == "incomplete", "New todo should be incomplete"
         assert project.get("status") == "incomplete", "New project should be incomplete"
 
@@ -190,8 +224,8 @@ def test_completion_status_verification(test_namespace):
         assert result, "Failed to mark project as canceled"
 
         # Verify final statuses
-        todo = things.get(todo_id)
-        project = things.get(project_id)
+        todo = get_item_safely(todo_id, "completed")
+        project = get_item_safely(project_id, "canceled")
         assert todo.get("status") == "completed", "Todo should be completed"
         assert project.get("status") == "canceled", "Project should be canceled"
     finally:
