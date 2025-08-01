@@ -1,5 +1,5 @@
 [project]
-name = "things3-enhanced-mcp"
+name = "Things3-MCP-server"
 version = "2.0.0"
 description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-things3-enhanced-mcp = "things_mcp.fast_server:run_things_mcp_server"
+Things3-MCP-server = "things_mcp.fast_server:run_things_mcp_server"
 
 [project.urls]
 "Homepage" = "https://github.com/rossshannon/things-fastmcp"
@@ -212,6 +212,7 @@ per_file_ignores = [
 dev = [
     "bandit>=1.8.6",
     "build>=1.2.2.post1",
+    "hatchling>=1.27.0",
     "mypy>=1.17.0",
     "pre-commit>=4.2.0",
     "pytest>=8.4.1",
