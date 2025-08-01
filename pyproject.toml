@@ -210,8 +210,14 @@ per_file_ignores = [
 
 [dependency-groups]
 dev = [
+    "bandit>=1.8.6",
+    "build>=1.2.2.post1",
+    "mypy>=1.17.0",
     "pre-commit>=4.2.0",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-html>=4.1.1",
+    "ruff>=0.12.3",
+    "safety>=3.6.0",
+    "twine>=6.1.0",
 ]

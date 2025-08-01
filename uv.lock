@@ -1406,10 +1406,16 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "bandit" },
+    { name = "build" },
+    { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-html" },
+    { name = "ruff" },
+    { name = "safety" },
+    { name = "twine" },
 ]
 
 [package.metadata]
@@ -1432,10 +1438,16 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "bandit", specifier = ">=1.8.6" },
+    { name = "build", specifier = ">=1.2.2.post1" },
+    { name = "mypy", specifier = ">=1.17.0" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
     { name = "pytest-html", specifier = ">=4.1.1" },
+    { name = "ruff", specifier = ">=0.12.3" },
+    { name = "safety", specifier = ">=3.6.0" },
+    { name = "twine", specifier = ">=6.1.0" },
 ]
 
 [[package]]
