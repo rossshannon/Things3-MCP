@@ -1,6 +1,5 @@
 # Things FastMCP Test Suite Todo List
 
-- [ ] Allow tasks and projects to be created directly in an existing Area.
 
 ## Critical Requirement
 > **⚠️ IMPORTANT**: The test suite MUST be fully self-contained with no dependency on existing Projects, Areas or Tags, and MUST NOT have any side-effects on existing data.
@@ -44,6 +43,7 @@
 - [x] Test task completion
 - [x] Test moving tasks between projects
 - [x] Test moving tasks between areas
+- [x] Allow tasks to be created directly in an existing Area.
 
 ## Project Operations
 - [x] Test deadline parameter in `add_project()`
@@ -52,6 +52,7 @@
 - [x] Test tag operations (adding/removing multiple tags)
 - [x] Test project completion
 - [x] Test moving projects between areas
+- [x] Allow projects to be created directly in an existing Area.
 
 ## AppleScript Bridge Functionality
 - [x] Test AppleScript error message parsing

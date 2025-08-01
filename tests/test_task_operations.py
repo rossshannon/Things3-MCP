@@ -25,11 +25,16 @@ from things_mcp.applescript_bridge import (  # noqa: E402
     update_project,
     update_todo,
 )
+from things_mcp.fast_server import (  # noqa: E402
+    get_tagged_items,
+    get_tags,
+)
 
 from .conftest import (  # noqa: E402
     create_test_area,
     create_test_tag,
     delete_project_by_id,
+    delete_test_tags,
     delete_todo_by_id,
     rename_test_area,
 )
@@ -244,3 +249,99 @@ def test_move_todo_between_areas_and_projects(test_todo, test_namespace):
 
     # Clean up project
     delete_project_by_id(project_id)
+
+
+def test_create_project_in_area(test_namespace):
+    """Test creating a project directly in an area using area_title parameter."""
+    # Create test area with unique name
+    unique_area_name = f"area-{generate_random_string(8)}"
+    area_id = create_test_area(unique_area_name)
+    assert area_id, "Failed to create test area"
+
+    # Rename area for testing with unique name
+    unique_family_name = f"{test_namespace}-Family-{generate_random_string(5)}"
+    rename_test_area(area_id, unique_family_name)
+
+    # Create project directly in the area
+    project_title = f"Test Project in Area {generate_random_string(5)}"
+    project_id = add_project(title=project_title, area_title=unique_family_name)
+    assert project_id, "Failed to create project in area"
+
+    # Verify the project was created in the correct area
+    project = things.get(project_id)
+    assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
+
+    # Clean up
+    delete_project_by_id(project_id)
+
+
+def test_move_project_to_area(test_namespace):
+    """Test moving an existing project to an area using update_project."""
+    # Create test area with unique name
+    unique_area_name = f"area-{generate_random_string(8)}"
+    area_id = create_test_area(unique_area_name)
+    assert area_id, "Failed to create test area"
+
+    # Rename area for testing with unique name
+    unique_work_name = f"{test_namespace}-Work-{generate_random_string(5)}"
+    rename_test_area(area_id, unique_work_name)
+
+    # Create project without area first
+    project_title = f"Test Project to Move {generate_random_string(5)}"
+    project_id = add_project(title=project_title)
+    assert project_id, "Failed to create test project"
+
+    # Verify project starts without area
+    project = things.get(project_id)
+    assert not project.get("area"), "Project should start without area"
+
+    # Move project to area
+    result = update_project(id=project_id, area_title=unique_work_name)
+    assert result, "Failed to move project to area"
+
+    # Verify project is now in the area
+    project = things.get(project_id)
+    assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
+
+    # Clean up
+    delete_project_by_id(project_id)
+
+
+def test_create_tag_independently(test_namespace):
+    """Test creating tags independently using namespace and proper cleanup."""
+    # Test creating a simple tag
+    simple_tag_name = f"simple-tag-{generate_random_string(5)}"
+    success = create_test_tag(simple_tag_name)
+    assert success, f"Failed to create simple tag '{simple_tag_name}'"
+
+    # Test creating a tag with spaces
+    spaced_tag_name = f"tag with spaces {generate_random_string(5)}"
+    success = create_test_tag(spaced_tag_name)
+    assert success, f"Failed to create spaced tag '{spaced_tag_name}'"
+
+    # Verify tags exist by checking if they appear in get_tags()
+    all_tags = get_tags()
+    assert isinstance(all_tags, str), "get_tags() should return a string"
+
+    # Check that our created tags appear in the list
+    expected_tags = [f"{test_namespace}-{simple_tag_name}", f"{test_namespace}-{spaced_tag_name}"]
+
+    for expected_tag in expected_tags:
+        assert f"Title: {expected_tag}" in all_tags, f"Created tag '{expected_tag}' should appear in get_tags()"
+
+    # Test that we can search for items with these tags (should return empty results since tags are new)
+    for tag_name in [simple_tag_name, spaced_tag_name]:
+        result = get_tagged_items(tag=f"{test_namespace}-{tag_name}")
+        assert isinstance(result, str), f"get_tagged_items() should return a string for tag '{tag_name}'"
+        # Should return "No items found" since these are new tags
+        assert "No items found" in result, f"New tag '{tag_name}' should have no items"
+
+    # Clean up - delete all test tags
+    delete_test_tags()
+
+    # Verify cleanup by checking that tags no longer appear in get_tags()
+    all_tags_after_cleanup = get_tags()
+    assert isinstance(all_tags_after_cleanup, str), "get_tags() should return a string after cleanup"
+
+    for expected_tag in expected_tags:
+        assert f"Title: {expected_tag}" not in all_tags_after_cleanup, f"Tag '{expected_tag}' should be cleaned up"
