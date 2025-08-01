@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""Things MCP Server implementation using the FastMCP pattern.
-
-This provides a more modern and maintainable approach to the Things integration.
-"""
+"""Things MCP Server implementation using the FastMCP pattern."""
 
 import json
 import traceback
@@ -59,7 +55,7 @@ def preprocess_array_params(**kwargs):
 
 
 # Create the FastMCP server
-mcp = FastMCP("Things", description="Interact with the Things task management app", version="2.0.0")
+mcp = FastMCP("Things", instructions="Interact with the Things 3 task management app")
 
 # LIST VIEWS
 

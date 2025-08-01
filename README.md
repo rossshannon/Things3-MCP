@@ -38,9 +38,14 @@ This MCP server unlocks the power of AI for your task management:
 
 #### Step 1: Install the package
 
-**Option A: Install from PyPI (recommended for most users)**
+**Option A: Install from PyPI in a virtual environment (recommended)**
 ```bash
-pip install Things3-MCP-server
+# Create a virtual environment in your home directory
+python3 -m venv ~/.venvs/things3-mcp-env
+source ~/.venvs/things3-mcp-env/bin/activate
+
+# Install the package
+pip install Things3-MCP-server==2.0.0
 ```
 
 **Option B: Install from source (for development/contributors)**
@@ -49,11 +54,11 @@ pip install Things3-MCP-server
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # Restart your terminal afterwards
 
-# Clone and install the package
+# Clone and install the package with development dependencies
 git clone https://github.com/rossshannon/Things3-MCP
 cd Things3-MCP
 uv venv
-uv pip install -e ".[dev]" # Install in development mode with dependencies
+uv pip install -e ".[dev]"  # Install in development mode with extra dependencies
 ```
 
 ### Step 2: Configure Claude Desktop
@@ -64,12 +69,12 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 Add the Things server to the mcpServers key in the configuration file:
 
-**Option A: Using PyPI package (recommended for most users)**
+**Option A: Using PyPI package in virtual environment**
 ```json
 {
     "mcpServers": {
         "things": {
-            "command": "Things3-MCP-server"
+            "command": "~/.venvs/things3-mcp-env/bin/Things3-MCP-server"
         }
     }
 }
