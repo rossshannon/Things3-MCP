@@ -1,7 +1,7 @@
 [project]
 name = "things3-enhanced-mcp"
 version = "2.0.0"
-description = "Enhanced FastMCP server for Things 3 app integration with Claude Desktop and Windsurf - featuring reliability improvements, caching, and AppleScript bridge"
+description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT License"}
@@ -12,7 +12,7 @@ authors = [
 ]
 keywords = ["mcp", "anthropic", "claude", "things3", "things", "task-management", "productivity", "fastmcp", "macos", "apple"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
@@ -48,34 +48,23 @@ include = [
     "README.md",
     "LICENSE",
     "pyproject.toml",
-    "things_fast_server.py",
-    "things_server.py"
+    "things_fast_server.py"
 ]
 
-[tool.hatch.envs.default]
-dependencies = [
-    "pytest",
-    "pytest-cov",
-    "ruff",
-    "build",
-    "twine",
-    "mypy>=1.0.0",
-    "bandit[toml]>=1.7.0",
-    "safety>=2.0.0",
-    "pre-commit>=3.0.0",
-]
+
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "ruff>=0.1.0",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-html>=4.1.1",
+    "ruff>=0.12.3",
     "build>=0.10.0",
     "twine>=4.0.0",
-    "mypy>=1.0.0",
-    "bandit[toml]>=1.7.0",
-    "safety>=2.0.0",
-    "pre-commit>=3.0.0",
+    "mypy>=1.17.0",
+    "bandit[toml]>=1.8.6",
+    "safety>=3.6.0",
+    "pre-commit>=4.2.0",
 ]
 
 [tool.hatch.envs.default.scripts]
@@ -221,11 +210,8 @@ per_file_ignores = [
 
 [dependency-groups]
 dev = [
-    "bandit[toml]>=1.8.6",
-    "mypy>=1.17.0",
     "pre-commit>=4.2.0",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
-    "ruff>=0.12.3",
-    "safety>=3.6.0",
+    "pytest-html>=4.1.1",
 ]

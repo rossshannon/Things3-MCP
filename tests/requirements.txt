@@ -1,3 +1,0 @@
-pytest>=7.0.0
-pytest-html>=3.1.0
-things.py==0.0.15
