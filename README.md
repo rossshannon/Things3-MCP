@@ -49,10 +49,17 @@ git clone https://github.com/rossshannon/Things3-MCP
 cd Things3-MCP
 ```
 
-#### Step 3: Set up Python environment and dependencies
+#### Step 3: Install the package
+
+**Option A: Install from PyPI (recommended for users)**
+```bash
+pip install Things3-MCP-server
+```
+
+**Option B: Install from source (for development/contributors)**
 ```bash
 uv venv
-uv pip install -r pyproject.toml
+uv pip install -e .
 ```
 
 ### Step 4: Configure Claude Desktop
@@ -61,7 +68,20 @@ Edit the Claude Desktop configuration file:
 code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 ```
 
-Add the Things server to the mcpServers key in the configuration file (be sure to update the path to the folder where you installed these files):
+Add the Things server to the mcpServers key in the configuration file:
+
+**Option A: Using PyPI package (recommended for users)**
+```json
+{
+    "mcpServers": {
+        "things": {
+            "command": "Things3-MCP-server"
+        }
+    }
+}
+```
+
+**Option B: Using source installation (for development/contributors)**
 ```json
 {
     "mcpServers": {
@@ -71,7 +91,7 @@ Add the Things server to the mcpServers key in the configuration file (be sure t
                 "--directory",
                 "/ABSOLUTE/PATH/TO/PARENT/FOLDER/Things3-MCP",
                 "run",
-                "things_fast_server.py"
+                "Things3-MCP-server"
             ]
         }
     }
