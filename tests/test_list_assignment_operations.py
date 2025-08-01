@@ -165,7 +165,7 @@ def test_add_todo_to_area_via_list_id(test_namespace):
 
     try:
         # Create todo directly in the area using list_id
-        todo_title = f"Test Todo in Area by ID {generate_random_string(5)}"
+        todo_title = f"{test_namespace}-Test Todo in Area by ID {generate_random_string(5)}"
         todo_id = add_todo(title=todo_title, list_id=area_id)
         assert todo_id, "Failed to create todo in area using list_id"
 
@@ -183,13 +183,13 @@ def test_add_todo_to_area_via_list_id(test_namespace):
 def test_add_todo_to_project_via_list_id(test_namespace):
     """Test adding a todo directly to a project using list_id parameter."""
     # Create test project
-    project_title = f"Test Project for ID {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project for ID {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
     try:
         # Create todo directly in the project using list_id
-        todo_title = f"Test Todo in Project by ID {generate_random_string(5)}"
+        todo_title = f"{test_namespace}-Test Todo in Project by ID {generate_random_string(5)}"
         todo_id = add_todo(title=todo_title, list_id=project_id)
         assert todo_id, "Failed to create todo in project using list_id"
 
@@ -215,7 +215,7 @@ def test_update_todo_to_area_via_list_id(test_namespace):
     rename_test_area(area_id, unique_area_title)
 
     # Create a todo in Inbox
-    todo_title = f"Test Todo Move to Area by ID {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Move to Area by ID {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -238,12 +238,12 @@ def test_update_todo_to_area_via_list_id(test_namespace):
 def test_update_todo_to_project_via_list_id(test_namespace):
     """Test moving a todo to a project using list_id parameter."""
     # Create test project
-    project_title = f"Test Project for Move by ID {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project for Move by ID {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
     # Create a todo in Inbox
-    todo_title = f"Test Todo Move to Project by ID {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Move to Project by ID {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -275,7 +275,7 @@ def test_add_project_to_area_via_area_id(test_namespace):
 
     try:
         # Create project directly in the area using area_id
-        project_title = f"Test Project in Area by ID {generate_random_string(5)}"
+        project_title = f"{test_namespace}-Test Project in Area by ID {generate_random_string(5)}"
         project_id = add_project(title=project_title, area_id=area_id)
         assert project_id, "Failed to create project in area using area_id"
 
@@ -302,7 +302,7 @@ def test_update_project_to_area_via_area_id(test_namespace):
     rename_test_area(area_id, unique_area_title)
 
     # Create a project without area
-    project_title = f"Test Project Move to Area by ID {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project Move to Area by ID {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
@@ -330,13 +330,13 @@ def test_update_project_to_area_via_area_id(test_namespace):
 def test_add_todo_to_project_via_list_title(test_namespace):
     """Test adding a todo directly to a project using list_name parameter."""
     # Create test project
-    project_title = f"Test Project for Title {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project for Title {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
     try:
         # Create todo directly in the project using list_title
-        todo_title = f"Test Todo in Project by Title {generate_random_string(5)}"
+        todo_title = f"{test_namespace}-Test Todo in Project by Title {generate_random_string(5)}"
         todo_id = add_todo(title=todo_title, list_title=project_title)
         assert todo_id, "Failed to create todo in project using list_title"
 
@@ -353,12 +353,12 @@ def test_add_todo_to_project_via_list_title(test_namespace):
 def test_update_todo_to_project_via_list_title(test_namespace):
     """Test moving a todo to a project using list_name parameter."""
     # Create test project
-    project_title = f"Test Project for Move by Title {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project for Move by Title {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
     # Create a todo in Inbox
-    todo_title = f"Test Todo Move to Project by Title {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Move to Project by Title {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -385,7 +385,7 @@ def test_update_todo_to_project_via_list_title(test_namespace):
 def test_update_todo_to_nonexistent_list(test_namespace):
     """Test moving a todo to a nonexistent list/project/area."""
     # Create a todo in Inbox
-    todo_title = f"Test Todo Nonexistent List {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Nonexistent List {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -400,7 +400,7 @@ def test_update_todo_to_nonexistent_list(test_namespace):
 def test_update_todo_to_nonexistent_id(test_namespace):
     """Test moving a todo to a nonexistent ID."""
     # Create a todo in Inbox
-    todo_title = f"Test Todo Nonexistent ID {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Nonexistent ID {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -419,7 +419,7 @@ def test_list_name_vs_list_id_priority(test_namespace):
     find the area first when searching by name.
     """
     # Create test area and project with same name
-    area_name = f"Test Container {generate_random_string(5)}"
+    area_name = f"{test_namespace}-Test Container {generate_random_string(5)}"
     area_id = create_test_area("temp-area")
     rename_test_area(area_id, area_name)
 
@@ -428,7 +428,7 @@ def test_list_name_vs_list_id_priority(test_namespace):
     assert project_id, "Failed to create test project"
 
     # Create a todo in Inbox
-    todo_title = f"Test Todo Priority {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo Priority {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title)
     assert todo_id, "Failed to create test todo"
 
@@ -470,22 +470,22 @@ def test_list_name_vs_list_id_priority(test_namespace):
 def test_comprehensive_list_operations(test_namespace):
     """Test all list operations in a comprehensive workflow."""
     # Create test containers
-    area_name = f"Test Area {generate_random_string(5)}"
+    area_name = f"{test_namespace}-Test Area {generate_random_string(5)}"
     area_id = create_test_area("temp-area")
     rename_test_area(area_id, area_name)
 
-    project_title = f"Test Project {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
     try:
         # Test 1: Create todo in area by name
-        todo1_title = f"Todo 1 - Area by Name {generate_random_string(5)}"
+        todo1_title = f"{test_namespace}-Todo 1 - Area by Name {generate_random_string(5)}"
         todo1_id = add_todo(title=todo1_title, list_title=area_name)
         assert todo1_id, "Failed to create todo in area by name"
 
         # Test 2: Create todo in project by ID
-        todo2_title = f"Todo 2 - Project by ID {generate_random_string(5)}"
+        todo2_title = f"{test_namespace}-Todo 2 - Project by ID {generate_random_string(5)}"
         todo2_id = add_todo(title=todo2_title, list_id=project_id)
         assert todo2_id, "Failed to create todo in project by ID"
 

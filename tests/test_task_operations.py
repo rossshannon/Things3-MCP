@@ -230,7 +230,7 @@ def test_move_todo_between_areas_and_projects(test_todo, test_namespace):
     assert result, "Failed to move todo to Family area"
 
     # Create a project and move todo to it (should clear area)
-    project_title = f"Test Project {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
@@ -257,7 +257,7 @@ def test_create_project_in_area(test_namespace):
     rename_test_area(area_id, unique_family_name)
 
     # Create project directly in the area
-    project_title = f"Test Project in Area {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project in Area {generate_random_string(5)}"
     project_id = add_project(title=project_title, area_title=unique_family_name)
     assert project_id, "Failed to create project in area"
 
@@ -281,7 +281,7 @@ def test_move_project_to_area(test_namespace):
     rename_test_area(area_id, unique_work_name)
 
     # Create project without area first
-    project_title = f"Test Project to Move {generate_random_string(5)}"
+    project_title = f"{test_namespace}-Test Project to Move {generate_random_string(5)}"
     project_id = add_project(title=project_title)
     assert project_id, "Failed to create test project"
 
@@ -353,7 +353,7 @@ def test_add_todo_to_area_via_list_title(test_namespace):
     rename_test_area(area_id, unique_area_title)
 
     # Create todo directly in the area using list_title
-    todo_title = f"Test Todo in Area {generate_random_string(5)}"
+    todo_title = f"{test_namespace}-Test Todo in Area {generate_random_string(5)}"
     todo_id = add_todo(title=todo_title, list_title=unique_area_title)
     assert todo_id, "Failed to create todo in area using list_title"
 
