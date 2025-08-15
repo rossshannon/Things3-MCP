@@ -103,8 +103,7 @@ def get_today() -> str:
         return "\n\n---\n\n".join(formatted_todos)
     except TypeError as e:
         if "'<' not supported between instances of 'NoneType' and 'str'" in str(e):
-            # Handle the sorting bug in things.today() by using a workaround
-            log_operation_end("get-today", True, time.time() - start_time, error="Sorting bug workaround applied")
+            # Handle the known sorting bug in things.today() by using a workaround
             try:
                 # Replicate the exact logic from things.today() but with safe sorting
                 import datetime
@@ -149,7 +148,14 @@ def get_today() -> str:
 
                 result.sort(key=safe_sort_key)
                 formatted_todos = [format_todo(todo) for todo in result]
-                return "\n\n---\n\n".join(formatted_todos)
+                # Only log success AFTER the fallback actually succeeds
+                if result:
+                    log_operation_end("get-today", True, time.time() - start_time, count=len(result))
+                    return "\n\n---\n\n".join(formatted_todos)
+                else:
+                    log_operation_end("get-today", True, time.time() - start_time, count=0)
+                    return "No items due today"
+
             except Exception as fallback_error:
                 log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {fallback_error!s}")
                 return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {fallback_error!s}"
