@@ -11,7 +11,7 @@
 1. Edit `pyproject.toml`
 2. Update the version number in the `[project]` section:
    ```toml
-   version = "2.0.1"  # Increment from previous version
+   version = "2.0.2"  # Increment from previous version
    ```
 3. Follow semantic versioning:
    - **Patch** (2.0.0 → 2.0.1): Bug fixes, API compatibility
@@ -92,6 +92,7 @@ git push origin main
 - Verify package name matches exactly
 
 ## Version History
+- `2.0.2`: Version bump release
 - `2.0.1`: Fixed FastMCP API compatibility (description → instructions, removed version param)
 - `2.0.0`: Initial release with FastMCP implementation
 

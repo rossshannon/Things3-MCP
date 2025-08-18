@@ -45,7 +45,7 @@ python3 -m venv ~/.venvs/things3-mcp-env
 source ~/.venvs/things3-mcp-env/bin/activate
 
 # Install the package
-pip install Things3-MCP-server==2.0.1
+pip install Things3-MCP-server==2.0.2
 ```
 
 **Option B: Install from source (for development/contributors)**
