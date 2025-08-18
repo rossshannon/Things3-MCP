@@ -32,19 +32,21 @@ def test_applescript_error_logging_detail():
     logger.setLevel(logging.DEBUG)
 
     try:
-        # Test with malformed AppleScript that will cause an error
-        with patch("things_mcp.applescript_bridge.run_applescript") as mock_run:
-            # Simulate AppleScript returning an error message
-            mock_run.return_value = "Error: AppleScript timed out"
+        # Test with mocking both the readiness check and the AppleScript execution
+        with patch("things_mcp.applescript_bridge.ensure_things_ready") as mock_ready:
+            with patch("things_mcp.applescript_bridge.run_applescript") as mock_run:
+                # Mock Things as ready and AppleScript returning an error
+                mock_ready.return_value = True
+                mock_run.return_value = "Error: AppleScript timed out"
 
-            result = add_todo(title="Test Todo", list_id="fake-id")
+                result = add_todo(title="Test Todo", list_id="fake-id")
 
-            # Should return False for failed creation
-            assert result is False, "Should return False for AppleScript error"
+                # Should return False for failed creation
+                assert result is False, "Should return False for AppleScript error"
 
-            # Check that the error was logged
-            log_output = log_capture.getvalue()
-            assert "Failed to create todo" in log_output, "Should log failure details"
+                # Check that the error was logged
+                log_output = log_capture.getvalue()
+                assert "Failed to create todo" in log_output, "Should log failure details"
 
     finally:
         logger.removeHandler(handler)
