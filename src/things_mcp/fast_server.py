@@ -477,7 +477,7 @@ def add_task(
                 if todo.get("project"):
                     location = f"Project: {things.get(todo['project'])['title']}"
                 elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['name']}"
+                    location = f"Area: {things.get(todo['area'])['title']}"
                 else:
                     location = f"List: {todo.get('start', 'Unknown')}"
             else:

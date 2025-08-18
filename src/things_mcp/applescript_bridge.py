@@ -268,7 +268,7 @@ def add_todo(  # noqa: PLR0913
                 if todo.get("project"):
                     location = f"Project: {things.get(todo['project'])['title']}"
                 elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['name']}"
+                    location = f"Area: {things.get(todo['area'])['title']}"
                 else:
                     location = f"List: {todo.get('start', 'Unknown')}"
                 logger.info(f"Successfully created todo via AppleScript with ID: {result} in {location}")

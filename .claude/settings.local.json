@@ -8,7 +8,8 @@
       "WebFetch(domain:pypi.org)",
       "Bash(gh release upload:*)",
       "Bash(ruff check:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
