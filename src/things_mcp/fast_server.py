@@ -423,8 +423,9 @@ def add_task(
         tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of
             strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
             Passing as a string will treat each character as a separate tag.
-        list_id: ID of project/area to add to
-        list_title: Title of project/area to add to (must exactly match an existing area or project title — look them up with get_areas or get_projects)
+        list_id: ID of project/area to add to (takes priority over list_title if both provided)
+        list_title: Title of project/area to add to (must exactly match an existing area or project title — look them up with get_areas or get_projects).
+            If both list_id and list_title are provided, list_id takes priority.
     """
     try:
         # Debug: Log all input parameters
@@ -453,7 +454,7 @@ def add_task(
         logger.info(f"Creating todo using AppleScript: {title}")
 
         try:
-            task_id = add_todo(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_title=list_title)
+            task_id = add_todo(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_id=list_id, list_title=list_title)
         except Exception as bridge_error:
             logger.error(f"AppleScript bridge error: {bridge_error}")
             return f"⚠️ AppleScript bridge error: {bridge_error}"
@@ -467,7 +468,24 @@ def add_task(
             logger.error("AppleScript returned error instead of task ID: %s", task_id)
             return f"⚠️ AppleScript error: {task_id}"
 
-        return f"✅ Successfully created todo: {title} (ID: {task_id})"
+        # Get location information for the success message
+        try:
+            import things
+
+            todo = things.get(task_id)
+            if todo:
+                if todo.get("project"):
+                    location = f"Project: {things.get(todo['project'])['title']}"
+                elif todo.get("area"):
+                    location = f"Area: {things.get(todo['area'])['name']}"
+                else:
+                    location = f"List: {todo.get('start', 'Unknown')}"
+            else:
+                location = "Unknown"
+        except Exception:
+            location = "Unknown"
+
+        return f"✅ Successfully created todo: {title} (ID: {task_id}) in {location}"
 
     except Exception as e:
         logger.error(f"Error creating todo: {e!s}")
@@ -564,8 +582,9 @@ def update_task(
         tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
         completed: Mark as completed.
         canceled: Mark as canceled.
-        list_id: ID of project/area to move the todo to.
-        list_name: Name of built-in list, project, or area to move the todo to. For built-in lists use: "Inbox", "Today", "Anytime", "Someday". For projects/areas, use the exact name.
+        list_id: ID of project/area to move the todo to (takes priority over list_name if both provided).
+        list_name: Name of built-in list, project, or area to move the todo to. For built-in lists use: "Inbox", "Today", "Anytime", "Someday". For projects or areas, use the exact name.
+            If both list_id and list_name are provided, list_id takes priority.
     """
     try:
         # Preprocess parameters to handle MCP array serialization issues

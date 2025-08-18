@@ -260,7 +260,22 @@ def add_todo(  # noqa: PLR0913
 
     result = run_applescript(script, timeout=8)
     if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
-        logger.info(f"Successfully created todo via AppleScript with ID: {result}")
+        # Look up the todo to get location information
+        try:
+            import things
+            todo = things.get(result)
+            if todo:
+                if todo.get("project"):
+                    location = f"Project: {things.get(todo['project'])['title']}"
+                elif todo.get("area"):
+                    location = f"Area: {things.get(todo['area'])['name']}"
+                else:
+                    location = f"List: {todo.get('start', 'Unknown')}"
+                logger.info(f"Successfully created todo via AppleScript with ID: {result} in {location}")
+            else:
+                logger.info(f"Successfully created todo via AppleScript with ID: {result}")
+        except Exception:
+            logger.info(f"Successfully created todo via AppleScript with ID: {result}")
         return result
     else:
         logger.error("Failed to create todo")

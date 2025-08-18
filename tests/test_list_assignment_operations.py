@@ -463,6 +463,89 @@ def test_list_name_vs_list_id_priority(test_namespace):
 
 
 # ============================================================================
+# MCP SERVER LEVEL TESTS
+# ============================================================================
+
+
+def test_mcp_server_add_task_with_list_id(test_namespace):
+    """Test that MCP server add_task function properly passes list_id to AppleScript bridge."""
+    from things_mcp.fast_server import add_new_project, add_task
+
+    # Create test project using MCP server
+    project_title = f"{test_namespace}-MCP Test Project {generate_random_string(5)}"
+    project_result = add_new_project(title=project_title)
+
+    # Extract project ID from result
+    import re
+
+    match = re.search(r"\(ID: ([^)]+)\)", project_result)
+    assert match, f"Could not extract project ID from result: {project_result}"
+    project_id = match.group(1)
+
+    try:
+        # Create todo using MCP server function with list_id - this should work but currently fails
+        todo_title = f"{test_namespace}-MCP Todo via list_id {generate_random_string(5)}"
+        result = add_task(title=todo_title, list_id=project_id)
+
+        # Extract the todo ID from the result message
+        match = re.search(r"\(ID: ([^)]+)\)", result)
+        assert match, f"Could not extract todo ID from result: {result}"
+        todo_id = match.group(1)
+
+        # Verify the todo was created in the correct project
+        # This assertion will fail until the MCP server is fixed to pass list_id
+        todo = things.get(todo_id)
+        assert todo.get("project") == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')} (todo was created in Inbox instead - MCP server is not passing list_id parameter)"
+
+        # Clean up
+        delete_todo_by_id(todo_id)
+    finally:
+        delete_project_by_id(project_id)
+
+
+def test_mcp_server_priority_list_id_over_list_title(test_namespace):
+    """Test that when both list_id and list_title are provided, list_id takes priority."""
+    from things_mcp.fast_server import add_new_project, add_task
+
+    # Create two test projects
+    project1_title = f"{test_namespace}-MCP Project 1 {generate_random_string(5)}"
+    project1_result = add_new_project(title=project1_title)
+
+    project2_title = f"{test_namespace}-MCP Project 2 {generate_random_string(5)}"
+    project2_result = add_new_project(title=project2_title)
+
+    # Extract project IDs
+    import re
+
+    match1 = re.search(r"\(ID: ([^)]+)\)", project1_result)
+    match2 = re.search(r"\(ID: ([^)]+)\)", project2_result)
+    assert match1 and match2, "Could not extract project IDs"
+    project1_id = match1.group(1)
+    project2_id = match2.group(1)
+
+    try:
+        # Create todo with BOTH list_id (project1) and list_title (project2)
+        # The list_id should take priority
+        todo_title = f"{test_namespace}-MCP Todo priority test {generate_random_string(5)}"
+        result = add_task(title=todo_title, list_id=project1_id, list_title=project2_title)
+
+        # Extract the todo ID from the result message
+        match = re.search(r"\(ID: ([^)]+)\)", result)
+        assert match, f"Could not extract todo ID from result: {result}"
+        todo_id = match.group(1)
+
+        # Verify the todo was created in project1 (list_id), not project2 (list_title)
+        todo = things.get(todo_id)
+        assert todo.get("project") == project1_id, f"Todo should be in project1 {project1_id} (via list_id), but is in {todo.get('project')}"
+
+        # Clean up
+        delete_todo_by_id(todo_id)
+    finally:
+        delete_project_by_id(project1_id)
+        delete_project_by_id(project2_id)
+
+
+# ============================================================================
 # COMPREHENSIVE INTEGRATION TESTS
 # ============================================================================
 

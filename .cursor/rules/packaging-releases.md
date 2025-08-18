@@ -58,9 +58,35 @@ twine upload dist/things3_mcp_server-X.Y.Z*
 git push origin main
 ```
 
-### Step 6: Verify Release
+### Step 6: Create GitHub Release
+```bash
+# Create GitHub release with tag
+gh release create vX.Y.Z --title "Release vX.Y.Z" --notes "$(cat <<'EOF'
+## What's Changed
+
+- Brief description of changes
+- Any breaking changes or important notes
+
+## Installation
+
+```bash
+pip install Things3-MCP-server==X.Y.Z
+```
+
+**Full Changelog**: https://github.com/rossshannon/Things3-MCP/compare/vPREVIOUS...vX.Y.Z
+EOF
+)"
+
+# Upload package files to the release
+gh release upload vX.Y.Z dist/things3_mcp_server-X.Y.Z-py3-none-any.whl dist/things3_mcp_server-X.Y.Z.tar.gz
+```
+
+### Step 7: Verify Release
 1. Check PyPI: https://pypi.org/project/Things3-MCP-server/
-2. Test installation:
+2. Check GitHub Release: https://github.com/rossshannon/Things3-MCP/releases
+   - Verify release notes are correct
+   - Confirm both `.whl` and `.tar.gz` files are attached
+3. Test installation:
    ```bash
    # Clear pip cache if needed
    python3 -m pip cache purge
@@ -99,5 +125,5 @@ git push origin main
 ## Important Notes
 - Always test the package installation after publishing
 - Update this file with new version history
-- Consider creating a GitHub release tag for major versions
+- **REQUIRED**: Create a GitHub release for every version published to PyPI
 - The README installation instructions should reference the latest stable version

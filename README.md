@@ -172,7 +172,8 @@ Restart the Claude Desktop app to enable the integration.
 - `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
-- `list_title` or `list_id` (optional) - Title or ID of project/area to add to
+- `list_title` (optional) - Title of project/area to add to (must exactly match existing name)
+- `list_id` (optional) - ID of project/area to add to (takes priority over list_title if both provided)
 - **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](docs/images/Things3-subtasks-markdown-checklist.png)
 
 ### update_todo
@@ -184,8 +185,8 @@ Restart the Claude Desktop app to enable the integration.
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
-- `project` (optional) - Name of project to move the todo to (must exactly match an existing project title — look them up with `get_projects`)
-- `area_title` (optional) - Title of the area to move the todo to (must exactly match an existing area title — look them up with `get_areas`)
+- `list_name` (optional) - Name of built-in list, project, or area to move the todo to. For built-in lists use: "Inbox", "Today", "Anytime", "Someday". For projects/areas, use the exact name.
+- `list_id` (optional) - ID of project/area to move the todo to (takes priority over list_name if both provided)
 
 ### add_project
 - `title` - Title of the project
@@ -210,6 +211,58 @@ Restart the Claude Desktop app to enable the integration.
 - `id` - ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
 - `query` (optional) - Optional query to filter by
 - `filter_tags` (optional) - Optional tags to filter by
+
+## Usage Examples
+
+### Creating Todos with List Assignment
+
+```python
+# Create todo in Inbox (default)
+add_todo(title="Review quarterly report")
+
+# Create todo in a built-in list
+add_todo(title="Call dentist", when="today")
+add_todo(title="Plan vacation", when="someday")
+
+# Create todo in a project by name
+add_todo(title="Design new logo", list_title="Website Redesign")
+
+# Create todo in a project by ID (more precise, recommended for automation)
+add_todo(title="Write documentation", list_id="ABC123DEF456")
+
+# When both are provided, list_id takes priority
+add_todo(
+    title="Important task",
+    list_id="ABC123DEF456",     # This will be used
+    list_title="Other Project"  # This will be ignored
+)
+```
+
+### Moving Todos Between Lists
+
+```python
+# Move to built-in list
+update_todo(id="TODO123", list_name="Today")
+update_todo(id="TODO456", list_name="Someday")
+
+# Move to project by name
+update_todo(id="TODO789", list_name="Website Redesign")
+
+# Move to project by ID (recommended for precision)
+update_todo(id="TODO101", list_id="ABC123DEF456")
+```
+
+### When to Use ID vs Title
+
+- **Use `list_title`/`list_name`** when:
+  - Working interactively with human-readable names
+  - You're certain the name is unique and won't change
+  - Creating simple scripts or one-off tasks
+
+- **Use `list_id`** when:
+  - Building automation or applications
+  - You need precision and reliability
+  - Working with projects/areas that might have similar names
 
 ## Using Tags
 Things will automatically create missing tags when they are added to a task or project. Configure your LLM to do a lookup of your tags first before making changes if you want to control this.

@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(python:*)",
+      "Bash(twine upload:*)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(gh release upload:*)",
+      "Bash(ruff check:*)"
     ],
     "deny": [],
     "ask": []
