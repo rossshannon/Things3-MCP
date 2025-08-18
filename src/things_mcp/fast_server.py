@@ -461,10 +461,10 @@ def add_task(
 
         # Check if the returned value is actually an error message rather than a valid task ID
         if not task_id:
-            return "Error: Failed to create todo using AppleScript"
+            return "⚠️ Error: Failed to create todo using AppleScript"
 
         # Check if the returned value is actually an error message rather than a valid task ID
-        if isinstance(task_id, str) and ("script error" in task_id or task_id.startswith("/var/folders/")):
+        if isinstance(task_id, str) and ("script error" in task_id or task_id.startswith("/var/folders/") or task_id.startswith("Error:")):
             logger.error("AppleScript returned error instead of task ID: %s", task_id)
             return f"⚠️ AppleScript error: {task_id}"
 

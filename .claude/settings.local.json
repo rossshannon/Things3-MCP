@@ -9,7 +9,10 @@
       "Bash(gh release upload:*)",
       "Bash(ruff check:*)",
       "Bash(git log:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(mypy:*)",
+      "Bash(grep:*)",
+      "Bash(ruff format:*)"
     ],
     "deny": [],
     "ask": []

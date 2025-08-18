@@ -259,7 +259,7 @@ def add_todo(  # noqa: PLR0913
     logger.debug(f"Executing simplified AppleScript: {script}")
 
     result = run_applescript(script, timeout=8)
-    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
+    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
         # Look up the todo to get location information
         try:
             import things
@@ -278,7 +278,7 @@ def add_todo(  # noqa: PLR0913
             logger.info(f"Successfully created todo via AppleScript with ID: {result}")
         return result
     else:
-        logger.error("Failed to create todo")
+        logger.error(f"Failed to create todo: {result}")
         return False
 
 
