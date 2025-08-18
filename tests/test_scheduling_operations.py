@@ -26,6 +26,50 @@ from things_mcp.applescript_bridge import (  # noqa: E402
 )
 
 
+def _get_today_safe():
+    """Safe version of things.today() that handles the sorting bug."""
+    try:
+        return things.today()
+    except TypeError as e:
+        if "'<' not supported between instances of 'NoneType' and 'str'" in str(e):
+            # Replicate the exact logic from things.today() but with safe sorting
+            import datetime
+
+            def safe_sort_key(task):
+                """Sort key that handles None values safely."""
+                today_index = task.get("today_index", 0) or 0
+                start_date = task.get("start_date")
+
+                # Convert None to empty string for sorting
+                if start_date is None:
+                    start_date = ""
+
+                return (today_index, start_date)
+
+            # Get the raw data and filter for today items
+            all_todos = things.todos(status="incomplete")
+            all_projects = things.projects(status="incomplete")
+
+            result = []
+            today = datetime.date.today().strftime("%Y-%m-%d")
+
+            # Filter todos that are scheduled for today
+            for todo in all_todos:
+                if todo.get("start_date") == today or todo.get("start") == "Today":
+                    result.append(todo)
+
+            # Filter projects that are scheduled for today
+            for project in all_projects:
+                if project.get("start_date") == today or project.get("start") == "Today":
+                    result.append(project)
+
+            # Sort safely
+            result.sort(key=safe_sort_key)
+            return result
+        else:
+            raise
+
+
 def verify_todo_in_list(todo_id: str, expected_list: str) -> bool:
     """Verify that a todo appears in the expected list."""
     if not todo_id:
@@ -38,7 +82,8 @@ def verify_todo_in_list(todo_id: str, expected_list: str) -> bool:
 
     # Check if todo is in the expected list by querying that list
     if expected_list == "Today":
-        today_todos = things.today()
+        # Use safe today list retrieval to avoid sorting bug
+        today_todos = _get_today_safe()
         return any(t["uuid"] == todo_id for t in today_todos)
     elif expected_list == "Anytime":
         anytime_todos = things.anytime()
@@ -61,7 +106,8 @@ def verify_project_in_list(project_id: str, expected_list: str) -> bool:
 
     # Check if project is in the expected list by querying that list
     if expected_list == "Today":
-        today_projects = things.today()
+        # Use safe today list retrieval to avoid sorting bug
+        today_projects = _get_today_safe()
         return any(p["uuid"] == project_id for p in today_projects)
     elif expected_list == "Anytime":
         anytime_projects = things.anytime()
