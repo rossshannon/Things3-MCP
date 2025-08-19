@@ -1,6 +1,7 @@
 """Things MCP Server implementation using the FastMCP pattern."""
 
 import json
+import random
 import traceback
 
 import things
@@ -191,6 +192,76 @@ def get_anytime() -> str:
     return "\n\n---\n\n".join(formatted_todos)
 
 
+@mcp.tool(name="get_random_inbox")
+def get_random_inbox(count: int = 5) -> str:
+    """Get a random sample of todos from Inbox.
+
+    Args:
+    ----
+        count: Number of random items to return. Defaults to 5.
+    """
+    import time
+
+    start_time = time.time()
+    log_operation_start("get-random-inbox")
+
+    try:
+        items = things.inbox(include_items=True)
+
+        if not items:
+            log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
+            return "No items found in Inbox"
+
+        # Sample without replacement up to the number of available items
+        if count <= 0:
+            sampled = []
+        elif len(items) <= count:
+            sampled = items
+        else:
+            sampled = random.sample(items, count)
+
+        if not sampled:
+            log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
+            return "No items found in Inbox"
+
+        formatted = [format_todo(item) for item in sampled]
+        log_operation_end("get-random-inbox", True, time.time() - start_time, count=len(sampled))
+        return "\n\n---\n\n".join(formatted)
+    except Exception as e:
+        log_operation_end("get-random-inbox", False, time.time() - start_time, error=str(e))
+        raise
+
+
+@mcp.tool(name="get_random_anytime")
+def get_random_anytime(count: int = 5) -> str:
+    """Get a random sample of items from the Anytime list.
+
+    Note: The Anytime list can contain both todos and projects. This returns a
+    random subset without filtering types.
+
+    Args:
+    ----
+        count: Number of random items to return. Defaults to 5.
+    """
+    items = things.anytime(include_items=True)
+
+    if not items:
+        return "No items in Anytime list"
+
+    if count <= 0:
+        sampled = []
+    elif len(items) <= count:
+        sampled = items
+    else:
+        sampled = random.sample(items, count)
+
+    if not sampled:
+        return "No items in Anytime list"
+
+    formatted = [format_todo(item) for item in sampled]
+    return "\n\n---\n\n".join(formatted)
+
+
 @mcp.tool(name="get_someday")
 def get_someday() -> str:
     """Get todos from Someday list."""
@@ -256,6 +327,39 @@ def get_todos(project_uuid: str | None = None) -> str:
 
     formatted_todos = [format_todo(todo) for todo in todos]
     return "\n\n---\n\n".join(formatted_todos)
+
+
+@mcp.tool(name="get_random_todos")
+def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
+    """Get a random sample of todos, optionally filtered by project.
+
+    Args:
+    ----
+        project_uuid: Optional UUID of a specific project to draw todos from.
+        count: Number of todos to return. Defaults to 5.
+    """
+    if project_uuid:
+        project = things.get(project_uuid)
+        if not project or project.get("type") != "project":
+            return f"Error: Invalid project UUID '{project_uuid}'"
+
+    items = things.todos(project=project_uuid, start=None, include_items=True)
+
+    if not items:
+        return "No todos found"
+
+    if count <= 0:
+        sampled = []
+    elif len(items) <= count:
+        sampled = items
+    else:
+        sampled = random.sample(items, count)
+
+    if not sampled:
+        return "No todos found"
+
+    formatted = [format_todo(todo) for todo in sampled]
+    return "\n\n---\n\n".join(formatted)
 
 
 @mcp.tool(name="get_projects")
