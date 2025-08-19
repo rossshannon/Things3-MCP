@@ -45,7 +45,7 @@ python3 -m venv ~/.venvs/things3-mcp-env
 source ~/.venvs/things3-mcp-env/bin/activate
 
 # Install the package
-pip install Things3-MCP-server==2.0.3
+pip install Things3-MCP-server==2.0.4
 ```
 
 **Option B: Install from source (for development/contributors)**
@@ -290,11 +290,29 @@ uv pip install -e ".[dev]"  # Install in development mode with extra dependencie
 Run the comprehensive test suite to ensure everything is working as expected:
 
 ```bash
-# Test the implementation
-uv run pytest tests/
+# Run all tests (116 tests, ~3-4 minutes)
+uv run pytest
+
+# Run tests with coverage report
+uv run pytest --cov=things_mcp --cov-report=term-missing
+
+# Run specific test file
+uv run pytest tests/test_list_assignment_operations.py
+
+# Run tests with minimal output
+uv run pytest -q
+
+# Run tests matching a pattern
+uv run pytest -k "error_handling"
 ```
 
-The tests clean up after themselves and don’t affect your existing data, so you can run them as often as you like.
+**Test Configuration:**
+- **116 comprehensive tests** covering all functionality
+- **Automatic cleanup** - tests don't affect your existing Things data
+- **Edge case coverage** - malformed UUIDs, timeouts, error conditions
+- **Integration testing** - tests against real Things app
+
+The tests clean up after themselves and don't affect your existing data, so you can run them as often as you like.
 
 ![Things 3 MCP Test Suite](https://github.com/rossshannon/Things3-MCP/raw/main/docs/images/Things3-mcp-test-suite.png)
 

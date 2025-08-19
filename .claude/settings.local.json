@@ -12,7 +12,11 @@
       "Bash(git push:*)",
       "Bash(mypy:*)",
       "Bash(grep:*)",
-      "Bash(ruff format:*)"
+      "Bash(ruff format:*)",
+      "Bash(uv add:*)",
+      "Bash(uv run pytest:*)",
+      "WebSearch",
+      "Bash(uv lock:*)"
     ],
     "deny": [],
     "ask": []

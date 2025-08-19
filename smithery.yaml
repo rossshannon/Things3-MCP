@@ -1,5 +1,5 @@
 name: Things3-MCP-server
-version: 2.0.3
+version: 2.0.4
 description: "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 
 # Smithery configuration

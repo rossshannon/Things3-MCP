@@ -1,6 +1,6 @@
 [project]
 name = "Things3-MCP-server"
-version = "2.0.3"
+version = "2.0.4"
 description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -58,6 +58,7 @@ dev = [
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-html>=4.1.1",
+    "pytest-timeout>=2.3.1",
     "ruff>=0.12.3",
     "build>=0.10.0",
     "twine>=4.0.0",
@@ -218,6 +219,7 @@ dev = [
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-html>=4.1.1",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.12.3",
     "safety>=3.6.0",
     "twine>=6.1.0",
