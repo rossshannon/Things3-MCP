@@ -547,7 +547,22 @@ def add_new_project(
         if not project_id:
             return "Error: Failed to create project using AppleScript"
 
-        return f"✅ Successfully created project: {title} (ID: {project_id})"
+        # Look up the project to get location information
+        try:
+            import things
+
+            project = things.get(project_id)
+            if project:
+                if project.get("area"):
+                    location = f"Area: {things.get(project['area'])['title']}"
+                else:
+                    location = "List: Inbox"
+            else:
+                location = "Unknown"
+        except Exception:
+            location = "Unknown"
+
+        return f"✅ Successfully created project: {title} (ID: {project_id}) in {location}"
 
     except Exception as e:
         logger.error(f"Error creating project: {e!s}")

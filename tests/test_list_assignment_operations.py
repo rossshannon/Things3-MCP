@@ -680,7 +680,7 @@ def test_error_prefix_detection(test_namespace):
 
 def test_success_message_location_information(test_namespace):
     """Test that success messages include proper location information."""
-    from things_mcp.fast_server import add_task
+    from things_mcp.fast_server import add_new_project, add_task
 
     # Create test project and area
     project_title = f"{test_namespace}-Location Test Project {generate_random_string(5)}"
@@ -728,6 +728,27 @@ def test_success_message_location_information(test_namespace):
         match = re.search(r"ID: ([^)]+)\)", result3)
         if match:
             created_todos.append(match.group(1))
+
+        # Test 4: Project created in area should show area location
+        result4 = add_new_project(title=f"{test_namespace}-Area Project {generate_random_string(5)}", area_id=area_id)
+        assert "✅ Successfully created project:" in result4, "Should have success message"
+        assert "Area:" in result4, f"Should show area location: {result4}"
+        assert area_name in result4, f"Should include area name: {result4}"
+
+        # Extract project ID for cleanup
+        match = re.search(r"ID: ([^)]+)\)", result4)
+        if match:
+            delete_project_by_id(match.group(1))
+
+        # Test 5: Project created without area should show inbox location
+        result5 = add_new_project(title=f"{test_namespace}-Inbox Project {generate_random_string(5)}")
+        assert "✅ Successfully created project:" in result5, "Should have success message"
+        assert "in List: Inbox" in result5, f"Should show inbox location: {result5}"
+
+        # Extract project ID for cleanup
+        match = re.search(r"ID: ([^)]+)\)", result5)
+        if match:
+            delete_project_by_id(match.group(1))
 
     finally:
         # Clean up created todos

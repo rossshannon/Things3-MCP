@@ -623,11 +623,24 @@ def add_project(
     logger.debug(f"Executing AppleScript: {script}")
 
     result = run_applescript(script, timeout=8)
-    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/"):
-        logger.info(f"Successfully created project via AppleScript with ID: {result}")
+    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
+        # Look up the project to get location information for logging
+        try:
+            import things
+            project = things.get(result)
+            if project:
+                if project.get("area"):
+                    location = f"Area: {things.get(project['area'])['title']}"
+                else:
+                    location = "List: Inbox"
+                logger.info(f"Successfully created project via AppleScript with ID: {result} in {location}")
+            else:
+                logger.info(f"Successfully created project via AppleScript with ID: {result}")
+        except Exception:
+            logger.info(f"Successfully created project via AppleScript with ID: {result}")
         return result
     else:
-        logger.error("Failed to create project")
+        logger.error(f"Failed to create project: {result}")
         return False
 
 

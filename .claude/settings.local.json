@@ -16,7 +16,9 @@
       "Bash(uv add:*)",
       "Bash(uv run pytest:*)",
       "WebSearch",
-      "Bash(uv lock:*)"
+      "Bash(uv lock:*)",
+      "Bash(uv pip index:*)",
+      "Bash(gh release view:*)"
     ],
     "deny": [],
     "ask": []
