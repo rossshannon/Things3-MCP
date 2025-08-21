@@ -12,7 +12,7 @@ This repository includes GitHub Actions workflows for automated package building
 ### Current Workflows
 
 - **`lint.yml`** - Runs linting and code quality checks on PRs and pushes
-- **`publish-trusted.yml`** - Automated trusted publishing workflow
+- **`publish-trusted.yml`** - Automated PyPI publishing with trusted publishing
 
 ### Setting Up Automated Publishing
 
