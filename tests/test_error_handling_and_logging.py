@@ -27,14 +27,14 @@ def test_applescript_error_logging_detail():
     # Capture log output
     log_capture = io.StringIO()
     handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things_mcp.applescript_bridge")
+    logger = logging.getLogger("things3_mcp.applescript_bridge")
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
     try:
         # Test with mocking both the readiness check and the AppleScript execution
-        with patch("things_mcp.applescript_bridge.ensure_things_ready") as mock_ready:
-            with patch("things_mcp.applescript_bridge.run_applescript") as mock_run:
+        with patch("things3_mcp.applescript_bridge.ensure_things_ready") as mock_ready:
+            with patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
                 # Mock Things as ready and AppleScript returning an error
                 mock_ready.return_value = True
                 mock_run.return_value = "Error: AppleScript timed out"
@@ -127,7 +127,7 @@ def test_applescript_timeout_error_detection():
     ]
 
     for timeout_error in timeout_errors:
-        with patch("things_mcp.applescript_bridge.run_applescript") as mock_run:
+        with patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
             mock_run.return_value = timeout_error
 
             result = add_todo(title="Timeout Test", list_id="some-id")
@@ -146,7 +146,7 @@ def test_applescript_temp_file_error_detection():
     ]
 
     for temp_error in temp_file_errors:
-        with patch("things_mcp.applescript_bridge.run_applescript") as mock_run:
+        with patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
             mock_run.return_value = temp_error
 
             result = add_todo(title="Temp Error Test", list_id="some-id")
@@ -160,7 +160,7 @@ def test_error_logging_includes_context():
     # Capture log output
     log_capture = io.StringIO()
     handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things_mcp.fast_server")
+    logger = logging.getLogger("things3_mcp.fast_server")
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
@@ -197,7 +197,7 @@ def test_success_logging_includes_location():
     # Capture log output
     log_capture = io.StringIO()
     handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things_mcp.applescript_bridge")
+    logger = logging.getLogger("things3_mcp.applescript_bridge")
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
@@ -239,7 +239,7 @@ def test_edge_case_parameter_logging():
     # Capture log output
     log_capture = io.StringIO()
     handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things_mcp.fast_server")
+    logger = logging.getLogger("things3_mcp.fast_server")
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
