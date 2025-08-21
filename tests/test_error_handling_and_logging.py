@@ -13,8 +13,8 @@ from unittest.mock import patch
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from things_mcp.applescript_bridge import add_todo  # noqa: E402
-from things_mcp.fast_server import add_task  # noqa: E402
+from things3_mcp.applescript_bridge import add_todo  # noqa: E402
+from things3_mcp.fast_server import add_task  # noqa: E402
 
 from .conftest import (  # noqa: E402
     delete_todo_by_id,

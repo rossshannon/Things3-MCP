@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import things  # noqa: E402
 
-from things_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
     update_project,
@@ -469,7 +469,7 @@ def test_list_name_vs_list_id_priority(test_namespace):
 
 def test_mcp_server_add_task_with_list_id(test_namespace):
     """Test that MCP server add_task function properly passes list_id to AppleScript bridge."""
-    from things_mcp.fast_server import add_new_project, add_task
+    from things3_mcp.fast_server import add_new_project, add_task
 
     # Create test project using MCP server
     project_title = f"{test_namespace}-MCP Test Project {generate_random_string(5)}"
@@ -505,7 +505,7 @@ def test_mcp_server_add_task_with_list_id(test_namespace):
 
 def test_mcp_server_priority_list_id_over_list_title(test_namespace):
     """Test that when both list_id and list_title are provided, list_id takes priority."""
-    from things_mcp.fast_server import add_new_project, add_task
+    from things3_mcp.fast_server import add_new_project, add_task
 
     # Create two test projects
     project1_title = f"{test_namespace}-MCP Project 1 {generate_random_string(5)}"
@@ -649,7 +649,7 @@ def test_valid_looking_but_nonexistent_ids(test_namespace):
 
 def test_error_prefix_detection(test_namespace):
     """Test that results starting with 'Error:' are properly detected and handled."""
-    from things_mcp.fast_server import add_task
+    from things3_mcp.fast_server import add_task
 
     # Test with a list_id that will cause an error condition
     # Using a malformed ID that should trigger AppleScript error handling
@@ -680,7 +680,7 @@ def test_error_prefix_detection(test_namespace):
 
 def test_success_message_location_information(test_namespace):
     """Test that success messages include proper location information."""
-    from things_mcp.fast_server import add_new_project, add_task
+    from things3_mcp.fast_server import add_new_project, add_task
 
     # Create test project and area
     project_title = f"{test_namespace}-Location Test Project {generate_random_string(5)}"

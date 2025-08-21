@@ -1,0 +1,110 @@
+name: Build and Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  # Optional: Also trigger on version tags
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build distribution packages
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install build twine
+
+    - name: Build package
+      run: python -m build
+
+    - name: Verify package
+      run: |
+        python -m twine check dist/*
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-packages
+        path: dist/
+
+  test-install:
+    name: Test package installation
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist-packages
+        path: dist/
+
+    - name: Test wheel installation
+      run: |
+        python -m pip install dist/*.whl
+        python -c "import things_mcp; print('✅ Package installed successfully!')"
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build, test-install]
+    # Only run on actual releases, not pre-releases or drafts
+    if: github.event_name == 'release' && github.event.action == 'published' && !github.event.release.prerelease
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/Things3-MCP-server
+
+    permissions:
+      id-token: write  # For trusted publishing
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist-packages
+        path: dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # Uses OpenID Connect trusted publishing - no API tokens needed!
+        # Just need to configure trusted publisher in PyPI settings
+        print-hash: true
+
+  upload-to-release:
+    name: Upload packages to GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, publish]
+    if: github.event_name == 'release' && github.event.action == 'published'
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist-packages
+        path: dist/
+
+    - name: Upload packages to release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/*.whl
+          dist/*.tar.gz

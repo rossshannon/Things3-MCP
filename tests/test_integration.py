@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import things  # noqa: E402
 
-from things_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
     update_project,

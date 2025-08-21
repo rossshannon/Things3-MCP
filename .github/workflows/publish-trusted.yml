@@ -1,0 +1,57 @@
+name: Build and Publish to PyPI (Trusted Publishing)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/Things3-MCP-server
+
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        enable-cache: true
+
+    - name: Build package with uv
+      run: uv build
+
+    - name: Verify package integrity
+      run: |
+        python -m pip install twine
+        python -m twine check dist/*
+
+    - name: Test package installation
+      run: |
+        python -m pip install dist/*.whl
+        python -c "import things_mcp; print('✅ Installation test passed!')"
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        print-hash: true
+
+    - name: Upload packages to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/*.whl
+          dist/*.tar.gz

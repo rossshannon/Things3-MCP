@@ -3,7 +3,7 @@
 Focuses on verifying API response format and structure without exposing actual data.
 """
 
-from things_mcp.fast_server import (
+from things3_mcp.fast_server import (
     get_anytime,
     get_areas,
     get_inbox,

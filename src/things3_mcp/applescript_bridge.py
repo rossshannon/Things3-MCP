@@ -234,12 +234,12 @@ def add_todo(  # noqa: PLR0913
     if list_id:
         script_parts.append("try")
         script_parts.append("  -- Try to find as project by ID")
-        script_parts.append(f"  set target_project to first project whose id is \"{list_id}\"")
+        script_parts.append(f'  set target_project to first project whose id is "{list_id}"')
         script_parts.append("  set project of newTodo to target_project")
         script_parts.append("on error")
         script_parts.append("  try")
         script_parts.append("    -- Try to find as area by ID")
-        script_parts.append(f"    set target_area to first area whose id is \"{list_id}\"")
+        script_parts.append(f'    set target_area to first area whose id is "{list_id}"')
         script_parts.append("    set area of newTodo to target_area")
         script_parts.append("  on error")
         script_parts.append("    -- Neither project nor area found with ID, will create todo without assignment")
@@ -303,16 +303,16 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
 
     if when == "today":
         # Move to Today list
-        script_parts.append(f"    move {item_ref} to list \"Today\"")
+        script_parts.append(f'    move {item_ref} to list "Today"')
     elif when == "tomorrow":
         # Schedule for tomorrow
         script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
     elif when == "anytime":
         # Move to Anytime list
-        script_parts.append(f"    move {item_ref} to list \"Anytime\"")
+        script_parts.append(f'    move {item_ref} to list "Anytime"')
     elif when == "someday":
         # Move to Someday list
-        script_parts.append(f"    move {item_ref} to list \"Someday\"")
+        script_parts.append(f'    move {item_ref} to list "Someday"')
     elif is_date_format:
         # Schedule for specific date
         try:
@@ -469,12 +469,12 @@ def update_todo(
     if list_id:
         script_parts.append("    try")
         # Try to find as project by ID
-        script_parts.append(f"        set targetProject to first project whose id is \"{list_id}\"")
+        script_parts.append(f'        set targetProject to first project whose id is "{list_id}"')
         script_parts.append("        set project of theTodo to targetProject")
         script_parts.append("    on error")
         script_parts.append("        try")
         # Try to find as area by ID
-        script_parts.append(f"            set targetArea to first area whose id is \"{list_id}\"")
+        script_parts.append(f'            set targetArea to first area whose id is "{list_id}"')
         script_parts.append("            set area of theTodo to targetArea")
         script_parts.append("        on error")
         script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')

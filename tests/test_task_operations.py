@@ -16,14 +16,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pytest  # noqa: E402
 import things  # noqa: E402
 
-from things_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
     ensure_things_ready,
     update_project,
     update_todo,
 )
-from things_mcp.fast_server import (  # noqa: E402
+from things3_mcp.fast_server import (  # noqa: E402
     get_tagged_items,
     get_tags,
 )

@@ -17,7 +17,7 @@ from tests.conftest import (  # noqa: E402
     delete_todo_by_id,
     generate_random_string,
 )
-from things_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
     update_project,
