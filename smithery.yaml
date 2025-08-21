@@ -62,7 +62,7 @@ build:
   python_version: "3.12"
 
   # Entry point
-  entry_point: "things_mcp.fast_server:run_things_mcp_server"
+  entry_point: "things3_mcp.fast_server:run_things_mcp_server"
 
   # Dependencies from pyproject.toml
   dependencies:

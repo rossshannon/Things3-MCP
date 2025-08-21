@@ -322,7 +322,7 @@ Run the comprehensive test suite to ensure everything is working as expected:
 uv run pytest
 
 # Run tests with coverage report
-uv run pytest --cov=things_mcp --cov-report=term-missing
+uv run pytest --cov=things3_mcp --cov-report=term-missing
 
 # Run specific test file
 uv run pytest tests/test_list_assignment_operations.py
@@ -364,13 +364,13 @@ All errors are logged and returned with descriptive messages. To review the MCP 
 
 ```bash
 # Follow main logs in real-time
-tail -f ~/.things-mcp/logs/things_mcp.log
+tail -f ~/.things-mcp/logs/things3_mcp.log
 
 # Check error logs
-tail -f ~/.things-mcp/logs/things_mcp_errors.log
+tail -f ~/.things-mcp/logs/things3_mcp_errors.log
 
 # View structured logs for analysis
-cat ~/.things-mcp/logs/things_mcp_structured.json | jq
+cat ~/.things-mcp/logs/things3_mcp_structured.json | jq
 
 # Claude Desktop MCP logs
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log

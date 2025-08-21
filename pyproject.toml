@@ -70,7 +70,7 @@ dev = [
 
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
-test-cov = "pytest --cov=things_mcp --cov-report=term-missing --cov-report=html {args:tests}"
+test-cov = "pytest --cov=things3_mcp --cov-report=term-missing --cov-report=html {args:tests}"
 lint = "ruff check ."
 lint-fix = "ruff check --fix ."
 format = "ruff format ."
@@ -141,7 +141,7 @@ ignore-decorators = ["pytest.fixture"]  # Don't require docstrings for pytest fi
     "PTH118",  # Allow os.path.join in tests
     "PTH120",  # Allow os.path.dirname in tests
 ]
-"src/things_mcp/applescript_bridge.py" = ["Q000", "Q001", "Q002", "Q003", "W291", "E501"]  # AppleScript has different quote/string requirements
+"src/things3_mcp/applescript_bridge.py" = ["Q000", "Q001", "Q002", "Q003", "W291", "E501"]  # AppleScript has different quote/string requirements
 
 [tool.ruff.format]
 quote-style = "double"
@@ -205,8 +205,8 @@ skips = [
     "B607",  # Skip subprocess path check for AppleScript
 ]
 per_file_ignores = [
-    "src/things_mcp/applescript_bridge.py:B404,B603,B607",  # Required for AppleScript
-    "src/things_mcp/formatters.py:B110",  # Ignore missing project/area info
+    "src/things3_mcp/applescript_bridge.py:B404,B603,B607",  # Required for AppleScript
+    "src/things3_mcp/formatters.py:B110",  # Ignore missing project/area info
 ]
 
 [dependency-groups]

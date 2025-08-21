@@ -1,6 +1,25 @@
 # Packaging Releases - Things3-MCP
 
-## Version Bump and Release Process
+## Automated Release Process (Current)
+
+**TL;DR**: Update versions, commit, push, create GitHub release → automation handles the rest!
+
+```bash
+# 1. Update versions in 4 files (see details below)
+# 2. Commit and push
+git add . && git commit -m "Bump version to X.Y.Z" && git push origin main
+
+# 3. Create GitHub release (triggers automation)
+gh release create vX.Y.Z --title "Release vX.Y.Z" --notes "Release notes..."
+
+# ✅ Done! GitHub Actions automatically:
+# - Builds package
+# - Tests installation
+# - Publishes to PyPI
+# - Uploads artifacts to release
+```
+
+## Detailed Version Bump and Release Process
 
 ### Prerequisites
 - Ensure you're in the development virtual environment: `source .venv/bin/activate`
@@ -13,7 +32,7 @@
      ```toml
      version = "2.0.2"  # Increment from previous version
      ```
-   - `src/things_mcp/__init__.py` - Update the `__version__` variable:
+   - `src/things3_mcp/__init__.py` - Update the `__version__` variable:
      ```python
      __version__ = "2.0.2"
      ```
@@ -48,35 +67,14 @@ git commit -m "Bump version to X.Y.Z
 
 **Note**: Pre-commit hooks will run automatically and must pass before commit succeeds.
 
-### Step 3: Build Package
-```bash
-# Ensure virtual environment is activated
-source .venv/bin/activate
-
-# Build both wheel and source distribution
-python -m build
-```
-
-This creates:
-- `dist/things3_mcp_server-X.Y.Z-py3-none-any.whl` (wheel)
-- `dist/things3_mcp_server-X.Y.Z.tar.gz` (source)
-
-### Step 4: Publish to PyPI
-```bash
-# Upload to PyPI (requires authentication)
-twine upload dist/things3_mcp_server-X.Y.Z*
-```
-
-**Note**: You'll be prompted for PyPI username and password/token, these are stored in the `~/.pypirc` file.
-
-### Step 5: Push to GitHub
+### Step 3: Push to GitHub
 ```bash
 git push origin main
 ```
 
-### Step 6: Create GitHub Release
+### Step 4: Create GitHub Release (Triggers Automation)
 ```bash
-# Create GitHub release with tag
+# Create GitHub release with tag - this triggers the automated workflow
 gh release create vX.Y.Z --title "Release vX.Y.Z" --notes "$(cat <<'EOF'
 ## What's Changed
 
@@ -92,17 +90,20 @@ pip install Things3-MCP-server==X.Y.Z
 **Full Changelog**: https://github.com/rossshannon/Things3-MCP/compare/vPREVIOUS...vX.Y.Z
 EOF
 )"
-
-# Upload package files to the release
-gh release upload vX.Y.Z dist/things3_mcp_server-X.Y.Z-py3-none-any.whl dist/things3_mcp_server-X.Y.Z.tar.gz
 ```
 
-### Step 7: Verify Release
-1. Check PyPI: https://pypi.org/project/Things3-MCP-server/
-2. Check GitHub Release: https://github.com/rossshannon/Things3-MCP/releases
-   - Verify release notes are correct
-   - Confirm both `.whl` and `.tar.gz` files are attached
-3. Test installation:
+**What happens automatically after creating the release:**
+1. GitHub Actions workflow (`publish-trusted.yml`) is triggered
+2. Package is built (wheel and source distribution)
+3. Installation is tested in clean environment
+4. Package is published to PyPI using trusted publishing
+5. Build artifacts are uploaded to the GitHub release
+
+### Step 5: Verify Release (Automated)
+1. **Monitor GitHub Actions**: Check the workflow run at https://github.com/rossshannon/Things3-MCP/actions
+2. **Check PyPI**: Verify package appears at https://pypi.org/project/Things3-MCP-server/
+3. **Check GitHub Release**: Confirm artifacts were uploaded automatically
+4. **Test installation**:
    ```bash
    # Clear pip cache if needed
    python3 -m pip cache purge
@@ -134,6 +135,8 @@ gh release upload vX.Y.Z dist/things3_mcp_server-X.Y.Z-py3-none-any.whl dist/thi
 - Verify package name matches exactly
 
 ## Version History
+- `2.0.6`: **BREAKING CHANGE** - Package rename to `things3_mcp`, automated publishing workflow
+- `2.0.5`: Random sampling functionality for LLM enrichment workflows
 - `2.0.4`: Enhanced error handling and test coverage, pytest timeout configuration
 - `2.0.3`: Fixed area location logging and improved error detection
 - `2.0.2`: Version bump release
@@ -141,7 +144,15 @@ gh release upload vX.Y.Z dist/things3_mcp_server-X.Y.Z-py3-none-any.whl dist/thi
 - `2.0.0`: Initial release with FastMCP implementation
 
 ## Important Notes
-- Always test the package installation after publishing
+- **Automated Publishing**: Creating a GitHub release triggers automatic PyPI publishing
+- **No Manual Build/Upload**: The workflow handles building and uploading automatically
+- **Monitor Actions**: Always check GitHub Actions for workflow success/failure
+- **Trusted Publishing**: Uses secure OIDC authentication (no API tokens needed)
+- **Breaking Changes**: Package import changed from `things_mcp` to `things3_mcp` in v2.0.6+
 - Update this file with new version history
-- **REQUIRED**: Create a GitHub release for every version published to PyPI
 - The README installation instructions should reference the latest stable version
+
+## Automated Workflow Prerequisites
+- PyPI trusted publisher configured for `Things3-MCP-server` package
+- GitHub `pypi` environment created in repository settings
+- `publish-trusted.yml` workflow file present in `.github/workflows/`

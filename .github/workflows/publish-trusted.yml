@@ -42,7 +42,7 @@ jobs:
     - name: Test package installation
       run: |
         python -m pip install dist/*.whl
-        python -c "import things_mcp; print('✅ Installation test passed!')"
+        python -c "import things3_mcp; print('✅ Installation test passed!')"
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

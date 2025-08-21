@@ -124,14 +124,14 @@ def setup_logging(
     # File handlers with rotation
     if structured_logs:
         # Structured JSON logs for analysis
-        json_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things_mcp_structured.json", maxBytes=max_bytes, backupCount=backup_count)
+        json_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_structured.json", maxBytes=max_bytes, backupCount=backup_count)
         json_file_handler.setLevel(getattr(logging, file_level.upper()))
         json_file_handler.setFormatter(StructuredFormatter())
         json_file_handler.addFilter(operation_filter)
         root_logger.addHandler(json_file_handler)
 
     # Human-readable file logs
-    text_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things_mcp.log", maxBytes=max_bytes, backupCount=backup_count)
+    text_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp.log", maxBytes=max_bytes, backupCount=backup_count)
     text_file_handler.setLevel(getattr(logging, file_level.upper()))
     text_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     text_file_handler.setFormatter(text_format)
@@ -139,7 +139,7 @@ def setup_logging(
     root_logger.addHandler(text_file_handler)
 
     # Error-only file handler
-    error_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things_mcp_errors.log", maxBytes=max_bytes, backupCount=backup_count)
+    error_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_errors.log", maxBytes=max_bytes, backupCount=backup_count)
     error_file_handler.setLevel(logging.ERROR)
     error_file_handler.setFormatter(text_format)
     error_file_handler.addFilter(operation_filter)
