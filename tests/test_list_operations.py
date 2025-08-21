@@ -9,6 +9,9 @@ from things_mcp.fast_server import (
     get_inbox,
     get_logbook,
     get_projects,
+    get_random_anytime,
+    get_random_inbox,
+    get_random_todos,
     get_recent,
     get_someday,
     get_tagged_items,
@@ -174,6 +177,120 @@ def test_get_trash():
         items = result.split("\n\n---\n\n")
         for item in items:
             assert verify_item_format(item), f"Item format is incorrect: {item}"
+
+
+def test_get_random_inbox():
+    """Test get_random_inbox() returns data in expected format."""
+    # Test default count (5)
+    result = get_random_inbox()
+    assert isinstance(result, str), "Should return a string"
+
+    if result != "No items found in Inbox":
+        items = result.split("\n\n---\n\n")
+        # Should return at most 5 items by default
+        assert len(items) <= 5, f"Should return at most 5 items, got {len(items)}"
+        for item in items:
+            assert verify_todo_format(item), f"Item format is incorrect: {item}"
+
+    # Test custom count
+    result_3 = get_random_inbox(count=3)
+    assert isinstance(result_3, str), "Should return a string"
+
+    if result_3 != "No items found in Inbox":
+        items_3 = result_3.split("\n\n---\n\n")
+        assert len(items_3) <= 3, f"Should return at most 3 items, got {len(items_3)}"
+        for item in items_3:
+            assert verify_todo_format(item), f"Item format is incorrect: {item}"
+
+    # Test edge case: count=0
+    result_0 = get_random_inbox(count=0)
+    assert result_0 == "No items found in Inbox", "Should return no items message for count=0"
+
+
+def test_get_random_anytime():
+    """Test get_random_anytime() returns data in expected format."""
+    # Test default count (5)
+    result = get_random_anytime()
+    assert isinstance(result, str), "Should return a string"
+
+    if result != "No items in Anytime list":
+        items = result.split("\n\n---\n\n")
+        # Should return at most 5 items by default
+        assert len(items) <= 5, f"Should return at most 5 items, got {len(items)}"
+        for item in items:
+            # Anytime can contain both todos and projects
+            assert verify_item_format(item), f"Item format is incorrect: {item}"
+
+    # Test custom count
+    result_2 = get_random_anytime(count=2)
+    assert isinstance(result_2, str), "Should return a string"
+
+    if result_2 != "No items in Anytime list":
+        items_2 = result_2.split("\n\n---\n\n")
+        assert len(items_2) <= 2, f"Should return at most 2 items, got {len(items_2)}"
+        for item in items_2:
+            assert verify_item_format(item), f"Item format is incorrect: {item}"
+
+
+def test_get_random_todos():
+    """Test get_random_todos() returns data in expected format."""
+    # Test without project filter
+    result = get_random_todos()
+    assert isinstance(result, str), "Should return a string"
+
+    if result != "No todos found":
+        items = result.split("\n\n---\n\n")
+        # Should return at most 5 items by default
+        assert len(items) <= 5, f"Should return at most 5 items, got {len(items)}"
+        for item in items:
+            assert verify_todo_format(item), f"Item format is incorrect: {item}"
+
+    # Test custom count
+    result_4 = get_random_todos(count=4)
+    assert isinstance(result_4, str), "Should return a string"
+
+    if result_4 != "No todos found":
+        items_4 = result_4.split("\n\n---\n\n")
+        assert len(items_4) <= 4, f"Should return at most 4 items, got {len(items_4)}"
+        for item in items_4:
+            assert verify_todo_format(item), f"Item format is incorrect: {item}"
+
+
+def test_get_random_todos_with_project():
+    """Test get_random_todos() with project filtering returns data in expected format."""
+    # First get a project ID from the projects list
+    projects_result = get_projects()
+    if projects_result != "No projects found":
+        # Get first project's ID from the result
+        project_lines = projects_result.split("\n")
+        for line in project_lines:
+            if line.startswith("UUID:"):
+                project_id = line.split("UUID:")[1].strip()
+                # Test random todos for this project
+                result = get_random_todos(project_uuid=project_id, count=3)
+                assert isinstance(result, str), "Should return a string"
+
+                if result != "No todos found":
+                    todos = result.split("\n\n---\n\n")
+                    assert len(todos) <= 3, f"Should return at most 3 items, got {len(todos)}"
+                    for todo in todos:
+                        assert verify_todo_format(todo), f"Todo format is incorrect: {todo}"
+                break
+
+
+def test_random_sampling_edge_cases():
+    """Test edge cases for random sampling functions."""
+    # Test negative count (should behave like count=0)
+    result_neg = get_random_inbox(count=-1)
+    assert result_neg == "No items found in Inbox", "Should handle negative count gracefully"
+
+    # Test very large count (should return all available items)
+    result_large = get_random_anytime(count=1000)
+    assert isinstance(result_large, str), "Should handle large count gracefully"
+
+    # Test invalid project UUID
+    result_invalid = get_random_todos(project_uuid="invalid-uuid-123", count=2)
+    assert "Error: Invalid project UUID" in result_invalid, "Should handle invalid project UUID"
 
 
 def test_get_todos_with_project():

@@ -218,7 +218,7 @@ def get_random_inbox(count: int = 5) -> str:
         elif len(items) <= count:
             sampled = items
         else:
-            sampled = random.sample(items, count)
+            sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes  # nosec B311 - not used for cryptographic purposes
 
         if not sampled:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
@@ -253,7 +253,7 @@ def get_random_anytime(count: int = 5) -> str:
     elif len(items) <= count:
         sampled = items
     else:
-        sampled = random.sample(items, count)
+        sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes
 
     if not sampled:
         return "No items in Anytime list"
@@ -353,7 +353,7 @@ def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
     elif len(items) <= count:
         sampled = items
     else:
-        sampled = random.sample(items, count)
+        sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes
 
     if not sampled:
         return "No todos found"

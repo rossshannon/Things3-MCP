@@ -122,6 +122,11 @@ Restart the Claude Desktop app to enable the integration.
 - `get_logbook` - Get completed todos
 - `get_trash` - Get trashed todos
 
+#### Random Sampling (for LLM Enrichment)
+- `get_random_inbox` - Get a random sample of todos from Inbox
+- `get_random_anytime` - Get a random sample of items from Anytime list
+- `get_random_todos` - Get a random sample of todos, optionally filtered by project
+
 #### Basic Operations
 - `get_todos` - Get todos, optionally filtered by project
 - `get_projects` - Get all projects
@@ -165,6 +170,11 @@ Restart the Claude Desktop app to enable the integration.
 ### get_recent
 - `period` - Time period (e.g., '3d', '1w', '2m', '1y')
 - `limit` - Maximum number of items to return
+
+### Random Sampling Tools
+- `get_random_inbox(count=5)` - Get random sample from Inbox
+- `get_random_anytime(count=5)` - Get random sample from Anytime list
+- `get_random_todos(project_uuid=None, count=5)` - Get random sample of todos, optionally from specific project
 
 ### add_todo
 - `title` - Title of the todo
@@ -266,6 +276,24 @@ update_todo(id="TODO101", list_id="ABC123DEF456")
 
 ## Using Tags
 Things will automatically create missing tags when they are added to a task or project. Configure your LLM to do a lookup of your tags first before making changes if you want to control this.
+
+## LLM Enrichment Workflows
+
+The random sampling tools (`get_random_inbox`, `get_random_anytime`, `get_random_todos`) are designed for iterative task improvement workflows where you want to gradually enhance your todo items using AI assistance.
+
+### Use Cases
+
+**Incremental Task Enhancement**
+- Pull 5 random todos from your Inbox to add better descriptions, break down into subtasks, or estimate time requirements
+- Sample from your Anytime list to identify tasks that could benefit from better scheduling or prioritization
+- Avoid downloading hundreds of tasks into context when you only need a few
+
+**Content Enrichment**
+- Add or improve context and suggest more actionable language
+- Add context, dependencies, or next steps to existing todos
+- Standardize formatting across your task descriptions
+- Find tasks that might be too vague or overly complex
+- Discover todos that could be automated or delegated
 
 ## Development
 
