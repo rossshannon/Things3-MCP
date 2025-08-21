@@ -7,7 +7,7 @@ This repository includes GitHub Actions workflows for automated package building
 ### Package vs Repository Names
 - **GitHub Repository**: `rossshannon/Things3-MCP`
 - **PyPI Package**: `Things3-MCP-server` (https://pypi.org/project/Things3-MCP-server/)
-- **Python Import**: `import things_mcp`
+- **Python Import**: `import things3_mcp`
 
 ### Current Workflows
 
