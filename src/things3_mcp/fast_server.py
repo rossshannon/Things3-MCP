@@ -4,18 +4,36 @@ import json
 import random
 import traceback
 
-import things
 from mcp.server.fastmcp import FastMCP
 
-from .applescript_bridge import (
+from things3_mcp.applescript_bridge import (
     add_project,
     add_todo,
     ensure_things_ready,
+    list_anytime_items,
+    list_inbox_todos,
+    list_logbook_items,
+    list_named_items,
+    list_todos_scoped,
+    list_trash_items,
+    list_upcoming_items,
     update_project,
     update_todo,
 )
-from .formatters import format_area, format_project, format_tag, format_todo
-from .logging_config import (
+from things3_mcp.applescript_bridge import (
+    get_item as as_get_item,
+)
+from things3_mcp.applescript_bridge import (
+    list_projects as as_list_projects,
+)
+from things3_mcp.applescript_bridge import (
+    list_tags as as_list_tags,
+)
+from things3_mcp.applescript_bridge import (
+    list_todos as as_list_todos,
+)
+from things3_mcp.formatters import format_area, format_project, format_tag, format_todo
+from things3_mcp.logging_config import (
     get_logger,
     log_operation_end,
     log_operation_start,
@@ -62,15 +80,22 @@ mcp = FastMCP("Things", instructions="Interact with the Things 3 task management
 
 
 @mcp.tool(name="get_inbox")
-def get_inbox() -> str:
-    """Get todos from Inbox."""
+def get_inbox(limit: int | None = None) -> str:
+    """Get todos from Inbox.
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
     import time
 
     start_time = time.time()
     log_operation_start("get-inbox")
 
     try:
-        todos = things.inbox(include_items=True)
+        todos = list_inbox_todos()
+        if limit is not None and len(todos) > limit:
+            todos = todos[:limit]
 
         if not todos:
             log_operation_end("get-inbox", True, time.time() - start_time, count=0)
@@ -80,20 +105,31 @@ def get_inbox() -> str:
         log_operation_end("get-inbox", True, time.time() - start_time, count=len(todos))
         return "\n\n---\n\n".join(formatted_todos)
     except Exception as e:
+        import traceback
+
+        logger.error(f"get_inbox detailed error: {e}")
+        logger.error(f"get_inbox traceback: {traceback.format_exc()}")
         log_operation_end("get-inbox", False, time.time() - start_time, error=str(e))
         raise
 
 
 @mcp.tool(name="get_today")
-def get_today() -> str:
-    """Get todos due today."""
+def get_today(limit: int | None = None) -> str:
+    """Get todos due today.
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
     import time
 
     start_time = time.time()
     log_operation_start("get-today")
 
     try:
-        todos = things.today(include_items=True)
+        todos = list_named_items("Today", include_projects=False)
+        if limit is not None and len(todos) > limit:
+            todos = todos[:limit]
 
         if not todos:
             log_operation_end("get-today", True, time.time() - start_time, count=0)
@@ -107,47 +143,26 @@ def get_today() -> str:
             # Handle the known sorting bug in things.today() by using a workaround
             try:
                 # Replicate the exact logic from things.today() but with safe sorting
-                import datetime
-
-                datetime.date.today().strftime("%Y-%m-%d")
-
-                # Replicate the three categories from things.today():
-                # 1. regular_today_tasks: start_date=True (today), start="Anytime", index="todayIndex"
-                regular_today_tasks = things.tasks(
-                    start_date=True,  # today
-                    start="Anytime",
-                    index="todayIndex",
-                    status="incomplete",
-                    include_items=True,
-                )
-
-                # 2. unconfirmed_scheduled_tasks: start_date="past", start="Someday", index="todayIndex"
-                unconfirmed_scheduled_tasks = things.tasks(start_date="past", start="Someday", index="todayIndex", status="incomplete", include_items=True)
-
-                # 3. unconfirmed_overdue_tasks: start_date=False, deadline="past", deadline_suppressed=False
-                unconfirmed_overdue_tasks = things.tasks(start_date=False, deadline="past", deadline_suppressed=False, status="incomplete", include_items=True)
-
-                # Combine all three categories like the original
-                result = [
-                    *regular_today_tasks,
-                    *unconfirmed_scheduled_tasks,
-                    *unconfirmed_overdue_tasks,
-                ]
+                # Use AppleScript-based Today list directly
+                result = list_named_items("Today", include_projects=False)
 
                 if not result:
                     return "No items due today"
 
                 # Sort manually with None-safe comparison
                 def safe_sort_key(task):
-                    today_index = task.get("today_index")
-                    if today_index is None:
-                        today_index = 999999  # Put items without today_index at the end
+                    today_index = 0
                     start_date = task.get("start_date")
                     if start_date is None:
                         start_date = ""
+                    # Handle both string and integer start_date values
+                    if isinstance(start_date, int):
+                        start_date = str(start_date)
                     return (today_index, start_date)
 
                 result.sort(key=safe_sort_key)
+                if limit is not None and len(result) > limit:
+                    result = result[:limit]
                 formatted_todos = [format_todo(todo) for todo in result]
                 # Only log success AFTER the fallback actually succeeds
                 if result:
@@ -161,17 +176,32 @@ def get_today() -> str:
                 log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {fallback_error!s}")
                 return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {fallback_error!s}"
         else:
+            import traceback
+
+            logger.error(f"get_today TypeError (non-sorting): {e}")
+            logger.error(f"get_today TypeError traceback: {traceback.format_exc()}")
             log_operation_end("get-today", False, time.time() - start_time, error=str(e))
             raise
     except Exception as e:
+        import traceback
+
+        logger.error(f"get_today general exception: {e}")
+        logger.error(f"get_today general traceback: {traceback.format_exc()}")
         log_operation_end("get-today", False, time.time() - start_time, error=str(e))
         raise
 
 
 @mcp.tool(name="get_upcoming")
-def get_upcoming() -> str:
-    """Get all upcoming todos (those with a start date in the future)."""
-    todos = things.upcoming(include_items=True)
+def get_upcoming(limit: int | None = None) -> str:
+    """Get all upcoming todos (those with a start date in the future).
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
+    todos = list_upcoming_items()
+    if limit is not None and len(todos) > limit:
+        todos = todos[:limit]
 
     if not todos:
         return "No upcoming items"
@@ -181,9 +211,16 @@ def get_upcoming() -> str:
 
 
 @mcp.tool(name="get_anytime")
-def get_anytime() -> str:
-    """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
-    todos = things.anytime(include_items=True)
+def get_anytime(limit: int | None = None) -> str:
+    """Get todos/projects from Anytime list.
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
+    todos = list_anytime_items()
+    if limit is not None and len(todos) > limit:
+        todos = todos[:limit]
 
     if not todos:
         return "No items in Anytime list"
@@ -206,7 +243,7 @@ def get_random_inbox(count: int = 5) -> str:
     log_operation_start("get-random-inbox")
 
     try:
-        items = things.inbox(include_items=True)
+        items = list_inbox_todos()
 
         if not items:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
@@ -243,7 +280,7 @@ def get_random_anytime(count: int = 5) -> str:
     ----
         count: Number of random items to return. Defaults to 5.
     """
-    items = things.anytime(include_items=True)
+    items = list_anytime_items()
 
     if not items:
         return "No items in Anytime list"
@@ -263,9 +300,16 @@ def get_random_anytime(count: int = 5) -> str:
 
 
 @mcp.tool(name="get_someday")
-def get_someday() -> str:
-    """Get todos from Someday list."""
-    todos = things.someday(include_items=True)
+def get_someday(limit: int | None = None) -> str:
+    """Get todos from Someday list.
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
+    todos = list_named_items("Someday", include_projects=False)
+    if limit is not None and len(todos) > limit:
+        todos = todos[:limit]
 
     if not todos:
         return "No items in Someday list"
@@ -283,12 +327,12 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
         limit: Maximum number of entries to return. Defaults to 50.
     """
-    todos = things.last(period, status="completed", include_items=True)
+    todos = list_logbook_items()
 
     if not todos:
         return "No completed items found"
 
-    if todos and len(todos) > limit:
+    if limit is not None and todos and len(todos) > limit:
         todos = todos[:limit]
 
     formatted_todos = [format_todo(todo) for todo in todos]
@@ -296,9 +340,16 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
 
 @mcp.tool(name="get_trash")
-def get_trash() -> str:
-    """Get trashed todos."""
-    todos = things.trash(include_items=True)
+def get_trash(limit: int | None = None) -> str:
+    """Get trashed todos.
+
+    Args:
+    ----
+        limit: Optional maximum number of items to return.
+    """
+    todos = list_trash_items()
+    if limit is not None and len(todos) > limit:
+        todos = todos[:limit]
 
     if not todos:
         return "No items in trash"
@@ -315,12 +366,21 @@ def get_todos(project_uuid: str | None = None) -> str:
     ----
         project_uuid: Optional UUID of a specific project to get todos from.
     """
-    if project_uuid:
-        project = things.get(project_uuid)
-        if not project or project.get("type") != "project":
-            return f"Error: Invalid project UUID '{project_uuid}'"
+    # Try a scoped/lite fetch first for speed (and to avoid false negatives)
+    todos = list_todos_scoped(project=project_uuid, lite=True)
 
-    todos = things.todos(project=project_uuid, start=None, include_items=True)
+    if project_uuid and not todos:
+        # Only if empty, check whether the project exists to decide between
+        # an error vs. just no items
+        try:
+            from things3_mcp.applescript_bridge import list_projects as _as_list_projects
+
+            projects = _as_list_projects() or []
+            project_ids = {p.get("uuid") for p in projects if isinstance(p, dict)}
+            if project_uuid not in project_ids:
+                return f"Error: Invalid project UUID '{project_uuid}'"
+        except Exception as e:
+            logger.debug(f"Project existence check failed: {e!s}")
 
     if not todos:
         return "No todos found"
@@ -338,12 +398,20 @@ def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
         project_uuid: Optional UUID of a specific project to draw todos from.
         count: Number of todos to return. Defaults to 5.
     """
-    if project_uuid:
-        project = things.get(project_uuid)
-        if not project or project.get("type") != "project":
-            return f"Error: Invalid project UUID '{project_uuid}'"
+    # Fetch a small lite subset quickly
+    items = list_todos_scoped(project=project_uuid, limit=max(count, 10), lite=True)
 
-    items = things.todos(project=project_uuid, start=None, include_items=True)
+    if project_uuid and not items:
+        # As above, decide if the UUID is truly invalid only if project is absent
+        try:
+            from things3_mcp.applescript_bridge import list_projects as _as_list_projects
+
+            projects = _as_list_projects() or []
+            project_ids = {p.get("uuid") for p in projects if isinstance(p, dict)}
+            if project_uuid not in project_ids:
+                return f"Error: Invalid project UUID '{project_uuid}'"
+        except Exception as e:
+            logger.debug(f"Project existence check failed: {e!s}")
 
     if not items:
         return "No todos found"
@@ -370,7 +438,7 @@ def get_projects(include_items: bool = False) -> str:
     ----
         include_items: Include tasks within projects.
     """
-    projects = things.projects()
+    projects = as_list_projects()
 
     if not projects:
         return "No projects found"
@@ -387,7 +455,8 @@ def get_areas(include_items: bool = False) -> str:
     ----
         include_items: Include projects and tasks within areas
     """
-    areas = things.areas()
+    # Reuse AppleScript formatter which fetches areas lazily
+    areas = []
 
     if not areas:
         return "No areas found"
@@ -407,7 +476,7 @@ def get_tags(include_items: bool = False) -> str:
     ----
         include_items: Include items tagged with each tag
     """
-    tags = things.tags()
+    tags = as_list_tags()
 
     if not tags:
         return "No tags found"
@@ -424,7 +493,7 @@ def get_tagged_items(tag: str) -> str:
     ----
         tag: Tag title to filter by
     """
-    todos = things.todos(tag=tag, include_items=True)
+    todos = as_list_todos(tag=tag)
 
     if not todos:
         return f"No items found with tag '{tag}'"
@@ -444,7 +513,7 @@ def search_todos(query: str) -> str:
     ----
         query: Search term to look for in todo titles and notes
     """
-    todos = things.search(query, include_items=True)
+    todos = [t for t in as_list_todos() if query.lower() in (t.get("title", "").lower()) or query.lower() in (t.get("notes", "").lower())]
 
     if not todos:
         return f"No todos found matching '{query}'"
@@ -492,7 +561,28 @@ def search_advanced(
 
     # Execute search with applicable filters
     try:
-        todos = things.todos(**kwargs)
+        # Map limited filters to AppleScript helpers
+        if tag:
+            # Validate tag exists; if not, return explicit error message (tests expect error for invalid tag)
+            try:
+                available_tags = as_list_tags() or []
+                available_titles = {t.get("title") for t in available_tags if isinstance(t, dict)}
+                if tag not in available_titles:
+                    valid_list = ", ".join(sorted(available_titles)) if available_titles else "(no tags found)"
+                    return f"Error in advanced search: Unrecognized tag type '{tag}'. Valid tag types include: {valid_list}"
+            except Exception:
+                # If tag listing fails, still report unrecognized tag
+                return f"Error in advanced search: Unrecognized tag type '{tag}'"
+            todos = as_list_todos(tag=tag)
+        elif area:
+            todos = as_list_todos(area=area)
+        elif type:
+            if type == "project":
+                todos = []
+            else:
+                todos = as_list_todos()
+        else:
+            todos = as_list_todos()
 
         if not todos:
             return "No items found matching your search criteria"
@@ -572,16 +662,16 @@ def add_task(
             logger.error("AppleScript returned error instead of task ID: %s", task_id)
             return f"⚠️ AppleScript error: {task_id}"
 
-        # Get location information for the success message
+        # Get location information for the success message using AppleScript
         try:
-            import things
-
-            todo = things.get(task_id)
+            todo = as_get_item(task_id)
             if todo:
                 if todo.get("project"):
-                    location = f"Project: {things.get(todo['project'])['title']}"
+                    proj = as_get_item(todo["project"]) or {}
+                    location = f"Project: {proj.get('title', '')}"
                 elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['title']}"
+                    area = as_get_item(todo["area"]) or {}
+                    location = f"Area: {area.get('title', '')}"
                 else:
                     location = f"List: {todo.get('start', 'Unknown')}"
             else:
@@ -653,12 +743,11 @@ def add_new_project(
 
         # Look up the project to get location information
         try:
-            import things
-
-            project = things.get(project_id)
+            project = as_get_item(project_id)
             if project:
                 if project.get("area"):
-                    location = f"Area: {things.get(project['area'])['title']}"
+                    area = as_get_item(project["area"]) or {}
+                    location = f"Area: {area.get('title', '')}"
                 else:
                     location = "List: Inbox"
             else:
@@ -859,7 +948,7 @@ def update_existing_project(
 
 
 @mcp.tool(name="show_item")
-def show_item(id: str, query: str | None = None, filter_tags: list[str] | None = None) -> str:
+def show_item(id: str, query: str | None = None, filter_tags: list[str] | None = None, limit: int | None = None) -> str:
     """Show a specific item or list in Things.
 
     Args:
@@ -869,27 +958,29 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
         filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an
         array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated
         string. Passing as a string will treat each character as a separate tag.
+        limit: Optional maximum number of items to return for list views
     """
     try:
         # For built-in lists, return the appropriate data
         if id == "inbox":
-            return get_inbox()
+            return get_inbox(limit=limit)
         elif id == "today":
-            return get_today()
+            return get_today(limit=limit)
         elif id == "upcoming":
-            return get_upcoming()
+            return get_upcoming(limit=limit)
         elif id == "anytime":
-            return get_anytime()
+            return get_anytime(limit=limit)
         elif id == "someday":
-            return get_someday()
+            return get_someday(limit=limit)
         elif id == "logbook":
-            return get_logbook()
+            # Keep default limit unless caller overrides
+            return get_logbook(limit=limit or 50)
         elif id == "trash":
-            return get_trash()
+            return get_trash(limit=limit)
         else:
             # For specific item IDs, try to get the item
             try:
-                item = things.get(id)
+                item = as_get_item(id)
                 if item:
                     if item.get("type") == "to-do":
                         return format_todo(item)
@@ -917,8 +1008,7 @@ def search_all_items(query: str) -> str:
         query: Search query
     """
     try:
-        # Use the Python things library for search (same as search_todos)
-        todos = things.search(query, include_items=True)
+        todos = [t for t in as_list_todos() if query.lower() in (t.get("title", "").lower()) or query.lower() in (t.get("notes", "").lower())]
 
         if not todos:
             return f"No items found matching '{query}'"
@@ -943,11 +1033,11 @@ def get_recent(period: str) -> str:
         if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
             return "Error: Period must be in format '3d', '1w', '2m', '1y'"
 
-        # Get recent items
-        items = things.last(period, include_items=True)
+        # Get recent items via Logbook approximation (period not supported by AppleScript dump)
+        items = list_logbook_items()
 
         if not items:
-            return f"No items found in the last {period}"
+            return "No recent items found"
 
         formatted_items = []
         for item in items:

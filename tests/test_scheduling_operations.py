@@ -11,25 +11,26 @@ from datetime import datetime, timedelta
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import things  # noqa: E402
-
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
     generate_random_string,
 )
-from things3_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402  # noqa: E402
     add_project,
     add_todo,
+    get_item,
+    list_named_items,
+    list_todos,
     update_project,
     update_todo,
 )
 
 
 def _get_today_safe():
-    """Safe version of things.today() that handles the sorting bug."""
+    """Safe Today retrieval via AppleScript that handles sorting consistently."""
     try:
-        return things.today()
+        return list_named_items("Today", include_projects=False)
     except TypeError as e:
         if "'<' not supported between instances of 'NoneType' and 'str'" in str(e):
             # Replicate the exact logic from things.today() but with safe sorting
@@ -47,8 +48,8 @@ def _get_today_safe():
                 return (today_index, start_date)
 
             # Get the raw data and filter for today items
-            all_todos = things.todos(status="incomplete")
-            all_projects = things.projects(status="incomplete")
+            all_todos = list_todos()
+            all_projects = []
 
             result = []
             today = datetime.date.today().strftime("%Y-%m-%d")
@@ -76,7 +77,7 @@ def verify_todo_in_list(todo_id: str, expected_list: str) -> bool:
         return False
 
     # Use things.get() to get todo properties
-    todo = things.get(todo_id)
+    todo = get_item(todo_id)
     if not todo:
         return False
 
@@ -84,13 +85,13 @@ def verify_todo_in_list(todo_id: str, expected_list: str) -> bool:
     if expected_list == "Today":
         # Use safe today list retrieval to avoid sorting bug
         today_todos = _get_today_safe()
-        return any(t["uuid"] == todo_id for t in today_todos)
+        return any(t.get("uuid") == todo_id for t in today_todos)
     elif expected_list == "Anytime":
-        anytime_todos = things.anytime()
-        return any(t["uuid"] == todo_id for t in anytime_todos)
+        anytime_todos = list_named_items("Anytime", include_projects=False)
+        return any(t.get("uuid") == todo_id for t in anytime_todos)
     elif expected_list == "Someday":
-        someday_todos = things.someday()
-        return any(t["uuid"] == todo_id for t in someday_todos)
+        someday_todos = list_named_items("Someday", include_projects=False)
+        return any(t.get("uuid") == todo_id for t in someday_todos)
     return False
 
 
@@ -100,7 +101,7 @@ def verify_project_in_list(project_id: str, expected_list: str) -> bool:
         return False
 
     # Use things.get() to get project properties
-    project = things.get(project_id)
+    project = get_item(project_id)
     if not project:
         return False
 
@@ -108,13 +109,13 @@ def verify_project_in_list(project_id: str, expected_list: str) -> bool:
     if expected_list == "Today":
         # Use safe today list retrieval to avoid sorting bug
         today_projects = _get_today_safe()
-        return any(p["uuid"] == project_id for p in today_projects)
+        return any(p.get("uuid") == project_id for p in today_projects)
     elif expected_list == "Anytime":
-        anytime_projects = things.anytime()
-        return any(p["uuid"] == project_id for p in anytime_projects)
+        anytime_projects = list_named_items("Anytime", include_projects=True)
+        return any(p.get("uuid") == project_id for p in anytime_projects if p.get("type") == "project")
     elif expected_list == "Someday":
-        someday_projects = things.someday()
-        return any(p["uuid"] == project_id for p in someday_projects)
+        someday_projects = list_named_items("Someday", include_projects=True)
+        return any(p.get("uuid") == project_id for p in someday_projects if p.get("type") == "project")
     return False
 
 
@@ -123,7 +124,7 @@ def verify_todo_scheduled_date(todo_id: str, expected_date: str) -> bool:
     if not todo_id:
         return False
 
-    todo = things.get(todo_id)
+    todo = get_item(todo_id)
     if not todo:
         return False
 
@@ -141,7 +142,7 @@ def verify_project_scheduled_date(project_id: str, expected_date: str) -> bool:
     if not project_id:
         return False
 
-    project = things.get(project_id)
+    project = get_item(project_id)
     if not project:
         return False
 
@@ -387,7 +388,7 @@ def test_invalid_scheduling_values(test_namespace):
 
     try:
         # The todo should be created but not scheduled (should be in Inbox)
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo, "Failed to retrieve created todo"
         # Note: We can't easily verify it's in Inbox without additional API calls
     finally:
@@ -408,7 +409,7 @@ def test_scheduling_with_other_properties(test_namespace):
         assert verify_todo_in_list(todo_id, "Today"), "Todo should be in Today list"
 
         # Verify other properties are preserved
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo, "Failed to retrieve todo"
         assert todo.get("notes") == notes, "Notes should be preserved"
         # Note: Tag verification would require additional API calls

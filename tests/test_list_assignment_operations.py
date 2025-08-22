@@ -10,11 +10,10 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import things  # noqa: E402
-
 from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
+    get_item,  # noqa: E402
     update_project,
     update_todo,
 )
@@ -45,7 +44,7 @@ def test_update_todo_to_inbox(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to Inbox: {result}"
 
         # Verify the todo is now in Inbox
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         # Inbox todos don't have a specific list property, but we can verify it's not in other lists
         assert not todo.get("start_date"), "Todo should not have a start date in Inbox"
         assert not todo.get("deadline"), "Todo should not have a deadline in Inbox"
@@ -66,7 +65,7 @@ def test_update_todo_to_today(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to Today: {result}"
 
         # Verify the todo is now in Today
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         # Today todos should have today's date as start_date
         from datetime import datetime
 
@@ -89,7 +88,7 @@ def test_update_todo_to_anytime(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to Anytime: {result}"
 
         # Verify the todo is now in Anytime
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         # Anytime todos should not have a start_date
         assert not todo.get("start_date"), "Todo should not have a start date in Anytime"
     finally:
@@ -109,7 +108,7 @@ def test_update_todo_to_someday(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to Someday: {result}"
 
         # Verify the todo is now in Someday
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         # Someday todos should not have a start_date
         assert not todo.get("start_date"), "Todo should not have a start date in Someday"
     finally:
@@ -141,7 +140,7 @@ def test_move_todo_between_builtin_lists(test_namespace):
         assert "true" in str(result).lower(), "Failed to move todo to Anytime"
 
         # Verify final state
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert not todo.get("start_date"), "Todo should be in Anytime (no start date)"
     finally:
         delete_todo_by_id(todo_id)
@@ -170,7 +169,7 @@ def test_add_todo_to_area_via_list_id(test_namespace):
         assert todo_id, "Failed to create todo in area using list_id"
 
         # Verify the todo was created in the correct area
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["area"] == area_id, f"Todo should be in area {area_id}, but is in {todo.get('area')}"
 
         # Clean up
@@ -194,7 +193,7 @@ def test_add_todo_to_project_via_list_id(test_namespace):
         assert todo_id, "Failed to create todo in project using list_id"
 
         # Verify the todo was created in the correct project
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["project"] == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')}"
 
         # Clean up
@@ -225,7 +224,7 @@ def test_update_todo_to_area_via_list_id(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to area using list_id: {result}"
 
         # Verify the todo is now in the correct area
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["area"] == area_id, f"Todo should be in area {area_id}, but is in {todo.get('area')}"
 
         # Clean up
@@ -253,7 +252,7 @@ def test_update_todo_to_project_via_list_id(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to project using list_id: {result}"
 
         # Verify the todo is now in the correct project
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["project"] == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')}"
 
         # Clean up
@@ -280,7 +279,7 @@ def test_add_project_to_area_via_area_id(test_namespace):
         assert project_id, "Failed to create project in area using area_id"
 
         # Verify the project was created in the correct area
-        project = things.get(project_id)
+        project = get_item(project_id)
         assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project.get('area')}"
 
         # Clean up
@@ -312,7 +311,7 @@ def test_update_project_to_area_via_area_id(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move project to area using area_id: {result}"
 
         # Verify the project is now in the correct area
-        project = things.get(project_id)
+        project = get_item(project_id)
         assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project.get('area')}"
 
         # Clean up
@@ -341,7 +340,7 @@ def test_add_todo_to_project_via_list_title(test_namespace):
         assert todo_id, "Failed to create todo in project using list_title"
 
         # Verify the todo was created in the correct project
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["project"] == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')}"
 
         # Clean up
@@ -368,7 +367,7 @@ def test_update_todo_to_project_via_list_title(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo to project using list_title: {result}"
 
         # Verify the todo is now in the correct project
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["project"] == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')}"
 
         # Clean up
@@ -439,7 +438,7 @@ def test_list_name_vs_list_id_priority(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo using list_name: {result}"
 
         # Verify it went somewhere (in this case, it goes to the area)
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         # The todo ends up in the area, not the project - this appears to be Things3 behavior
         assert todo.get("area") == area_id, f"Todo should be in area {area_id} when names conflict"
 
@@ -452,7 +451,7 @@ def test_list_name_vs_list_id_priority(test_namespace):
         assert "true" in str(result).lower(), f"Failed to move todo using list_id: {result}"
 
         # Verify it went to the area
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo["area"] == area_id, f"Todo should be in area {area_id}"
 
         # Clean up
@@ -494,7 +493,7 @@ def test_mcp_server_add_task_with_list_id(test_namespace):
 
         # Verify the todo was created in the correct project
         # This assertion will fail until the MCP server is fixed to pass list_id
-        todo = things.get(todo_id)
+        todo = get_item(todo_id)
         assert todo.get("project") == project_id, f"Todo should be in project {project_id}, but is in {todo.get('project')} (todo was created in Inbox instead - MCP server is not passing list_id parameter)"
 
         # Clean up
@@ -535,7 +534,9 @@ def test_mcp_server_priority_list_id_over_list_title(test_namespace):
         todo_id = match.group(1)
 
         # Verify the todo was created in project1 (list_id), not project2 (list_title)
-        todo = things.get(todo_id)
+        from things3_mcp.applescript_bridge import get_item
+
+        todo = get_item(todo_id)
         assert todo.get("project") == project1_id, f"Todo should be in project1 {project1_id} (via list_id), but is in {todo.get('project')}"
 
         # Clean up
@@ -576,7 +577,7 @@ def test_malformed_uuid_handling(test_namespace):
             # Should either gracefully ignore or return error, but not crash
             assert isinstance(result, str), f"Should return string result for malformed UUID: {malformed_uuid}"
             # Todo should remain in its current location (not moved)
-            todo = things.get(todo_id)
+            todo = get_item(todo_id)
             assert todo is not None, f"Todo should still exist after malformed UUID: {malformed_uuid}"
 
     finally:
@@ -607,7 +608,9 @@ def test_empty_list_id_handling(test_namespace):
         assert not result.startswith("/var/folders/"), "Should not return temp file paths"
 
         # Verify todo still exists and is accessible
-        todo = things.get(todo_id)
+        from things3_mcp.applescript_bridge import get_item
+
+        todo = get_item(todo_id)
         assert todo is not None, "Todo should still exist after empty ID tests"
 
     finally:
@@ -640,7 +643,9 @@ def test_valid_looking_but_nonexistent_ids(test_namespace):
                 assert "Error:" in result or "error" in result.lower(), f"Error should be properly formatted: {result}"
 
             # Verify todo still exists and is accessible
-            todo = things.get(todo_id)
+            from things3_mcp.applescript_bridge import get_item
+
+            todo = get_item(todo_id)
             assert todo is not None, f"Todo should still exist after fake UUID: {fake_uuid}"
 
     finally:
@@ -802,8 +807,10 @@ def test_comprehensive_list_operations(test_namespace):
         assert "true" in str(result).lower(), "Failed to move todo to area by ID"
 
         # Verify final states
-        todo1 = things.get(todo1_id)
-        todo2 = things.get(todo2_id)
+        from things3_mcp.applescript_bridge import get_item
+
+        todo1 = get_item(todo1_id)
+        todo2 = get_item(todo2_id)
 
         assert todo1["project"] == project_id, "Todo1 should be in project"
         assert todo2["area"] == area_id, "Todo2 should be in area"

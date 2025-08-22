@@ -8,7 +8,7 @@
 
 This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things 3](https://culturedcode.com/things). You can ask Claude or your MCP client of choice to create tasks, analyze projects, help manage priorities, and more.
 
-This MCP server leverages a combination of the [Things.py](https://github.com/thingsapi/things.py) library and [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/), enabling reading and writing to Things 3.
+This MCP server uses [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/) exclusively for reading and writing to Things 3, avoiding direct database access and Full Disk Access prompts.
 
 ## Why Things MCP?
 

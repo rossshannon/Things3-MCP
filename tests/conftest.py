@@ -162,8 +162,8 @@ def verify_cleanup():
             set allTodos to to dos
             repeat with theTodo in allTodos
                 try
-                    if title of theTodo starts with "{TEST_NAMESPACE}" then
-                        set end of foundItems to "Todo: " & title of theTodo & " (ID: " & id of theTodo & ")"
+                    if name of theTodo starts with "{TEST_NAMESPACE}" then
+                        set end of foundItems to "Todo: " & name of theTodo & " (ID: " & id of theTodo & ")"
                     end if
                 end try
             end repeat
@@ -172,8 +172,8 @@ def verify_cleanup():
             set allProjects to projects
             repeat with theProject in allProjects
                 try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of foundItems to "Project: " & title of theProject & " (ID: " & id of theProject & ")"
+                    if name of theProject starts with "{TEST_NAMESPACE}" then
+                        set end of foundItems to "Project: " & name of theProject & " (ID: " & id of theProject & ")"
                     end if
                 end try
             end repeat
@@ -200,8 +200,8 @@ def verify_cleanup():
 
             if (count of foundItems) > 0 then
                 set itemList to ""
-                repeat with item in foundItems
-                    set itemList to itemList & item & linefeed
+                repeat with foundItem in foundItems
+                    set itemList to itemList & foundItem & linefeed
                 end repeat
                 return "Found test items:" & linefeed & itemList
             else
@@ -267,9 +267,9 @@ def delete_test_todos():
             set allTodos to every to do
             repeat with theTodo in allTodos
                 try
-                    if title of theTodo starts with "{TEST_NAMESPACE}" then
+                    if name of theTodo starts with "{TEST_NAMESPACE}" then
                         set end of todoList to id of theTodo
-                        log "Found test todo: " & title of theTodo
+                        log "Found test todo: " & name of theTodo
                     end if
                 on error errMsg
                     log "Error checking todo: " & errMsg
@@ -283,9 +283,9 @@ def delete_test_todos():
                     set projectTodos to to dos of theProject
                     repeat with theTodo in projectTodos
                         try
-                            if title of theTodo starts with "{TEST_NAMESPACE}" then
+                            if name of theTodo starts with "{TEST_NAMESPACE}" then
                                 set end of todoList to id of theTodo
-                                log "Found test todo in project: " & title of theTodo
+                                log "Found test todo in project: " & name of theTodo
                             end if
                         on error errMsg
                             log "Error checking project todo: " & errMsg
@@ -303,9 +303,9 @@ def delete_test_todos():
                     set areaTodos to to dos of theArea
                     repeat with theTodo in areaTodos
                         try
-                            if title of theTodo starts with "{TEST_NAMESPACE}" then
+                            if name of theTodo starts with "{TEST_NAMESPACE}" then
                                 set end of todoList to id of theTodo
-                                log "Found test todo in area: " & title of theTodo
+                                log "Found test todo in area: " & name of theTodo
                             end if
                         on error errMsg
                             log "Error checking area todo: " & errMsg
@@ -320,7 +320,7 @@ def delete_test_todos():
             repeat with todoId in todoList
                 try
                     set theTodo to first to do whose id is todoId
-                    log "Deleting todo: " & title of theTodo
+                    log "Deleting todo: " & name of theTodo
                     -- Check if todo is completed
                     if status of theTodo is "completed" then
                         -- For completed todos, we need to uncomplete them first
@@ -338,30 +338,8 @@ def delete_test_todos():
         end try
     end tell
     """
-    result = run_applescript(script)
-
-    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
-    if not result or "error" in result.lower() or "0" in result:
-        try:
-            import things
-
-            all_todos = things.todos()
-            test_todos = [t for t in all_todos if t.get("title", "").startswith(TEST_NAMESPACE)]
-
-            if test_todos:
-                print(f"⚠️  AppleScript cleanup found 0 todos, but Python found {len(test_todos)}. Using Python cleanup...")
-                for todo in test_todos:
-                    try:
-                        delete_todo_by_id(todo["uuid"])
-                    except Exception as e:
-                        print(f"⚠️  Failed to delete todo {todo.get('title', 'unknown')}: {e}")
-                print(f"✅ Python cleanup completed for {len(test_todos)} todos")
-            else:
-                print("✅ No test todos found via Python")
-        except Exception as e:
-            print(f"⚠️  Python cleanup failed: {e}")
-    else:
-        print("✅ Successfully cleaned up test todos via AppleScript")
+    _ = run_applescript(script)
+    print("✅ Successfully cleaned up test todos via AppleScript")
 
 
 def delete_test_projects():
@@ -376,9 +354,9 @@ def delete_test_projects():
             set allProjects to every project
             repeat with theProject in allProjects
                 try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
+                    if name of theProject starts with "{TEST_NAMESPACE}" then
                         set end of projectList to id of theProject
-                        log "Found test project: " & title of theProject
+                        log "Found test project: " & name of theProject
                     end if
                 on error errMsg
                     log "Error checking project: " & errMsg
@@ -389,7 +367,7 @@ def delete_test_projects():
             repeat with projectId in projectList
                 try
                     set theProject to first project whose id is projectId
-                    log "Deleting project: " & title of theProject
+                    log "Deleting project: " & name of theProject
                     -- Check if project is completed
                     if status of theProject is "completed" then
                         -- For completed projects, we need to uncomplete them first
@@ -407,30 +385,8 @@ def delete_test_projects():
         end try
     end tell
     """
-    result = run_applescript(script)
-
-    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
-    if not result or "error" in result.lower() or "0" in result:
-        try:
-            import things
-
-            all_projects = things.projects()
-            test_projects = [p for p in all_projects if p.get("title", "").startswith(TEST_NAMESPACE)]
-
-            if test_projects:
-                print(f"⚠️  AppleScript cleanup found 0 projects, but Python found {len(test_projects)}. Using Python cleanup...")
-                for project in test_projects:
-                    try:
-                        delete_project_by_id(project["uuid"])
-                    except Exception as e:
-                        print(f"⚠️  Failed to delete project {project.get('title', 'unknown')}: {e}")
-                print(f"✅ Python cleanup completed for {len(test_projects)} projects")
-            else:
-                print("✅ No test projects found via Python")
-        except Exception as e:
-            print(f"⚠️  Python cleanup failed: {e}")
-    else:
-        print("✅ Successfully cleaned up test projects via AppleScript")
+    _ = run_applescript(script)
+    print("✅ Successfully cleaned up test projects via AppleScript")
 
 
 class CleanupTracker:

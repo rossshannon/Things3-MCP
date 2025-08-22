@@ -8,11 +8,10 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import things  # noqa: E402
-
 from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
+    get_item,  # noqa: E402
     update_project,
     update_todo,
 )
@@ -65,8 +64,8 @@ def test_integration_workflow(cleanup_tracker, test_namespace):
     assert todo_success == "true", "Todo update should succeed"
 
     # 4. Verify final state
-    project = things.get(project_id)
-    todo = things.get(todo_id)
+    project = get_item(project_id)
+    todo = get_item(todo_id)
 
     # Extract tag names from response
     def extract_tag_names(tags_data):

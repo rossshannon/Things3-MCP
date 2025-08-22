@@ -72,6 +72,665 @@ def run_applescript(script: str, timeout: int = 8) -> str:
         return f"Error: {e!s}"
 
 
+# ------------------------------------------------------------
+# AppleScript → Python data helpers (query/read APIs)
+# ------------------------------------------------------------
+
+# Use ASCII control chars as safe separators that are unlikely to appear in user text
+_FIELD_SEP = "\x1f"  # Unit Separator
+_ITEM_SEP = "\x1e"   # Record Separator
+
+
+def _parse_items(output: str, fields: list[str]) -> list[dict]:
+    """Parse AppleScript-encoded list of records into list of dicts.
+
+    The AppleScript should return a single string where records are separated
+    by ITEM_SEP and fields inside each record by FIELD_SEP.
+    """
+    if not output:
+        return []
+    # Treat AppleScript error outputs as empty result sets for list queries
+    lowered = output.lower()
+    if output.startswith("Error:") or "script error" in lowered or output.startswith("/var/folders/"):
+        return []
+    items: list[dict] = []
+    for raw_item in output.split(_ITEM_SEP):
+        if not raw_item:
+            continue
+        parts = raw_item.split(_FIELD_SEP)
+        # Pad or trim to expected length for robustness
+        if len(parts) < len(fields):
+            parts = parts + [""] * (len(fields) - len(parts))
+        elif len(parts) > len(fields):
+            parts = parts[: len(fields)]
+        item = {field: parts[idx] for idx, field in enumerate(fields)}
+        items.append(item)
+    return items
+
+
+def _build_date_iso_script(as_var: str) -> list[str]:
+    """Return AppleScript snippet lines to convert a date to YYYY-MM-DD in variable as_var.
+
+    Expects a variable holding a date value (or missing value). Produces a text
+    variable with name as_var & "_iso".
+    """
+    return [
+        f"set {as_var}_iso to \"\"",
+        f"if {as_var} is not missing value then",
+        f"  set _y to year of {as_var} as integer",
+        f"  set _m to month of {as_var} as integer",
+        f"  set _d to day of {as_var} as integer",
+        "  set _m2 to text -2 thru -1 of ((\"0\" & _m) as text)",
+        "  set _d2 to text -2 thru -1 of ((\"0\" & _d) as text)",
+        f"  set {as_var}_iso to (_y as text) & \"-\" & _m2 & \"-\" & _d2",
+        "end if",
+    ]
+
+
+def _make_list_items_script(list_name: str, include_projects: bool = False) -> str:
+    """Build AppleScript to dump items from a Things list into a delimited string.
+
+    Fields per record (todos):
+      id, title, notes, status, due_iso, project_id, project_name, area_id, area_name, tag_names
+
+    If include_projects=True, also append projects from the same list with:
+      id, title, notes, status, due_iso, "", "", area_id, area_name, tag_names
+    and an extra field type ("to-do" or "project").
+    """
+    lines: list[str] = []
+    lines.append(f'set _FIELD_SEP to "{_FIELD_SEP}"')
+    lines.append(f'set _ITEM_SEP to "{_ITEM_SEP}"')
+    lines.append('set _out to ""')
+    lines.append('tell application "Things3"')
+    # Todos in the list
+    lines.append(f'  set _todos to to dos of list "{list_name}"')
+    lines.append('  repeat with t in _todos')
+    lines.append('    set _id to id of t')
+    lines.append('    set _title to name of t')
+    lines.append('    set _notes to notes of t')
+    lines.append('    set _status to status of t as text')
+    lines.append('    set _start to activation date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+    lines.append('    set _due to due date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    # Project/Area
+    lines.append('    set _proj_id to ""')
+    lines.append('    set _proj_name to ""')
+    lines.append('    try')
+    lines.append('      set _proj_id to id of project of t')
+    lines.append('      set _proj_name to name of project of t')
+    lines.append('    end try')
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of t')
+    lines.append('      set _area_name to name of area of t')
+    lines.append('    end try')
+    # Tags as comma-separated
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of t as text')
+    lines.append('    end try')
+    # Build record (type = to-do)
+    lines.append('    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & _proj_id & _FIELD_SEP & _proj_name & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags & _FIELD_SEP & "to-do"')
+    lines.append('    if _out is "" then')
+    lines.append('      set _out to _rec')
+    lines.append('    else')
+    lines.append('      set _out to _out & _ITEM_SEP & _rec')
+    lines.append('    end if')
+    lines.append('  end repeat')
+
+    if include_projects:
+        lines.append(f'  set _projects to projects of list "{list_name}"')
+        lines.append('  repeat with p in _projects')
+        lines.append('    set _id to id of p')
+        lines.append('    set _title to name of p')
+        lines.append('    set _notes to notes of p')
+        lines.append('    set _status to status of p as text')
+        lines.append('    set _start to activation date of p')
+        lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+        lines.append('    set _due to due date of p')
+        lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+        lines.append('    set _area_id to ""')
+        lines.append('    set _area_name to ""')
+        lines.append('    try')
+        lines.append('      set _area_id to id of area of p')
+        lines.append('      set _area_name to name of area of p')
+        lines.append('    end try')
+        # tags
+        lines.append('    set _tags to ""')
+        lines.append('    try')
+        lines.append('      set _tags to tag names of p as text')
+        lines.append('    end try')
+        lines.append('    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & "" & _FIELD_SEP & "" & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags & _FIELD_SEP & "project"')
+        lines.append('    if _out is "" then')
+        lines.append('      set _out to _rec')
+        lines.append('    else')
+        lines.append('      set _out to _out & _ITEM_SEP & _rec')
+        lines.append('    end if')
+        lines.append('  end repeat')
+
+    lines.append('end tell')
+    lines.append('return _out')
+    return "\n".join(lines)
+
+
+def _make_all_todos_script() -> str:
+    """AppleScript to dump all todos everywhere as delimited lines."""
+    lines: list[str] = []
+    lines.append(f'set _FIELD_SEP to "{_FIELD_SEP}"')
+    lines.append(f'set _ITEM_SEP to "{_ITEM_SEP}"')
+    lines.append('set _out to ""')
+    lines.append('tell application "Things3"')
+    lines.append('  set _todos to every to do')
+    lines.append('  repeat with t in _todos')
+    lines.append('    set _id to id of t')
+    lines.append('    set _title to name of t')
+    lines.append('    set _notes to notes of t')
+    lines.append('    set _status to status of t as text')
+    lines.append('    set _start to activation date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+    lines.append('    set _due to due date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    lines.append('    set _proj_id to ""')
+    lines.append('    set _proj_name to ""')
+    lines.append('    try')
+    lines.append('      set _proj_id to id of project of t')
+    lines.append('      set _proj_name to name of project of t')
+    lines.append('    end try')
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of t')
+    lines.append('      set _area_name to name of area of t')
+    lines.append('    end try')
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of t as text')
+    lines.append('    end try')
+    lines.append('    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & _proj_id & _FIELD_SEP & _proj_name & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags & _FIELD_SEP & "to-do"')
+    lines.append('    if _out is "" then')
+    lines.append('      set _out to _rec')
+    lines.append('    else')
+    lines.append('      set _out to _out & _ITEM_SEP & _rec')
+    lines.append('    end if')
+    lines.append('  end repeat')
+    lines.append('end tell')
+    lines.append('return _out')
+    return "\n".join(lines)
+
+
+def list_inbox_todos() -> list[dict]:
+    """Return todos in Inbox as list of dicts (AppleScript-based)."""
+    script = _make_list_items_script("Inbox", include_projects=False)
+    output = run_applescript(script, timeout=20)
+    fields = [
+        "uuid",
+        "title",
+        "notes",
+        "status",
+        "start_date",
+        "deadline",
+        "project",
+        "project_title",
+        "area",
+        "area_title",
+        "tags",
+        "type",
+    ]
+    items = _parse_items(output, fields)
+    for it in items:
+        if it.get("tags"):
+            it["tags"] = [s.strip() for s in it["tags"].split(",") if s.strip()]
+    return items
+
+
+def list_today_items() -> list[dict]:
+    """Return todos and projects in Today."""
+    script = _make_list_items_script("Today", include_projects=True)
+    output = run_applescript(script, timeout=20)
+    fields = [
+        "uuid",
+        "title",
+        "notes",
+        "status",
+        "start_date",
+        "deadline",
+        "project",
+        "project_title",
+        "area",
+        "area_title",
+        "tags",
+        "type",
+    ]
+    items = _parse_items(output, fields)
+    for it in items:
+        if it.get("tags"):
+            it["tags"] = [s.strip() for s in it["tags"].split(",") if s.strip()]
+    return items
+
+
+def list_named_items(list_name: str, include_projects: bool = False) -> list[dict]:
+    """Generic list reader for a built-in Things list by name."""
+    script = _make_list_items_script(list_name, include_projects=include_projects)
+    output = run_applescript(script, timeout=20)
+    fields = [
+        "uuid",
+        "title",
+        "notes",
+        "status",
+        "start_date",
+        "deadline",
+        "project",
+        "project_title",
+        "area",
+        "area_title",
+        "tags",
+        "type",
+    ]
+    items = _parse_items(output, fields)
+    for it in items:
+        if it.get("tags"):
+            it["tags"] = [s.strip() for s in it["tags"].split(",") if s.strip()]
+    return items
+
+
+def list_anytime_items() -> list[dict]:
+    """Return items from the Anytime list (todos only for stability/perf)."""
+    return list_named_items("Anytime", include_projects=False)
+
+
+def list_someday_items() -> list[dict]:
+    """Return items from the Someday list (todos only for stability/perf)."""
+    return list_named_items("Someday", include_projects=False)
+
+
+def list_upcoming_items() -> list[dict]:
+    """Return items from the Upcoming list (future-scheduled, todos only)."""
+    return list_named_items("Upcoming", include_projects=False)
+
+
+def list_trash_items() -> list[dict]:
+    """Return trashed todos (skip projects for stability/perf)."""
+    return list_named_items("Trash", include_projects=False)
+
+
+def list_logbook_items() -> list[dict]:
+    """Return completed items from the Logbook (todos and projects)."""
+    return list_named_items("Logbook", include_projects=True)
+
+
+def list_projects(area: str | None = None) -> list[dict]:
+    """Return all projects, optionally filtered by area id."""
+    lines: list[str] = []
+    lines.append(f'set _FIELD_SEP to "{_FIELD_SEP}"')
+    lines.append(f'set _ITEM_SEP to "{_ITEM_SEP}"')
+    lines.append('set _out to ""')
+    lines.append('tell application "Things3"')
+    if area:
+        lines.append(f'  set _projects to projects of area id "{area}"')
+    else:
+        lines.append('  set _projects to every project')
+    lines.append('  repeat with p in _projects')
+    lines.append('    set _id to id of p')
+    lines.append('    set _title to name of p')
+    lines.append('    set _notes to notes of p')
+    lines.append('    set _status to status of p as text')
+    lines.append('    set _due to due date of p')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of p')
+    lines.append('      set _area_name to name of area of p')
+    lines.append('    end try')
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of p as text')
+    lines.append('    end try')
+    lines.append('    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _due_iso & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags')
+    lines.append('    if _out is "" then')
+    lines.append('      set _out to _rec')
+    lines.append('    else')
+    lines.append('      set _out to _out & _ITEM_SEP & _rec')
+    lines.append('    end if')
+    lines.append('  end repeat')
+    lines.append('end tell')
+    lines.append('return _out')
+    output = run_applescript("\n".join(lines), timeout=25)
+    fields = ["uuid", "title", "notes", "status", "deadline", "area", "area_title", "tags"]
+    items = _parse_items(output, fields)
+    for it in items:
+        it["type"] = "project"
+        if it.get("tags"):
+            it["tags"] = [s.strip() for s in it["tags"].split(",") if s.strip()]
+    return items
+
+
+def list_areas() -> list[dict]:
+    """Return all areas."""
+    script = "\n".join(
+        [
+            f'set _FIELD_SEP to "{_FIELD_SEP}"',
+            f'set _ITEM_SEP to "{_ITEM_SEP}"',
+            'set _out to ""',
+            'tell application "Things3"',
+            '  set _areas to every area',
+            '  repeat with a in _areas',
+            '    set _id to id of a',
+            '    set _title to name of a',
+            '    set _notes to notes of a',
+            '    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes',
+            '    if _out is "" then set _out to _rec else set _out to _out & _ITEM_SEP & _rec',
+            '  end repeat',
+            'end tell',
+            'return _out',
+        ]
+    )
+    output = run_applescript(script, timeout=20)
+    fields = ["uuid", "title", "notes"]
+    items = _parse_items(output, fields)
+    for it in items:
+        it["type"] = "area"
+    return items
+
+
+def list_tags() -> list[dict]:
+    """Return all tags."""
+    script = "\n".join(
+        [
+            f'set _FIELD_SEP to "{_FIELD_SEP}"',
+            f'set _ITEM_SEP to "{_ITEM_SEP}"',
+            'set _out to ""',
+            'tell application "Things3"',
+            '  set _tags to every tag',
+            '  repeat with tg in _tags',
+            '    set _id to id of tg',
+            '    set _title to name of tg',
+            '    set _shortcut to ""',
+            '    try set _shortcut to shortcut of tg as text end try',
+            '    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _shortcut',
+            '    if _out is "" then set _out to _rec else set _out to _out & _ITEM_SEP & _rec',
+            '  end repeat',
+            'end tell',
+            'return _out',
+        ]
+    )
+    output = run_applescript(script, timeout=20)
+    fields = ["uuid", "title", "shortcut"]
+    items = _parse_items(output, fields)
+    return items
+
+
+def list_todos(project: str | None = None, area: str | None = None, tag: str | None = None) -> list[dict]:
+    """Return todos filtered by project id, area id, or tag title.
+
+    Optimized to avoid "every to do" when filters are provided. Supports a
+    lightweight mode (no notes/tags) via lite parameter and a limit to stop early.
+    """
+    return list_todos_scoped(project=project, area=area, tag=tag, limit=None, lite=False)
+
+
+def list_todos_scoped(project: str | None = None, area: str | None = None, tag: str | None = None, limit: int | None = None, lite: bool = False) -> list[dict]:
+    """Return todos with optional scoping and performance flags.
+
+    - project: Things project id to scope within
+    - area: Things area id to scope within
+    - tag: Tag name to filter items by
+    - limit: If provided, stop after emitting this many items
+    - lite: If True, omit notes and tags for speed
+    """
+    lines: list[str] = []
+    lines.append(f'set _FIELD_SEP to "{_FIELD_SEP}"')
+    lines.append(f'set _ITEM_SEP to "{_ITEM_SEP}"')
+    lines.append('set _out to ""')
+    lines.append('set _count to 0')
+    lines.append('tell application "Things3"')
+    # Resolve scope source list
+    if project:
+        lines.append(f'  set _source to to dos of project id "{project}"')
+    elif area:
+        lines.append(f'  set _source to to dos of area id "{area}"')
+    elif tag:
+        # Tag scoping: iterate all todos of tag
+        # Note: Things AppleScript allows "to dos of tag \"Name\""
+        escaped_tag = tag.replace('"', '\\"')
+        lines.append(f'  set _source to to dos of tag "{escaped_tag}"')
+    else:
+        lines.append('  set _source to every to do')
+    lines.append('  repeat with t in _source')
+    lines.append('    set _id to id of t')
+    lines.append('    set _title to name of t')
+    lines.append('    set _status to status of t as text')
+    lines.append('    set _start to activation date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+    lines.append('    set _due to due date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    if lite:
+        lines.append('    set _notes to ""')
+        lines.append('    set _tags to ""')
+    else:
+        lines.append('    set _notes to notes of t')
+        lines.append('    set _tags to ""')
+        lines.append('    try')
+        lines.append('      set _tags to tag names of t as text')
+        lines.append('    end try')
+    lines.append('    set _proj_id to ""')
+    lines.append('    set _proj_name to ""')
+    lines.append('    try')
+    lines.append('      set _proj_id to id of project of t')
+    lines.append('      set _proj_name to name of project of t')
+    lines.append('    end try')
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of t')
+    lines.append('      set _area_name to name of area of t')
+    lines.append('    end try')
+    lines.append('    set _rec to _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & _proj_id & _FIELD_SEP & _proj_name & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags & _FIELD_SEP & "to-do"')
+    lines.append('    if _out is "" then set _out to _rec else set _out to _out & _ITEM_SEP & _rec')
+    lines.append('    set _count to _count + 1')
+    lines.append('    if ' + ("false" if limit is None else f'_count ≥ {limit}') + ' then')
+    lines.append('      exit repeat')
+    lines.append('    end if')
+    lines.append('  end repeat')
+    lines.append('end tell')
+    lines.append('return _out')
+    output = run_applescript("\n".join(lines), timeout=20 if (project or area or tag) else 30)
+    fields = [
+        "uuid",
+        "title",
+        "notes",
+        "status",
+        "start_date",
+        "deadline",
+        "project",
+        "project_title",
+        "area",
+        "area_title",
+        "tags",
+        "type",
+    ]
+    items = _parse_items(output, fields)
+    for it in items:
+        if it.get("tags"):
+            it["tags"] = [s.strip() for s in it["tags"].split(",") if s.strip()]
+    return items
+
+
+def get_item(item_id: str) -> dict | None:
+    """Fetch a Things item (to-do, project, or area) by id via AppleScript."""
+    lines: list[str] = []
+    lines.append(f'set _FIELD_SEP to "{_FIELD_SEP}"')
+    lines.append('tell application "Things3"')
+    # Try to-do
+    lines.append('  try')
+    lines.append('    set t to missing value')
+    lines.append('    repeat with i from 1 to 10')
+    lines.append('      try')
+    lines.append(f'        set t to to do id "{item_id}"')
+    lines.append('        exit repeat')
+    lines.append('      on error')
+    lines.append('        delay 0.2')
+    lines.append('      end try')
+    lines.append('    end repeat')
+    lines.append('    if t is missing value then error number -1728')
+    lines.append('    set _id to id of t')
+    lines.append('    set _title to name of t')
+    lines.append('    set _notes to notes of t')
+    lines.append('    set _status to status of t as text')
+    lines.append('    set _start to activation date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+    lines.append('    set _due to due date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    lines.append('    set _proj_id to ""')
+    lines.append('    set _proj_name to ""')
+    lines.append('    try')
+    lines.append('      set _proj_id to id of project of t')
+    lines.append('      set _proj_name to name of project of t')
+    lines.append('    end try')
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of t')
+    lines.append('      set _area_name to name of area of t')
+    lines.append('    end try')
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of t as text')
+    lines.append('    end try')
+    lines.append('    return "to-do" & _FIELD_SEP & _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & _proj_id & _FIELD_SEP & _proj_name & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags')
+    lines.append('  end try')
+    # Fallback: some contexts temporarily fail direct id addressing; use a whose query
+    lines.append('  try')
+    lines.append('    set t to missing value')
+    lines.append('    repeat with i from 1 to 10')
+    lines.append('      try')
+    lines.append(f'        set t to first to do whose id is "{item_id}"')
+    lines.append('        exit repeat')
+    lines.append('      on error')
+    lines.append('        delay 0.2')
+    lines.append('      end try')
+    lines.append('    end repeat')
+    lines.append('    if t is missing value then error number -1728')
+    lines.append('    set _id to id of t')
+    lines.append('    set _title to name of t')
+    lines.append('    set _notes to notes of t')
+    lines.append('    set _status to status of t as text')
+    lines.append('    set _start to activation date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_start')])
+    lines.append('    set _due to due date of t')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    lines.append('    set _proj_id to ""')
+    lines.append('    set _proj_name to ""')
+    lines.append('    try')
+    lines.append('      set _proj_id to id of project of t')
+    lines.append('      set _proj_name to name of project of t')
+    lines.append('    end try')
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of t')
+    lines.append('      set _area_name to name of area of t')
+    lines.append('    end try')
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of t as text')
+    lines.append('    end try')
+    lines.append('    return "to-do" & _FIELD_SEP & _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _start_iso & _FIELD_SEP & _due_iso & _FIELD_SEP & _proj_id & _FIELD_SEP & _proj_name & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags')
+    lines.append('  end try')
+    # Try project
+    lines.append('  try')
+    lines.append(f'    set p to project id "{item_id}"')
+    lines.append('    set _id to id of p')
+    lines.append('    set _title to name of p')
+    lines.append('    set _notes to notes of p')
+    lines.append('    set _status to status of p as text')
+    lines.append('    set _due to due date of p')
+    lines.extend([f'    {script_line}' for script_line in _build_date_iso_script('_due')])
+    lines.append('    set _area_id to ""')
+    lines.append('    set _area_name to ""')
+    lines.append('    try')
+    lines.append('      set _area_id to id of area of p')
+    lines.append('      set _area_name to name of area of p')
+    lines.append('    end try')
+    lines.append('    set _tags to ""')
+    lines.append('    try')
+    lines.append('      set _tags to tag names of p as text')
+    lines.append('    end try')
+    lines.append('    return "project" & _FIELD_SEP & _id & _FIELD_SEP & _title & _FIELD_SEP & _notes & _FIELD_SEP & _status & _FIELD_SEP & _due_iso & _FIELD_SEP & "" & _FIELD_SEP & "" & _FIELD_SEP & _area_id & _FIELD_SEP & _area_name & _FIELD_SEP & _tags')
+    lines.append('  end try')
+    # Try area
+    lines.append('  try')
+    lines.append(f'    set a to area id "{item_id}"')
+    lines.append('    set _id to id of a')
+    lines.append('    set _title to name of a')
+    lines.append('    set _notes to notes of a')
+    lines.append('    return "area" & _FIELD_SEP & _id & _FIELD_SEP & _title & _FIELD_SEP & _notes')
+    lines.append('  end try')
+    lines.append('end tell')
+    script = "\n".join(lines)
+    logger.info(f"Generated AppleScript for get_item id={item_id}:\n{script}")
+    # Retry to tolerate brief reindexing after moves/scheduling
+    output = None
+    import time as _pytime
+    for _attempt in range(15):
+        output = run_applescript(script, timeout=20)
+        logger.info(f"get_item output (attempt {_attempt+1}): {output!r}")
+        if output and not output.lower().startswith("error") and "script error" not in output.lower():
+            break
+        _pytime.sleep(0.2)
+    if not output:
+        return None
+    parts = output.split(_FIELD_SEP)
+    if not parts:
+        return None
+    if parts[0] == "to-do" and len(parts) >= 12:
+        _, uuid, title, notes, status, start_date, deadline, project, project_title, area, area_title, tags = parts[:12]
+        item = {
+            "type": "to-do",
+            "uuid": uuid,
+            "title": title,
+            "notes": notes,
+            "status": status,
+            "start_date": start_date,
+            "deadline": deadline,
+            "project": project,
+            "project_title": project_title,
+            "area": area,
+            "area_title": area_title,
+            "tags": [s.strip() for s in tags.split(",") if s.strip()] if tags else [],
+        }
+        return item
+    if parts[0] == "project" and len(parts) >= 11:
+        _, uuid, title, notes, status, deadline, _empty1, _empty2, area, area_title, tags = parts[:11]
+        item = {
+            "type": "project",
+            "uuid": uuid,
+            "title": title,
+            "notes": notes,
+            "status": status,
+            "deadline": deadline,
+            "area": area,
+            "area_title": area_title,
+            "tags": [s.strip() for s in tags.split(",") if s.strip()] if tags else [],
+        }
+        return item
+    if parts[0] == "area" and len(parts) >= 4:
+        _, uuid, title, notes = parts[:4]
+        return {"type": "area", "uuid": uuid, "title": title, "notes": notes}
+    return None
+
+
+def search_items(query: str) -> list[dict]:
+    """Case-insensitive search across all todos' titles and notes."""
+    if not query:
+        return []
+    items = list_todos()
+    q = query.lower()
+    return [it for it in items if q in (it.get("title", "").lower()) or q in (it.get("notes", "").lower())]
+
+
 def ensure_things_ready() -> bool:
     """Ensure Things app is ready for AppleScript operations.
 
@@ -260,22 +919,8 @@ def add_todo(  # noqa: PLR0913
 
     result = run_applescript(script, timeout=8)
     if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
-        # Look up the todo to get location information
-        try:
-            import things
-            todo = things.get(result)
-            if todo:
-                if todo.get("project"):
-                    location = f"Project: {things.get(todo['project'])['title']}"
-                elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['title']}"
-                else:
-                    location = f"List: {todo.get('start', 'Unknown')}"
-                logger.info(f"Successfully created todo via AppleScript with ID: {result} in {location}")
-            else:
-                logger.info(f"Successfully created todo via AppleScript with ID: {result}")
-        except Exception:
-            logger.info(f"Successfully created todo via AppleScript with ID: {result}")
+        # Log success
+        logger.info(f"Successfully created todo via AppleScript with ID: {result}")
         return result
     else:
         logger.error(f"Failed to create todo: {result}")
@@ -302,17 +947,20 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
     is_date_format = is_valid_date_format(when)
 
     if when == "today":
-        # Move to Today list
-        script_parts.append(f'    move {item_ref} to list "Today"')
+        # Schedule for today (don’t move; Today is schedule-driven)
+        script_parts.append(f"    schedule {item_ref} for (current date)")
+        script_parts.append("    delay 0.3")
     elif when == "tomorrow":
         # Schedule for tomorrow
         script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
     elif when == "anytime":
         # Move to Anytime list
         script_parts.append(f'    move {item_ref} to list "Anytime"')
+        script_parts.append("    delay 0.3")
     elif when == "someday":
         # Move to Someday list
         script_parts.append(f'    move {item_ref} to list "Someday"')
+        script_parts.append("    delay 0.3")
     elif is_date_format:
         # Schedule for specific date
         try:
@@ -416,7 +1064,7 @@ def update_todo(
     # Build the AppleScript command to find and update the todo
     script_parts = ['tell application "Things3"']
     script_parts.append("try")
-    script_parts.append(f'    set theTodo to to do id "{id}"')
+    script_parts.append(f'    set theTodo to first to do whose id is "{id}"')
 
     # Update properties one at a time (simplified)
     if title:
@@ -444,26 +1092,41 @@ def update_todo(
 
     # Handle list assignment (built-in lists, projects, or areas)
     if list_name:
-        escaped_list = escape_applescript_string(list_name)
-        script_parts.append("    try")
-        # First try to find as built-in list
-        script_parts.append(f"        set targetList to list {escaped_list}")
-        script_parts.append("        move theTodo to targetList")
-        script_parts.append("    on error")
-        script_parts.append("        try")
-        # Then try to find as project
-        script_parts.append(f"            set targetProject to first project whose name is {escaped_list}")
-        script_parts.append("            set project of theTodo to targetProject")
-        script_parts.append("        on error")
-        script_parts.append("            try")
-        # Finally try to find as area
-        script_parts.append(f"                set targetArea to first area whose name is {escaped_list}")
-        script_parts.append("                set area of theTodo to targetArea")
-        script_parts.append("            on error")
-        script_parts.append(f'                return "Error: List/Project/Area not found - {list_name}"')
-        script_parts.append("            end try")
-        script_parts.append("        end try")
-        script_parts.append("    end try")
+        lower_name = (list_name or "").lower()
+        builtin_map = {
+            "inbox": "Inbox",
+            "today": "Today",
+            "anytime": "Anytime",
+            "someday": "Someday",
+            "trash": "Trash",
+            "logbook": "Logbook",
+        }
+        if lower_name in builtin_map:
+            target = builtin_map[lower_name]
+            if target == "Today":
+                # Today is schedule-driven; do not move
+                script_parts.append("    schedule theTodo for (current date)")
+                script_parts.append('    delay 0.3')
+            else:
+                script_parts.append(f'    move theTodo to list "{target}"')
+                script_parts.append('    delay 0.3')
+        else:
+            escaped_list = escape_applescript_string(list_name)
+            script_parts.append("    try")
+            # Try project by name
+            script_parts.append(f"        set targetProject to first project whose name is {escaped_list}")
+            script_parts.append("        set project of theTodo to targetProject")
+            script_parts.append('        delay 0.3')
+            script_parts.append("    on error")
+            script_parts.append("        try")
+            # Try area by name
+            script_parts.append(f"            set targetArea to first area whose name is {escaped_list}")
+            script_parts.append("            set area of theTodo to targetArea")
+            script_parts.append('            delay 0.3')
+            script_parts.append("        on error")
+            script_parts.append(f'            return "Error: List/Project/Area not found - {list_name}"')
+            script_parts.append("        end try")
+            script_parts.append("    end try")
 
     # Handle list assignment by ID (projects or areas only)
     if list_id:
@@ -471,11 +1134,13 @@ def update_todo(
         # Try to find as project by ID
         script_parts.append(f'        set targetProject to first project whose id is "{list_id}"')
         script_parts.append("        set project of theTodo to targetProject")
+        script_parts.append('        delay 0.3')
         script_parts.append("    on error")
         script_parts.append("        try")
         # Try to find as area by ID
         script_parts.append(f'            set targetArea to first area whose id is "{list_id}"')
         script_parts.append("            set area of theTodo to targetArea")
+        script_parts.append('            delay 0.3')
         script_parts.append("        on error")
         script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')
         script_parts.append("        end try")
@@ -504,7 +1169,8 @@ def update_todo(
 
     # Execute the script
     script = "\n".join(script_parts)
-    logger.debug(f"Generated AppleScript:\n{script}")
+    logger.info(f"Generated AppleScript for update_todo:\n{script}")
+    print("--- update_todo AppleScript ---\n" + script + "\n--- end ---")
     result = run_applescript(script)
     logger.debug(f"AppleScript result: {result!r}")
     return result
@@ -624,20 +1290,7 @@ def add_project(
 
     result = run_applescript(script, timeout=8)
     if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
-        # Look up the project to get location information for logging
-        try:
-            import things
-            project = things.get(result)
-            if project:
-                if project.get("area"):
-                    location = f"Area: {things.get(project['area'])['title']}"
-                else:
-                    location = "List: Inbox"
-                logger.info(f"Successfully created project via AppleScript with ID: {result} in {location}")
-            else:
-                logger.info(f"Successfully created project via AppleScript with ID: {result}")
-        except Exception:
-            logger.info(f"Successfully created project via AppleScript with ID: {result}")
+        logger.info(f"Successfully created project via AppleScript with ID: {result}")
         return result
     else:
         logger.error(f"Failed to create project: {result}")

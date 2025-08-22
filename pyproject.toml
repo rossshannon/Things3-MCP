@@ -174,9 +174,7 @@ disable_error_code = [
     "var-annotated",     # Ignore variable annotation requirements
     "arg-type"           # Ignore argument type mismatches
 ]
-exclude = [
-    "things\\.py$",  # Exclude external things.py (not our code)
-]
+exclude = []
 explicit_package_bases = true  # Use explicit package bases to avoid import conflicts
 ignore_missing_imports = true  # Ignore missing stubs for external libraries
 

@@ -10,16 +10,16 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import things  # noqa: E402
-
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
     generate_random_string,
 )
-from things3_mcp.applescript_bridge import (  # noqa: E402
+from things3_mcp.applescript_bridge import (  # noqa: E402  # noqa: E402
     add_project,
     add_todo,
+    get_item,
+    list_todos,
     update_project,
     update_todo,
 )
@@ -36,7 +36,7 @@ def get_item_safely(item_id: str, expected_status: str = None) -> dict:
         The item dict if found, None otherwise
     """
     # First try the direct approach
-    item = things.get(item_id)
+    item = get_item(item_id)
     if item:
         return item
 
@@ -44,16 +44,13 @@ def get_item_safely(item_id: str, expected_status: str = None) -> dict:
     if expected_status:
         if expected_status in ["completed", "canceled"]:
             # Search in todos with the specific status
-            items = things.todos(status=expected_status)
+            items = list_todos()
             for found_item in items:
                 if found_item.get("uuid") == item_id:
                     return found_item
 
             # Also try projects if it might be a project
-            projects = things.projects()
-            for found_project in projects:
-                if found_project.get("uuid") == item_id:
-                    return found_project
+            # Projects are not needed for current usages here
 
     return None
 

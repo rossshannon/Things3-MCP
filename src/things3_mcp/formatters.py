@@ -6,7 +6,9 @@ into consistent, readable string representations for display to users.
 
 import logging
 
-import things
+from things3_mcp.applescript_bridge import get_item
+from things3_mcp.applescript_bridge import list_projects as as_list_projects
+from things3_mcp.applescript_bridge import list_todos as as_list_todos
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +47,18 @@ def format_todo(todo: dict) -> str:
     # Add project info if present
     if todo.get("project"):
         try:
-            project = things.get(todo["project"])
+            project = get_item(todo["project"]) or {}
             if project:
-                todo_text += f"\nProject: {project['title']}"
+                todo_text += f"\nProject: {project.get('title', '')}"
         except Exception:  # nosec B110 - Ignore missing project info, not all todos have projects
             pass
 
     # Add area info if present
     if todo.get("area"):
         try:
-            area = things.get(todo["area"])
+            area = get_item(todo["area"]) or {}
             if area:
-                todo_text += f"\nArea: {area['title']}"
+                todo_text += f"\nArea: {area.get('title', '')}"
         except Exception:  # nosec B110 - Ignore missing area info, not all todos have areas
             pass
 
@@ -80,9 +82,9 @@ def format_project(project: dict, include_items: bool = False) -> str:
 
     if project.get("area"):
         try:
-            area = things.get(project["area"])
+            area = get_item(project["area"]) or {}
             if area:
-                project_text += f"\nArea: {area['title']}"
+                project_text += f"\nArea: {area.get('title', '')}"
         except Exception:  # nosec B110 - Ignore missing area info, not all projects have areas
             pass
 
@@ -90,7 +92,7 @@ def format_project(project: dict, include_items: bool = False) -> str:
         project_text += f"\nNotes: {project['notes']}"
 
     if include_items:
-        todos = things.todos(project=project["uuid"])
+        todos = as_list_todos(project=project["uuid"]) or []
         if todos:
             project_text += "\n\nTasks:"
             for todo in todos:
@@ -107,13 +109,13 @@ def format_area(area: dict, include_items: bool = False) -> str:
         area_text += f"\nNotes: {area['notes']}"
 
     if include_items:
-        projects = things.projects(area=area["uuid"])
+        projects = as_list_projects(area=area["uuid"]) or []
         if projects:
             area_text += "\n\nProjects:"
             for project in projects:
                 area_text += f"\n- {project['title']}"
 
-        todos = things.todos(area=area["uuid"])
+        todos = as_list_todos(area=area["uuid"]) or []
         if todos:
             area_text += "\n\nTasks:"
             for todo in todos:
@@ -130,7 +132,8 @@ def format_tag(tag: dict, include_items: bool = False) -> str:
         tag_text += f"\nShortcut: {tag['shortcut']}"
 
     if include_items:
-        todos = things.todos(tag=tag["title"])
+        # Filter locally by tag, since list_todos supports tag title
+        todos = as_list_todos(tag=tag["title"]) or []
         if todos:
             tag_text += "\n\nTagged Items:"
             for todo in todos:

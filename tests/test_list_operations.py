@@ -101,57 +101,62 @@ def verify_item_format(item_str: str) -> bool:
 
 
 def test_get_inbox():
-    """Test get_inbox() returns data in expected format."""
-    result = get_inbox()
+    """Test get_inbox() returns data in expected format and respects limits."""
+    result = get_inbox(limit=8)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No items found in Inbox":
         # Split multiple items if present
         todos = result.split("\n\n---\n\n")
+        assert len(todos) <= 8
         for todo in todos:
             assert verify_todo_format(todo), f"Todo format is incorrect: {todo}"
 
 
 def test_get_today():
-    """Test get_today() returns data in expected format."""
-    result = get_today()
+    """Test get_today() returns data in expected format and respects limits."""
+    result = get_today(limit=10)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No items due today":
         todos = result.split("\n\n---\n\n")
+        assert len(todos) <= 10
         for todo in todos:
             assert verify_todo_format(todo), f"Todo format is incorrect: {todo}"
 
 
 def test_get_upcoming():
-    """Test get_upcoming() returns data in expected format."""
-    result = get_upcoming()
+    """Test get_upcoming() returns data in expected format and respects limits."""
+    result = get_upcoming(limit=12)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No upcoming items":
         items = result.split("\n\n---\n\n")
+        assert len(items) <= 12
         for item in items:
             assert verify_item_format(item), f"Item format is incorrect: {item}"
 
 
 def test_get_anytime():
-    """Test get_anytime() returns data in expected format."""
-    result = get_anytime()
+    """Test get_anytime() returns data in expected format and respects limits."""
+    result = get_anytime(limit=15)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No items in Anytime list":
         items = result.split("\n\n---\n\n")
+        assert len(items) <= 15
         for item in items:
             assert verify_todo_format(item), f"Todo format is incorrect: {item}"
 
 
 def test_get_someday():
-    """Test get_someday() returns data in expected format."""
-    result = get_someday()
+    """Test get_someday() returns data in expected format and respects limits."""
+    result = get_someday(limit=10)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No items in Someday list":
         items = result.split("\n\n---\n\n")
+        assert len(items) <= 10
         for item in items:
             assert verify_todo_format(item), f"Todo format is incorrect: {item}"
 
@@ -169,12 +174,13 @@ def test_get_logbook():
 
 
 def test_get_trash():
-    """Test get_trash() returns data in expected format."""
-    result = get_trash()
+    """Test get_trash() returns data in expected format and respects limits."""
+    result = get_trash(limit=10)
     assert isinstance(result, str), "Should return a string"
 
     if result != "No items in trash":
         items = result.split("\n\n---\n\n")
+        assert len(items) <= 10
         for item in items:
             assert verify_item_format(item), f"Item format is incorrect: {item}"
 
@@ -589,6 +595,18 @@ def test_mcp_show_item_today():
     # Should either return no items or valid formatted results
     if "No items due today" not in result:
         items = result.split("\n\n---\n\n")
+        for item in items:
+            assert verify_item_format(item), f"Item format is incorrect: {item}"
+
+
+def test_mcp_show_item_today_limit():
+    """show_item should respect limit for list views (today)."""
+    result = show_item("today", limit=5)
+    assert isinstance(result, str), "Should return a string"
+
+    if "No items due today" not in result:
+        items = result.split("\n\n---\n\n")
+        assert len(items) <= 5, f"Should return at most 5 items, got {len(items)}"
         for item in items:
             assert verify_item_format(item), f"Item format is incorrect: {item}"
 

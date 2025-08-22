@@ -11,8 +11,6 @@ from datetime import datetime, timedelta
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import things  # noqa: E402
-
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
@@ -21,6 +19,7 @@ from tests.conftest import (  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
+    get_item,  # noqa: E402
     update_project,
     update_todo,
 )
@@ -36,7 +35,7 @@ def test_add_todo_with_deadline(test_namespace):
     assert todo_id, "Failed to create todo with deadline"
 
     # Verify the deadline was set by retrieving the todo
-    todo = things.get(todo_id)
+    todo = get_item(todo_id)
     assert todo, "Failed to retrieve created todo"
     assert todo.get("deadline"), "Deadline was not set on todo"
     assert todo["deadline"] == tomorrow, f"Deadline mismatch: expected {tomorrow}, got {todo['deadline']}"
@@ -58,7 +57,7 @@ def test_update_todo_deadline(test_namespace):
     assert result, "Failed to update todo deadline"
 
     # Verify the deadline was updated
-    todo = things.get(todo_id)
+    todo = get_item(todo_id)
     assert todo.get("deadline"), "Deadline was not set on todo"
     assert todo["deadline"] == new_deadline, f"Deadline mismatch: expected {new_deadline}, got {todo['deadline']}"
 
@@ -76,7 +75,7 @@ def test_add_project_with_deadline(test_namespace):
     assert project_id, "Failed to create project with deadline"
 
     # Verify the deadline was set
-    project = things.get(project_id)
+    project = get_item(project_id)
     assert project, "Failed to retrieve created project"
     assert project.get("deadline"), "Deadline was not set on project"
     assert project["deadline"] == future_date, f"Deadline mismatch: expected {future_date}, got {project['deadline']}"
@@ -98,7 +97,7 @@ def test_update_project_deadline(test_namespace):
     assert result, "Failed to update project deadline"
 
     # Verify the deadline was updated
-    project = things.get(project_id)
+    project = get_item(project_id)
     assert project.get("deadline"), "Deadline was not set on project"
     assert project["deadline"] == new_deadline, f"Deadline mismatch: expected {new_deadline}, got {project['deadline']}"
 
@@ -147,7 +146,7 @@ def test_invalid_deadline_format(test_namespace):
         todo_id = add_todo(title=f"{title} - {invalid_deadline}", deadline=invalid_deadline)
         # We expect this to either fail gracefully or create without deadline
         if todo_id:
-            todo = things.get(todo_id)
+            todo = get_item(todo_id)
             # If it was created, it should not have a deadline set
             if todo and "deadline" in todo:
                 assert not todo["deadline"], f"Invalid deadline '{invalid_deadline}' was incorrectly set"
