@@ -283,16 +283,58 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
         limit: Maximum number of entries to return. Defaults to 50.
     """
-    todos = things.last(period, status="completed", include_items=True)
+    import time
+    from datetime import datetime, timedelta
 
-    if not todos:
-        return "No completed items found"
+    start_time = time.time()
+    log_operation_start("get-logbook")
 
-    if todos and len(todos) > limit:
-        todos = todos[:limit]
+    try:
+        # Parse period (e.g., "1d", "7d", "2w", "1m", "1y")
+        if not period or period[-1] not in ["d", "w", "m", "y"]:
+            log_operation_end("get-logbook", False, time.time() - start_time, error=f"Invalid period format: {period}")
+            return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+        number = int(period[:-1])
+        unit = period[-1]
+
+        # Calculate start date based on period
+        if unit == "d":
+            start_date = (datetime.now() - timedelta(days=number)).strftime("%Y-%m-%d")
+        elif unit == "w":
+            start_date = (datetime.now() - timedelta(weeks=number)).strftime("%Y-%m-%d")
+        elif unit == "m":
+            start_date = (datetime.now() - timedelta(days=number * 30)).strftime("%Y-%m-%d")
+        elif unit == "y":
+            start_date = (datetime.now() - timedelta(days=number * 365)).strftime("%Y-%m-%d")
+
+        logger.debug(f"Logbook query: period={period}, start_date>={start_date}")
+
+        # Query using stop_date (completion date) instead of last (creation date)
+        # This fixes the bug where items were filtered by creation date instead of completion date
+        todos = things.tasks(status="completed", stop_date=f">={start_date}", include_items=True)
+
+        if not todos:
+            log_operation_end("get-logbook", True, time.time() - start_time, count=0)
+            return "No completed items found"
+
+        # Sort by completion date, newest first
+        # Use 'or ""' to handle None values safely (prevents TypeError in Python 3)
+        todos.sort(key=lambda x: x.get("stop_date") or "", reverse=True)
+
+        if len(todos) > limit:
+            todos = todos[:limit]
+
+        formatted_todos = [format_todo(todo) for todo in todos]
+        log_operation_end("get-logbook", True, time.time() - start_time, count=len(todos))
+        return "\n\n---\n\n".join(formatted_todos)
+
+    except ValueError as e:
+        log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
+        return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
+    except Exception as e:
+        log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
+        raise
 
 
 @mcp.tool(name="get_trash")
