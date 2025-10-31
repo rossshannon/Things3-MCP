@@ -1,6 +1,6 @@
 [project]
 name = "Things3-MCP-server"
-version = "2.0.6"
+version = "2.0.7"
 description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
 requires-python = ">=3.12"
