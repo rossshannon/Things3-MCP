@@ -44,6 +44,7 @@ jobs:
       run: uv run bandit -r src/
 
     - name: Check dependencies for vulnerabilities
-      run: uv run safety scan --output screen || true
-      # Note: Vulnerabilities are in transitive dependencies (setuptools/_vendor, authlib)
-      # that we cannot directly control. Using || true to continue on error.
+      run: uv run safety --stage cicd scan --output screen
+      env:
+        SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
+      # Note: Requires SAFETY_API_KEY secret to be set in GitHub repo settings
