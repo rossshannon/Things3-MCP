@@ -356,7 +356,7 @@ The server includes error handling for:
 
 ### Common Issues
 
-2. **Things app not running**: Make sure the Things app is running on your Mac.
+1. **Things app not running**: Make sure the Things app is running on your Mac for AppleScript methods to work.
 
 ### Checking Logs
 

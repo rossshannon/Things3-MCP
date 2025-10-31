@@ -18,7 +18,11 @@
       "WebSearch",
       "Bash(uv lock:*)",
       "Bash(uv pip index:*)",
-      "Bash(gh release view:*)"
+      "Bash(gh release view:*)",
+      "Bash(codex:*)",
+      "Bash(gh run:*)",
+      "Bash(uv pip:*)",
+      "Bash(uv run safety scan --help:*)"
     ],
     "deny": [],
     "ask": []
