@@ -11,8 +11,9 @@ import things
 logger = logging.getLogger(__name__)
 
 
-def format_todo(todo: dict) -> str:
+def format_todo(todo: dict, get_item=None) -> str:
     """Helper function to format a single todo into a readable string."""
+    get_item = get_item or things.get
     logger.debug(f"Formatting todo: {todo}")
     todo_text = f"Title: {todo['title']}"
 
@@ -45,7 +46,7 @@ def format_todo(todo: dict) -> str:
     # Add project info if present
     if todo.get("project"):
         try:
-            project = things.get(todo["project"])
+            project = get_item(todo["project"])
             if project:
                 todo_text += f"\nProject: {project['title']}"
         except Exception:  # nosec B110 - Ignore missing project info, not all todos have projects
@@ -54,7 +55,7 @@ def format_todo(todo: dict) -> str:
     # Add area info if present
     if todo.get("area"):
         try:
-            area = things.get(todo["area"])
+            area = get_item(todo["area"])
             if area:
                 todo_text += f"\nArea: {area['title']}"
         except Exception:  # nosec B110 - Ignore missing area info, not all todos have areas
@@ -74,13 +75,15 @@ def format_todo(todo: dict) -> str:
     return todo_text
 
 
-def format_project(project: dict, include_items: bool = False) -> str:
+def format_project(project: dict, include_items: bool = False, get_item=None, get_todos=None) -> str:
     """Helper function to format a single project."""
+    get_item = get_item or things.get
+    get_todos = get_todos or things.todos
     project_text = f"Title: {project['title']}\nUUID: {project['uuid']}"
 
     if project.get("area"):
         try:
-            area = things.get(project["area"])
+            area = get_item(project["area"])
             if area:
                 project_text += f"\nArea: {area['title']}"
         except Exception:  # nosec B110 - Ignore missing area info, not all projects have areas
@@ -90,7 +93,9 @@ def format_project(project: dict, include_items: bool = False) -> str:
         project_text += f"\nNotes: {project['notes']}"
 
     if include_items:
-        todos = things.todos(project=project["uuid"])
+        todos = project.get("items")
+        if todos is None:
+            todos = get_todos(project=project["uuid"])
         if todos:
             project_text += "\n\nTasks:"
             for todo in todos:
@@ -99,21 +104,27 @@ def format_project(project: dict, include_items: bool = False) -> str:
     return project_text
 
 
-def format_area(area: dict, include_items: bool = False) -> str:
+def format_area(area: dict, include_items: bool = False, get_projects=None, get_todos=None) -> str:
     """Helper function to format a single area."""
+    get_projects = get_projects or things.projects
+    get_todos = get_todos or things.todos
     area_text = f"Title: {area['title']}\nUUID: {area['uuid']}"
 
     if area.get("notes"):
         area_text += f"\nNotes: {area['notes']}"
 
     if include_items:
-        projects = things.projects(area=area["uuid"])
+        projects = area.get("projects")
+        if projects is None:
+            projects = get_projects(area=area["uuid"])
         if projects:
             area_text += "\n\nProjects:"
             for project in projects:
                 area_text += f"\n- {project['title']}"
 
-        todos = things.todos(area=area["uuid"])
+        todos = area.get("items")
+        if todos is None:
+            todos = get_todos(area=area["uuid"])
         if todos:
             area_text += "\n\nTasks:"
             for todo in todos:
@@ -122,15 +133,18 @@ def format_area(area: dict, include_items: bool = False) -> str:
     return area_text
 
 
-def format_tag(tag: dict, include_items: bool = False) -> str:
+def format_tag(tag: dict, include_items: bool = False, get_todos=None) -> str:
     """Helper function to format a single tag."""
+    get_todos = get_todos or things.todos
     tag_text = f"Title: {tag['title']}\nUUID: {tag['uuid']}"
 
     if tag.get("shortcut"):
         tag_text += f"\nShortcut: {tag['shortcut']}"
 
     if include_items:
-        todos = things.todos(tag=tag["title"])
+        todos = tag.get("items")
+        if todos is None:
+            todos = get_todos(tag=tag["title"])
         if todos:
             tag_text += "\n\nTagged Items:"
             for todo in todos:

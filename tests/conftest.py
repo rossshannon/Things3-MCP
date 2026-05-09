@@ -489,6 +489,10 @@ class CleanupTracker:
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_environment():
     """Set up test environment and clean up after all tests."""
+    if os.environ.get("THINGS3_MCP_SKIP_THINGS_TEST_SETUP") == "1":
+        yield
+        return
+
     # Ensure Things is ready
     assert ensure_things_ready(), "Things app is not ready for testing"
 

@@ -330,12 +330,15 @@ def test_create_tag_independently(test_namespace):
         # Should return "No items found" since these are new tags
         assert "No items found" in result, f"New tag '{tag_name}' should have no items"
 
-    # Clean up - delete all test tags
+    # Clean up - delete all test tags. AppleScript cleanup can be flaky on
+    # large databases (8s timeout), so retry once before asserting.
     delete_test_tags()
-
-    # Verify cleanup by checking that tags no longer appear in get_tags()
     all_tags_after_cleanup = get_tags()
     assert isinstance(all_tags_after_cleanup, str), "get_tags() should return a string after cleanup"
+
+    if any(f"Title: {expected_tag}" in all_tags_after_cleanup for expected_tag in expected_tags):
+        delete_test_tags()
+        all_tags_after_cleanup = get_tags()
 
     for expected_tag in expected_tags:
         assert f"Title: {expected_tag}" not in all_tags_after_cleanup, f"Tag '{expected_tag}' should be cleaned up"

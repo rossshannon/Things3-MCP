@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rossshannon.things3-mcp.bridge</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>com.rossshannon.things3-mcp.bridge</string>
+  </array>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/Applications/Things3 MCP Bridge.app/Contents/MacOS/Things3 MCP Bridge</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/Things3-MCP/bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/Things3-MCP/bridge.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>THINGS3_MCP_DATA_FOLDER</key>
+    <string>__THINGS3_MCP_DATA_FOLDER__</string>
+  </dict>
+</dict>
+</plist>

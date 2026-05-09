@@ -4,15 +4,10 @@ import json
 import random
 import traceback
 
-import things
 from mcp.server.fastmcp import FastMCP
 
 from .applescript_bridge import (
-    add_project,
-    add_todo,
     ensure_things_ready,
-    update_project,
-    update_todo,
 )
 from .formatters import format_area, format_project, format_tag, format_todo
 from .logging_config import (
@@ -21,10 +16,76 @@ from .logging_config import (
     log_operation_start,
     setup_logging,
 )
+from .providers import ProviderError, get_provider
 
 # Configure enhanced logging
 setup_logging(console_level="INFO", file_level="DEBUG", structured_logs=True)
 logger = get_logger(__name__)
+
+DEFAULT_TRASH_LIMIT = 50
+MAX_TRASH_LIMIT = 200
+
+
+def _provider_error_response(error: ProviderError) -> str:
+    """Render provider failures as clear MCP tool output instead of hangs."""
+    return str(error)
+
+
+def _resolve_todo_location(task_id: str) -> str:
+    """Look up the new todo's project/area/list via the provider chain.
+
+    Used for the post-create success message ("✅ Successfully created todo:
+    Title (ID: …) in Project Foo"). Routed through the provider so this lookup
+    shares the bridge's stable identity rather than calling ``things.get()``
+    directly from the MCP-server process — otherwise any host without FDA gets
+    "in Unknown" silently. On any read failure we still fall back to "Unknown"
+    because the create itself already succeeded; the location is decoration.
+    """
+    try:
+        provider = get_provider()
+        todo = provider.get(task_id)
+        if not todo:
+            return "Unknown"
+        if todo.get("project"):
+            project = provider.get(todo["project"])
+            if project:
+                return f"Project: {project['title']}"
+        if todo.get("area"):
+            area = provider.get(todo["area"])
+            if area:
+                return f"Area: {area['title']}"
+        return f"List: {todo.get('start', 'Unknown')}"
+    except Exception:  # noqa: BLE001 - location is decorative; never block the create response
+        return "Unknown"
+
+
+def _resolve_project_location(project_id: str) -> str:
+    """Same as :func:`_resolve_todo_location` but for the post-create-project response."""
+    try:
+        provider = get_provider()
+        project = provider.get(project_id)
+        if not project:
+            return "Unknown"
+        if project.get("area"):
+            area = provider.get(project["area"])
+            if area:
+                return f"Area: {area['title']}"
+        return "List: Inbox"
+    except Exception:  # noqa: BLE001 - same reasoning as _resolve_todo_location
+        return "Unknown"
+
+
+def _format_todo_items(items: list[dict], provider) -> str:
+    return "\n\n---\n\n".join(format_todo(item, get_item=provider.get) for item in items)
+
+
+def _sample_items(items: list[dict], count: int) -> list[dict]:
+    """Return a random sample without replacement."""
+    if count <= 0:
+        return []
+    if len(items) <= count:
+        return items
+    return random.sample(items, count)  # nosec B311 - not used for cryptographic purposes
 
 
 def preprocess_array_params(**kwargs):
@@ -70,15 +131,18 @@ def get_inbox() -> str:
     log_operation_start("get-inbox")
 
     try:
-        todos = things.inbox(include_items=True)
+        provider = get_provider()
+        todos = provider.inbox(include_items=True)
 
         if not todos:
             log_operation_end("get-inbox", True, time.time() - start_time, count=0)
             return "No items found in Inbox"
 
-        formatted_todos = [format_todo(todo) for todo in todos]
         log_operation_end("get-inbox", True, time.time() - start_time, count=len(todos))
-        return "\n\n---\n\n".join(formatted_todos)
+        return _format_todo_items(todos, provider)
+    except ProviderError as e:
+        log_operation_end("get-inbox", False, time.time() - start_time, error=str(e))
+        return _provider_error_response(e)
     except Exception as e:
         log_operation_end("get-inbox", False, time.time() - start_time, error=str(e))
         raise
@@ -93,76 +157,18 @@ def get_today() -> str:
     log_operation_start("get-today")
 
     try:
-        todos = things.today(include_items=True)
+        provider = get_provider()
+        todos = provider.today(include_items=True)
 
         if not todos:
             log_operation_end("get-today", True, time.time() - start_time, count=0)
             return "No items due today"
 
-        formatted_todos = [format_todo(todo) for todo in todos]
         log_operation_end("get-today", True, time.time() - start_time, count=len(todos))
-        return "\n\n---\n\n".join(formatted_todos)
-    except TypeError as e:
-        if "'<' not supported between instances of 'NoneType' and 'str'" in str(e):
-            # Handle the known sorting bug in things.today() by using a workaround
-            try:
-                # Replicate the exact logic from things.today() but with safe sorting
-                import datetime
-
-                datetime.date.today().strftime("%Y-%m-%d")
-
-                # Replicate the three categories from things.today():
-                # 1. regular_today_tasks: start_date=True (today), start="Anytime", index="todayIndex"
-                regular_today_tasks = things.tasks(
-                    start_date=True,  # today
-                    start="Anytime",
-                    index="todayIndex",
-                    status="incomplete",
-                    include_items=True,
-                )
-
-                # 2. unconfirmed_scheduled_tasks: start_date="past", start="Someday", index="todayIndex"
-                unconfirmed_scheduled_tasks = things.tasks(start_date="past", start="Someday", index="todayIndex", status="incomplete", include_items=True)
-
-                # 3. unconfirmed_overdue_tasks: start_date=False, deadline="past", deadline_suppressed=False
-                unconfirmed_overdue_tasks = things.tasks(start_date=False, deadline="past", deadline_suppressed=False, status="incomplete", include_items=True)
-
-                # Combine all three categories like the original
-                result = [
-                    *regular_today_tasks,
-                    *unconfirmed_scheduled_tasks,
-                    *unconfirmed_overdue_tasks,
-                ]
-
-                if not result:
-                    return "No items due today"
-
-                # Sort manually with None-safe comparison
-                def safe_sort_key(task):
-                    today_index = task.get("today_index")
-                    if today_index is None:
-                        today_index = 999999  # Put items without today_index at the end
-                    start_date = task.get("start_date")
-                    if start_date is None:
-                        start_date = ""
-                    return (today_index, start_date)
-
-                result.sort(key=safe_sort_key)
-                formatted_todos = [format_todo(todo) for todo in result]
-                # Only log success AFTER the fallback actually succeeds
-                if result:
-                    log_operation_end("get-today", True, time.time() - start_time, count=len(result))
-                    return "\n\n---\n\n".join(formatted_todos)
-                else:
-                    log_operation_end("get-today", True, time.time() - start_time, count=0)
-                    return "No items due today"
-
-            except Exception as fallback_error:
-                log_operation_end("get-today", False, time.time() - start_time, error=f"Fallback failed: {fallback_error!s}")
-                return f"Error: Unable to get today's items due to a sorting issue in the Things library. Fallback also failed: {fallback_error!s}"
-        else:
-            log_operation_end("get-today", False, time.time() - start_time, error=str(e))
-            raise
+        return _format_todo_items(todos, provider)
+    except ProviderError as e:
+        log_operation_end("get-today", False, time.time() - start_time, error=str(e))
+        return _provider_error_response(e)
     except Exception as e:
         log_operation_end("get-today", False, time.time() - start_time, error=str(e))
         raise
@@ -171,25 +177,31 @@ def get_today() -> str:
 @mcp.tool(name="get_upcoming")
 def get_upcoming() -> str:
     """Get all upcoming todos (those with a start date in the future)."""
-    todos = things.upcoming(include_items=True)
+    try:
+        provider = get_provider()
+        todos = provider.upcoming(include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return "No upcoming items"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="get_anytime")
 def get_anytime() -> str:
     """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
-    todos = things.anytime(include_items=True)
+    try:
+        provider = get_provider()
+        todos = provider.anytime(include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return "No items in Anytime list"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="get_random_inbox")
@@ -206,27 +218,26 @@ def get_random_inbox(count: int = 5) -> str:
     log_operation_start("get-random-inbox")
 
     try:
-        items = things.inbox(include_items=True)
+        provider = get_provider()
+        items = provider.inbox(include_items=True)
 
         if not items:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
             return "No items found in Inbox"
 
         # Sample without replacement up to the number of available items
-        if count <= 0:
-            sampled = []
-        elif len(items) <= count:
-            sampled = items
-        else:
-            sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes  # nosec B311 - not used for cryptographic purposes
+        sampled = _sample_items(items, count)
 
         if not sampled:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
             return "No items found in Inbox"
 
-        formatted = [format_todo(item) for item in sampled]
+        formatted = [format_todo(item, get_item=provider.get) for item in sampled]
         log_operation_end("get-random-inbox", True, time.time() - start_time, count=len(sampled))
         return "\n\n---\n\n".join(formatted)
+    except ProviderError as e:
+        log_operation_end("get-random-inbox", False, time.time() - start_time, error=str(e))
+        return _provider_error_response(e)
     except Exception as e:
         log_operation_end("get-random-inbox", False, time.time() - start_time, error=str(e))
         raise
@@ -243,35 +254,36 @@ def get_random_anytime(count: int = 5) -> str:
     ----
         count: Number of random items to return. Defaults to 5.
     """
-    items = things.anytime(include_items=True)
+    try:
+        provider = get_provider()
+        items = provider.anytime(include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not items:
         return "No items in Anytime list"
 
-    if count <= 0:
-        sampled = []
-    elif len(items) <= count:
-        sampled = items
-    else:
-        sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes
-
+    sampled = _sample_items(items, count)
     if not sampled:
         return "No items in Anytime list"
 
-    formatted = [format_todo(item) for item in sampled]
+    formatted = [format_todo(item, get_item=provider.get) for item in sampled]
     return "\n\n---\n\n".join(formatted)
 
 
 @mcp.tool(name="get_someday")
 def get_someday() -> str:
     """Get todos from Someday list."""
-    todos = things.someday(include_items=True)
+    try:
+        provider = get_provider()
+        todos = provider.someday(include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return "No items in Someday list"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="get_logbook")
@@ -310,24 +322,27 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
         logger.debug(f"Logbook query: period={period}, start_date>={start_date}")
 
-        # Query using stop_date (completion date) instead of last (creation date)
-        # This fixes the bug where items were filtered by creation date instead of completion date
-        todos = things.tasks(status="completed", stop_date=f">={start_date}", include_items=True)
+        try:
+            provider = get_provider()
+            # stop_date filter selects by completion date — fixes the historical
+            # bug where items were filtered by creation date instead.
+            todos = provider.tasks(status="completed", stop_date=f">={start_date}", include_items=True)
+        except ProviderError as e:
+            log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
+            return _provider_error_response(e)
 
         if not todos:
             log_operation_end("get-logbook", True, time.time() - start_time, count=0)
             return "No completed items found"
 
-        # Sort by completion date, newest first
-        # Use 'or ""' to handle None values safely (prevents TypeError in Python 3)
+        # Sort by completion date, newest first; tolerate None values.
         todos.sort(key=lambda x: x.get("stop_date") or "", reverse=True)
 
         if len(todos) > limit:
             todos = todos[:limit]
 
-        formatted_todos = [format_todo(todo) for todo in todos]
         log_operation_end("get-logbook", True, time.time() - start_time, count=len(todos))
-        return "\n\n---\n\n".join(formatted_todos)
+        return _format_todo_items(todos, provider)
 
     except ValueError as e:
         log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
@@ -338,15 +353,54 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
 
 @mcp.tool(name="get_trash")
-def get_trash() -> str:
-    """Get trashed todos."""
-    todos = things.trash(include_items=True)
+def get_trash(limit: int = DEFAULT_TRASH_LIMIT, offset: int = 0) -> str:
+    """Get trashed todos.
+
+    Args:
+    ----
+        limit: Maximum number of trashed items to return. Defaults to 50 and is capped at 200.
+        offset: Zero-based offset for paging through large Trash lists.
+    """
+    try:
+        limit = int(limit)
+        offset = int(offset)
+    except (TypeError, ValueError):
+        return "Error: limit and offset must be integers"
+
+    if limit < 1:
+        return "Error: limit must be at least 1"
+    if offset < 0:
+        return "Error: offset must be at least 0"
+
+    requested_limit = limit
+    limit = min(limit, MAX_TRASH_LIMIT)
+
+    try:
+        provider = get_provider()
+        # Trash can be huge. Pull the lightweight shape and avoid formatter
+        # relation lookups, otherwise one MCP call can fan out into thousands
+        # of /things/get requests.
+        todos = provider.trash(include_items=False)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return "No items in trash"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    total = len(todos)
+    if offset >= total:
+        return f"No trash items at offset {offset}. Trash contains {total} items."
+
+    page = todos[offset : offset + limit]
+    formatted = [format_todo(todo, get_item=lambda _uuid: None) for todo in page]
+    start = offset + 1
+    end = offset + len(page)
+    footer_parts = [f"Showing trashed items {start}-{end} of {total}."]
+    if requested_limit > MAX_TRASH_LIMIT:
+        footer_parts.append(f"Requested limit {requested_limit} was capped at {MAX_TRASH_LIMIT}.")
+    if end < total:
+        footer_parts.append(f"Next page: call get_trash(limit={limit}, offset={end}).")
+    return "\n\n---\n\n".join(formatted) + "\n\n" + " ".join(footer_parts)
 
 
 @mcp.tool(name="get_todos")
@@ -357,18 +411,21 @@ def get_todos(project_uuid: str | None = None) -> str:
     ----
         project_uuid: Optional UUID of a specific project to get todos from.
     """
-    if project_uuid:
-        project = things.get(project_uuid)
-        if not project or project.get("type") != "project":
-            return f"Error: Invalid project UUID '{project_uuid}'"
+    try:
+        provider = get_provider()
+        if project_uuid:
+            project = provider.get(project_uuid)
+            if not project or project.get("type") != "project":
+                return f"Error: Invalid project UUID '{project_uuid}'"
 
-    todos = things.todos(project=project_uuid, start=None, include_items=True)
+        todos = provider.todos(project=project_uuid, start=None, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return "No todos found"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="get_random_todos")
@@ -380,28 +437,25 @@ def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
         project_uuid: Optional UUID of a specific project to draw todos from.
         count: Number of todos to return. Defaults to 5.
     """
-    if project_uuid:
-        project = things.get(project_uuid)
-        if not project or project.get("type") != "project":
-            return f"Error: Invalid project UUID '{project_uuid}'"
+    try:
+        provider = get_provider()
+        if project_uuid:
+            project = provider.get(project_uuid)
+            if not project or project.get("type") != "project":
+                return f"Error: Invalid project UUID '{project_uuid}'"
 
-    items = things.todos(project=project_uuid, start=None, include_items=True)
+        items = provider.todos(project=project_uuid, start=None, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not items:
         return "No todos found"
 
-    if count <= 0:
-        sampled = []
-    elif len(items) <= count:
-        sampled = items
-    else:
-        sampled = random.sample(items, count)  # nosec B311 - not used for cryptographic purposes
-
+    sampled = _sample_items(items, count)
     if not sampled:
         return "No todos found"
 
-    formatted = [format_todo(todo) for todo in sampled]
-    return "\n\n---\n\n".join(formatted)
+    return _format_todo_items(sampled, provider)
 
 
 @mcp.tool(name="get_projects")
@@ -412,12 +466,16 @@ def get_projects(include_items: bool = False) -> str:
     ----
         include_items: Include tasks within projects.
     """
-    projects = things.projects()
+    try:
+        provider = get_provider()
+        projects = provider.projects(include_items=include_items)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not projects:
         return "No projects found"
 
-    formatted_projects = [format_project(project, include_items) for project in projects]
+    formatted_projects = [format_project(project, include_items, get_item=provider.get, get_todos=provider.todos) for project in projects]
     return "\n\n---\n\n".join(formatted_projects)
 
 
@@ -429,12 +487,16 @@ def get_areas(include_items: bool = False) -> str:
     ----
         include_items: Include projects and tasks within areas
     """
-    areas = things.areas()
+    try:
+        provider = get_provider()
+        areas = provider.areas(include_items=include_items)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not areas:
         return "No areas found"
 
-    formatted_areas = [format_area(area, include_items) for area in areas]
+    formatted_areas = [format_area(area, include_items, get_projects=provider.projects, get_todos=provider.todos) for area in areas]
     return "\n\n---\n\n".join(formatted_areas)
 
 
@@ -449,12 +511,16 @@ def get_tags(include_items: bool = False) -> str:
     ----
         include_items: Include items tagged with each tag
     """
-    tags = things.tags()
+    try:
+        provider = get_provider()
+        tags = provider.tags(include_items=include_items)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not tags:
         return "No tags found"
 
-    formatted_tags = [format_tag(tag, include_items) for tag in tags]
+    formatted_tags = [format_tag(tag, include_items, get_todos=provider.todos) for tag in tags]
     return "\n\n---\n\n".join(formatted_tags)
 
 
@@ -466,13 +532,16 @@ def get_tagged_items(tag: str) -> str:
     ----
         tag: Tag title to filter by
     """
-    todos = things.todos(tag=tag, include_items=True)
+    try:
+        provider = get_provider()
+        todos = provider.todos(tag=tag, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return f"No items found with tag '{tag}'"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 # SEARCH OPERATIONS
@@ -486,13 +555,16 @@ def search_todos(query: str) -> str:
     ----
         query: Search term to look for in todo titles and notes
     """
-    todos = things.search(query, include_items=True)
+    try:
+        provider = get_provider()
+        todos = provider.search(query, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
 
     if not todos:
         return f"No todos found matching '{query}'"
 
-    formatted_todos = [format_todo(todo) for todo in todos]
-    return "\n\n---\n\n".join(formatted_todos)
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="search_advanced")
@@ -532,17 +604,24 @@ def search_advanced(
     if type:
         kwargs["type"] = type
 
-    # Execute search with applicable filters
+    # Execute search with applicable filters via the provider chain.
+    # Preserve the legacy "Error in advanced search:" contract — callers (and
+    # tests) rely on this prefix to distinguish search failures from no-results
+    # outcomes. ProviderError gets unwrapped to its underlying message so
+    # things-py's ValueErrors (e.g. "Unrecognized tag type: '...'") surface
+    # with their original wording.
     try:
-        todos = things.todos(**kwargs)
-
-        if not todos:
-            return "No items found matching your search criteria"
-
-        formatted_todos = [format_todo(todo) for todo in todos]
-        return "\n\n---\n\n".join(formatted_todos)
+        provider = get_provider()
+        todos = provider.todos(**kwargs)
+    except ProviderError as e:
+        return f"Error in advanced search: {e.message}"
     except Exception as e:
         return f"Error in advanced search: {e!s}"
+
+    if not todos:
+        return "No items found matching your search criteria"
+
+    return _format_todo_items(todos, provider)
 
 
 # MODIFICATION OPERATIONS
@@ -596,40 +675,25 @@ def add_task(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
-        # Use the direct AppleScript approach which is more reliable
-        logger.info(f"Creating todo using AppleScript: {title}")
+        logger.info(f"Creating todo through provider: {title}")
 
         try:
-            task_id = add_todo(title=title, notes=notes, when=when, deadline=deadline, tags=tags, list_id=list_id, list_title=list_title)
-        except Exception as bridge_error:
-            logger.error(f"AppleScript bridge error: {bridge_error}")
-            return f"⚠️ AppleScript bridge error: {bridge_error}"
+            params = {"title": title, "notes": notes, "when": when, "deadline": deadline, "tags": tags, "list_id": list_id, "list_title": list_title}
+            # Drop None values so the provider doesn't pass them as kwargs to applescript_bridge.
+            params = {k: v for k, v in params.items() if v is not None}
+            result = get_provider().add_task(params)
+        except ProviderError as bridge_error:
+            logger.error(f"Provider error creating todo: {bridge_error}")
+            return f"⚠️ Provider error: {bridge_error}"
 
-        # Check if the returned value is actually an error message rather than a valid task ID
+        task_id = result.get("id") if isinstance(result, dict) else None
         if not task_id:
-            return "⚠️ Error: Failed to create todo using AppleScript"
+            return "⚠️ Error: Failed to create todo (no ID returned)"
 
-        # Check if the returned value is actually an error message rather than a valid task ID
-        if isinstance(task_id, str) and ("script error" in task_id or task_id.startswith("/var/folders/") or task_id.startswith("Error:")):
-            logger.error("AppleScript returned error instead of task ID: %s", task_id)
-            return f"⚠️ AppleScript error: {task_id}"
-
-        # Get location information for the success message
-        try:
-            import things
-
-            todo = things.get(task_id)
-            if todo:
-                if todo.get("project"):
-                    location = f"Project: {things.get(todo['project'])['title']}"
-                elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['title']}"
-                else:
-                    location = f"List: {todo.get('start', 'Unknown')}"
-            else:
-                location = "Unknown"
-        except Exception:
-            location = "Unknown"
+        # Resolve location info for the success message via the provider so we
+        # don't bypass the bridge's stable identity here. On any read failure
+        # the location stays "Unknown" — the create itself already succeeded.
+        location = _resolve_todo_location(task_id)
 
         return f"✅ Successfully created todo: {title} (ID: {task_id}) in {location}"
 
@@ -680,33 +744,22 @@ def add_new_project(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
-        # Use the direct AppleScript approach which is more reliable
-        logger.info(f"Creating project using AppleScript: {title}")
+        logger.info(f"Creating project through provider: {title}")
 
-        # Call the AppleScript bridge directly
         try:
-            project_id = add_project(title=title, notes=notes, when=when, deadline=deadline, tags=tags, area_title=area_title, area_id=area_id, todos=todos)
-        except Exception as bridge_error:
-            logger.error(f"AppleScript bridge error: {bridge_error}")
-            return f"⚠️ AppleScript bridge error: {bridge_error}"
+            params = {"title": title, "notes": notes, "when": when, "deadline": deadline, "tags": tags, "area_title": area_title, "area_id": area_id, "todos": todos}
+            params = {k: v for k, v in params.items() if v is not None}
+            result = get_provider().add_project(params)
+        except ProviderError as bridge_error:
+            logger.error(f"Provider error creating project: {bridge_error}")
+            return f"⚠️ Provider error: {bridge_error}"
 
+        project_id = result.get("id") if isinstance(result, dict) else None
         if not project_id:
-            return "Error: Failed to create project using AppleScript"
+            return "Error: Failed to create project (no ID returned)"
 
-        # Look up the project to get location information
-        try:
-            import things
-
-            project = things.get(project_id)
-            if project:
-                if project.get("area"):
-                    location = f"Area: {things.get(project['area'])['title']}"
-                else:
-                    location = "List: Inbox"
-            else:
-                location = "Unknown"
-        except Exception:
-            location = "Unknown"
+        # Resolve location via the provider chain — see _resolve_todo_location.
+        location = _resolve_project_location(project_id)
 
         return f"✅ Successfully created project: {title} (ID: {project_id}) in {location}"
 
@@ -760,40 +813,26 @@ def update_task(
         if isinstance(list_name, str):
             list_name = list_name.replace("+", " ").replace("%20", " ")
 
-        logger.info(f"Updating todo using AppleScript: {id}")
+        logger.info(f"Updating todo through provider: {id}")
 
-        # Call the AppleScript bridge directly
         try:
-            success = update_todo(
-                id=id,
-                title=title,
-                notes=notes,
-                when=when,
-                deadline=deadline,
-                tags=tags,
-                completed=completed,
-                canceled=canceled,
-                list_id=list_id,
-                list_name=list_name,
-            )
-            logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
-
-            # Handle various success cases
-            if "true" in str(success).lower():
-                logger.debug("Success case matched: 'true' in result")
-
-                return f"✅ Successfully updated todo with ID: {id}"
-            elif success.startswith("Error:"):
-                logger.error(f"AppleScript error: {success}")
-                return success
-            else:
-                logger.error(f"AppleScript update failed with result: {success!r}")
-                return f"Error: Failed to update todo using AppleScript. Result: {success}"
-
-        except Exception as bridge_error:
-            logger.error(f"AppleScript bridge error: {bridge_error}")
-            logger.error(f"Full bridge error traceback: {traceback.format_exc()}")
-            return f"⚠️ AppleScript bridge error: {bridge_error}"
+            params = {
+                "title": title,
+                "notes": notes,
+                "when": when,
+                "deadline": deadline,
+                "tags": tags,
+                "completed": completed,
+                "canceled": canceled,
+                "list_id": list_id,
+                "list_name": list_name,
+            }
+            params = {k: v for k, v in params.items() if v is not None}
+            get_provider().update_task(id, params)
+            return f"✅ Successfully updated todo with ID: {id}"
+        except ProviderError as bridge_error:
+            logger.error(f"Provider error updating todo: {bridge_error}")
+            return f"⚠️ Provider error: {bridge_error}"
 
     except Exception as e:
         logger.error(f"Error updating todo: {e!s}")
@@ -857,42 +896,27 @@ def update_existing_project(
             area_title = area_title.replace("+", " ").replace("%20", " ")
             logger.info(f"Cleaned area_title: {area_title!r}")
 
-        # Use the direct AppleScript approach which is more reliable
-        logger.info(f"Updating project using AppleScript: {id}")
+        logger.info(f"Updating project through provider: {id}")
 
-        # Call the AppleScript bridge directly
         try:
-            success = update_project(
-                id=id,
-                title=title,
-                notes=notes,
-                when=when,
-                deadline=deadline,
-                tags=tags,
-                completed=completed,
-                canceled=canceled,
-                list_name=list_name,
-                area_title=area_title,
-                area_id=area_id,
-            )
-            logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
-
-            # Handle various success cases
-            if "true" in str(success).lower():
-                logger.debug("Success case matched: 'true' in result")
-
-                return f"✅ Successfully updated project with ID: {id}"
-            elif success.startswith("Error:"):
-                logger.error(f"AppleScript error: {success}")
-                return success
-            else:
-                logger.error(f"AppleScript update failed with result: {success!r}")
-                return f"Error: Failed to update project using AppleScript. Result: {success}"
-
-        except Exception as bridge_error:
-            logger.error(f"AppleScript bridge error: {bridge_error}")
-            logger.error(f"Full bridge error traceback: {traceback.format_exc()}")
-            return f"⚠️ AppleScript bridge error: {bridge_error}"
+            params = {
+                "title": title,
+                "notes": notes,
+                "when": when,
+                "deadline": deadline,
+                "tags": tags,
+                "completed": completed,
+                "canceled": canceled,
+                "list_name": list_name,
+                "area_title": area_title,
+                "area_id": area_id,
+            }
+            params = {k: v for k, v in params.items() if v is not None}
+            get_provider().update_project(id, params)
+            return f"✅ Successfully updated project with ID: {id}"
+        except ProviderError as bridge_error:
+            logger.error(f"Provider error updating project: {bridge_error}")
+            return f"⚠️ Provider error: {bridge_error}"
 
     except Exception as e:
         logger.error(f"Error updating project: {e!s}")
@@ -929,20 +953,23 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
         elif id == "trash":
             return get_trash()
         else:
-            # For specific item IDs, try to get the item
+            # For specific item IDs, route through the provider chain.
             try:
-                item = things.get(id)
+                provider = get_provider()
+                item = provider.get(id)
                 if item:
                     if item.get("type") == "to-do":
-                        return format_todo(item)
+                        return format_todo(item, get_item=provider.get)
                     elif item.get("type") == "project":
-                        return format_project(item, include_items=True)
+                        return format_project(item, include_items=True, get_item=provider.get, get_todos=provider.todos)
                     elif item.get("type") == "area":
-                        return format_area(item, include_items=True)
+                        return format_area(item, include_items=True, get_projects=provider.projects, get_todos=provider.todos)
                     else:
                         return f"Found item: {item}"
                 else:
                     return f"No item found with ID: {id}"
+            except ProviderError as e:
+                return _provider_error_response(e)
             except Exception as e:
                 return f"Error retrieving item '{id}': {e!s}"
     except Exception as e:
@@ -959,17 +986,18 @@ def search_all_items(query: str) -> str:
         query: Search query
     """
     try:
-        # Use the Python things library for search (same as search_todos)
-        todos = things.search(query, include_items=True)
-
-        if not todos:
-            return f"No items found matching '{query}'"
-
-        formatted_todos = [format_todo(todo) for todo in todos]
-        return "\n\n---\n\n".join(formatted_todos)
+        provider = get_provider()
+        todos = provider.search(query, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
     except Exception as e:
         logger.error(f"Error searching: {e!s}")
         return f"Error searching: {e!s}"
+
+    if not todos:
+        return f"No items found matching '{query}'"
+
+    return _format_todo_items(todos, provider)
 
 
 @mcp.tool(name="get_recent")
@@ -980,28 +1008,29 @@ def get_recent(period: str) -> str:
     ----
         period: Time period (e.g., '3d', '1w', '2m', '1y')
     """
+    if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
+        return "Error: Period must be in format '3d', '1w', '2m', '1y'"
+
     try:
-        # Check if period format is valid
-        if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
-            return "Error: Period must be in format '3d', '1w', '2m', '1y'"
-
-        # Get recent items
-        items = things.last(period, include_items=True)
-
-        if not items:
-            return f"No items found in the last {period}"
-
-        formatted_items = []
-        for item in items:
-            if item.get("type") == "to-do":
-                formatted_items.append(format_todo(item))
-            elif item.get("type") == "project":
-                formatted_items.append(format_project(item, include_items=False))
-
-        return "\n\n---\n\n".join(formatted_items)
+        provider = get_provider()
+        items = provider.last(period, include_items=True)
+    except ProviderError as e:
+        return _provider_error_response(e)
     except Exception as e:
         logger.error(f"Error getting recent items: {e!s}")
         return f"Error getting recent items: {e!s}"
+
+    if not items:
+        return f"No items found in the last {period}"
+
+    formatted_items = []
+    for item in items:
+        if item.get("type") == "to-do":
+            formatted_items.append(format_todo(item, get_item=provider.get))
+        elif item.get("type") == "project":
+            formatted_items.append(format_project(item, include_items=False, get_item=provider.get, get_todos=provider.todos))
+
+    return "\n\n---\n\n".join(formatted_items)
 
 
 # Main entry point

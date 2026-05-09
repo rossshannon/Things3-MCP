@@ -193,40 +193,32 @@ def test_error_logging_includes_context():
 
 
 def test_success_logging_includes_location():
-    """Test that successful operations log location information."""
-    # Capture log output
-    log_capture = io.StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things3_mcp.applescript_bridge")
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    """Successful add_task results include the destination list/area/project.
 
+    Historically this asserted on log lines from ``things3_mcp.applescript_bridge``,
+    but with writes routed through the bridge worker subprocess those logs no
+    longer surface in the test process. The MCP tool's return value still
+    carries the location ("in <List>"), which is the user-facing contract.
+    """
     created_todos = []
 
     try:
         title = f"Success Logging Test {generate_random_string(5)}"
 
-        # Create a real todo to test location logging
         result = add_task(title=title)
 
-        # Should be a success message
-        assert "✅" in result, "Should be successful"
+        assert "✅" in result, f"Should be successful: {result}"
+        assert "(ID: " in result, f"Should include the new todo's UUID: {result}"
+        assert " in " in result, f"Should include location information: {result}"
 
-        # Extract todo ID for cleanup
+        # Extract the UUID for cleanup.
         import re
 
         match = re.search(r"ID: ([^)]+)\)", result)
         if match:
             created_todos.append(match.group(1))
 
-        # Check that location was logged
-        log_output = log_capture.getvalue()
-        assert "Successfully created todo via AppleScript with ID:" in log_output, "Should log successful creation"
-        assert "in " in log_output, "Should include location information in logs"
-
     finally:
-        logger.removeHandler(handler)
-        # Clean up created todos
         for todo_id in created_todos:
             try:
                 delete_todo_by_id(todo_id)
