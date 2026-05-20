@@ -8,9 +8,11 @@ import things
 from mcp.server.fastmcp import FastMCP
 
 from .applescript_bridge import (
+    add_area,
     add_project,
     add_todo,
     ensure_things_ready,
+    update_area,
     update_project,
     update_todo,
 )
@@ -898,6 +900,95 @@ def update_existing_project(
         logger.error(f"Error updating project: {e!s}")
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return f"⚠️ Error updating project: {e!s}"
+
+
+@mcp.tool(name="add_area")
+def add_new_area(
+    title: str,
+    tags: list[str] | str | None = None,
+) -> str:
+    """Create a new area in Things.
+
+    Args:
+    ----
+        title: Title of the area
+        tags: Tags to apply to the area. IMPORTANT: Always pass as an array of
+            strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
+            Passing as a string will treat each character as a separate tag.
+    """
+    try:
+        params = preprocess_array_params(tags=tags)
+        tags = params["tags"]
+
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
+
+        logger.info(f"Creating area using AppleScript: {title}")
+
+        try:
+            area_id = add_area(title=title, tags=tags)
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+        if not area_id:
+            return "Error: Failed to create area using AppleScript"
+
+        return f"✅ Successfully created area: {title} (ID: {area_id})"
+
+    except Exception as e:
+        logger.error(f"Error creating area: {e!s}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error creating area: {e!s}"
+
+
+@mcp.tool(name="update_area")
+def update_existing_area(
+    id: str,
+    title: str | None = None,
+    tags: list[str] | str | None = None,
+) -> str:
+    """Update an existing area in Things.
+
+    Args:
+    ----
+        id: ID of the area to update
+        title: New title for the area
+        tags: New tags. IMPORTANT: Always pass as an array of strings
+            (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Pass an
+            empty array to clear all tags. Passing as a string will treat each
+            character as a separate tag.
+    """
+    try:
+        params = preprocess_array_params(tags=tags)
+        tags = params["tags"]
+
+        if isinstance(title, str):
+            title = title.replace("+", " ").replace("%20", " ")
+
+        logger.info(f"Updating area using AppleScript: {id}")
+
+        try:
+            success = update_area(id=id, title=title, tags=tags)
+            logger.debug(f"AppleScript bridge returned: {success!r} (type: {type(success)})")
+
+            if "true" in str(success).lower():
+                return f"✅ Successfully updated area with ID: {id}"
+            if success.startswith("Error:"):
+                logger.error(f"AppleScript error: {success}")
+                return success
+            logger.error(f"AppleScript update failed with result: {success!r}")
+            return f"Error: Failed to update area using AppleScript. Result: {success}"
+
+        except Exception as bridge_error:
+            logger.error(f"AppleScript bridge error: {bridge_error}")
+            logger.error(f"Full bridge error traceback: {traceback.format_exc()}")
+            return f"⚠️ AppleScript bridge error: {bridge_error}"
+
+    except Exception as e:
+        logger.error(f"Error updating area: {e!s}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return f"⚠️ Error updating area: {e!s}"
 
 
 @mcp.tool(name="show_item")

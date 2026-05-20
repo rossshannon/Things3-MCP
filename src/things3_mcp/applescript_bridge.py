@@ -510,6 +510,104 @@ def update_todo(
     return result
 
 
+def add_area(
+    title: str,
+    tags: list[str] | None = None,
+) -> str | bool:
+    """Add an area to Things directly using AppleScript.
+
+    Args:
+    ----
+        title: Title of the area
+        tags: Tags to apply to the area
+
+    Returns:
+    -------
+        ID of the created area if successful, False otherwise
+    """
+    if not title or not title.strip():
+        logger.error("Title cannot be empty")
+        return False
+
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return False
+
+    script_parts = ['tell application "Things3"', "try"]
+    script_parts.append(f"set newArea to make new area with properties {{name:{escape_applescript_string(title)}}}")
+
+    if tags:
+        tag_string = ", ".join(tags)
+        escaped_tag_string = escape_applescript_string(tag_string)
+        script_parts.append(f"set tag names of newArea to {escaped_tag_string}")
+
+    script_parts.append("return id of newArea")
+    script_parts.append("on error errMsg")
+    script_parts.append('  log "Error creating area: " & errMsg')
+    script_parts.append("  return false")
+    script_parts.append("end try")
+    script_parts.append("end tell")
+
+    script = "\n".join(script_parts)
+    logger.debug(f"Executing AppleScript: {script}")
+
+    result = run_applescript(script, timeout=8)
+    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
+        logger.info(f"Successfully created area via AppleScript with ID: {result}")
+        return result
+    logger.error(f"Failed to create area: {result}")
+    return False
+
+
+def update_area(
+    id: str,
+    title: str | None = None,
+    tags: list[str] | None = None,
+) -> str:
+    """Update an existing area in Things.
+
+    Args:
+    ----
+        id: ID of the area to update
+        title: New title for the area
+        tags: New tags (replaces existing tags; pass an empty list to clear)
+
+    Returns:
+    -------
+        "true" if successful, error message if failed
+    """
+    if not ensure_things_ready():
+        logger.error("Things app is not ready for operations")
+        return "Error: Things app is not ready"
+
+    script_parts = ['tell application "Things3"']
+    script_parts.append("try")
+    script_parts.append(f'    set theArea to first area whose id is "{id}"')
+
+    if title:
+        script_parts.append(f"    set name of theArea to {escape_applescript_string(title)}")
+
+    if tags is not None:
+        if tags:
+            tag_string = ", ".join(tags)
+            escaped_tag_string = escape_applescript_string(tag_string)
+            script_parts.append(f"    set tag names of theArea to {escaped_tag_string}")
+        else:
+            script_parts.append('    set tag names of theArea to ""')
+
+    script_parts.append("    return true")
+    script_parts.append("on error errMsg")
+    script_parts.append('    return "Error: " & errMsg')
+    script_parts.append("end try")
+    script_parts.append("end tell")
+
+    script = "\n".join(script_parts)
+    logger.debug(f"Generated AppleScript:\n{script}")
+    result = run_applescript(script)
+    logger.debug(f"AppleScript result: {result!r}")
+    return result
+
+
 def add_project(
     title: str,
     notes: str | None = None,

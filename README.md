@@ -146,8 +146,10 @@ Restart the Claude Desktop app to enable the integration.
 #### Modification Operations
 - `add_todo` - Create a new todo with full parameter support
 - `add_project` - Create a new project with tags and todos
+- `add_area` - Create a new area
 - `update_todo` - Update an existing todo
 - `update_project` - Update an existing project
+- `update_area` - Update an existing area
 - `show_item` - Show a specific item or list in Things
 - `search_items` - Search for items in Things
 
@@ -216,6 +218,18 @@ Restart the Claude Desktop app to enable the integration.
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
 - `canceled` (optional) - Mark as canceled
+- `list_name` (optional) - Move project to a built-in list. One of: `Today`, `Anytime`, `Someday`, `Trash`. Projects cannot be moved to Inbox or Logbook (to move to Logbook, mark as completed instead).
+- `area_title` (optional) - Move the project to an area by name (must match an existing area exactly — look it up with `get_areas`)
+- `area_id` (optional) - Move the project to an area by ID (takes priority over `area_title` if both provided)
+
+### add_area
+- `title` - Title of the area
+- `tags` (optional) - Tags to apply to the area
+
+### update_area
+- `id` - ID of the area to update
+- `title` (optional) - New title
+- `tags` (optional) - New tags (pass an empty array to clear all tags)
 
 ### show_item
 - `id` - ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
