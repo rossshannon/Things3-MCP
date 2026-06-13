@@ -1,6 +1,7 @@
 """Things MCP Server implementation using the FastMCP pattern."""
 
 import json
+import os
 import random
 import traceback
 
@@ -55,6 +56,70 @@ def preprocess_array_params(**kwargs):
     return result
 
 
+# Area filter — restricts all reads and writes to a single Things area
+ALLOWED_AREA_UUID: str | None = None
+
+
+def _resolve_area_filter() -> str | None:
+    """Returns the allowed area UUID from THINGS_AREA_FILTER env var, or None if unset."""
+    val = os.environ.get("THINGS_AREA_FILTER", "").strip()
+    if not val:
+        return None
+    for area in things.areas():
+        if area["uuid"] == val or area["title"] == val:
+            return area["uuid"]
+    raise ValueError(f"THINGS_AREA_FILTER='{val}' does not match any Things area UUID or title")
+
+
+def _get_allowed_area_title() -> str | None:
+    """Returns the title of the allowed area, or None if no restriction is active."""
+    if ALLOWED_AREA_UUID is None:
+        return None
+    for area in things.areas():
+        if area["uuid"] == ALLOWED_AREA_UUID:
+            return area["title"]
+    return ALLOWED_AREA_UUID
+
+
+def _in_allowed_area(item: dict) -> bool:
+    """Returns True if the item belongs to the configured area (or no filter is active)."""
+    if ALLOWED_AREA_UUID is None:
+        return True
+    return item.get("area") == ALLOWED_AREA_UUID
+
+
+def _filter_by_area(items: list) -> list:
+    """Filter a Things item list to only those in the allowed area."""
+    if ALLOWED_AREA_UUID is None:
+        return items
+    return [item for item in items if _in_allowed_area(item)]
+
+
+def _check_write_target(list_id: str | None, list_title: str | None) -> str | None:
+    """Validate that list_id/list_title is within the allowed area.
+
+    Returns an error string if the target is outside the allowed area, else None.
+    """
+    if ALLOWED_AREA_UUID is None:
+        return None
+    area_title = _get_allowed_area_title()
+    if list_id:
+        item = things.get(list_id)
+        if item is not None:
+            if item.get("type") == "area" and item.get("uuid") != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Access restricted to area '{area_title}'"
+            if item.get("type") == "project" and item.get("area") != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Project is not in the allowed area '{area_title}'"
+    if list_title:
+        for area in things.areas():
+            if area["title"] == list_title and area["uuid"] != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Access restricted to area '{area_title}'"
+        for project in things.projects():
+            if project["title"] == list_title and project.get("area") != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Project '{list_title}' is not in the allowed area '{area_title}'"
+    return None
+
+
 # Create the FastMCP server
 mcp = FastMCP("Things", instructions="Interact with the Things 3 task management app")
 
@@ -71,6 +136,7 @@ def get_inbox() -> str:
 
     try:
         todos = things.inbox(include_items=True)
+        todos = _filter_by_area(todos)
 
         if not todos:
             log_operation_end("get-inbox", True, time.time() - start_time, count=0)
@@ -94,6 +160,7 @@ def get_today() -> str:
 
     try:
         todos = things.today(include_items=True)
+        todos = _filter_by_area(todos)
 
         if not todos:
             log_operation_end("get-today", True, time.time() - start_time, count=0)
@@ -133,6 +200,7 @@ def get_today() -> str:
                     *unconfirmed_scheduled_tasks,
                     *unconfirmed_overdue_tasks,
                 ]
+                result = _filter_by_area(result)
 
                 if not result:
                     return "No items due today"
@@ -172,6 +240,7 @@ def get_today() -> str:
 def get_upcoming() -> str:
     """Get all upcoming todos (those with a start date in the future)."""
     todos = things.upcoming(include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return "No upcoming items"
@@ -184,6 +253,7 @@ def get_upcoming() -> str:
 def get_anytime() -> str:
     """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
     todos = things.anytime(include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return "No items in Anytime list"
@@ -207,6 +277,7 @@ def get_random_inbox(count: int = 5) -> str:
 
     try:
         items = things.inbox(include_items=True)
+        items = _filter_by_area(items)
 
         if not items:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
@@ -244,6 +315,7 @@ def get_random_anytime(count: int = 5) -> str:
         count: Number of random items to return. Defaults to 5.
     """
     items = things.anytime(include_items=True)
+    items = _filter_by_area(items)
 
     if not items:
         return "No items in Anytime list"
@@ -266,6 +338,7 @@ def get_random_anytime(count: int = 5) -> str:
 def get_someday() -> str:
     """Get todos from Someday list."""
     todos = things.someday(include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return "No items in Someday list"
@@ -313,6 +386,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         # Query using stop_date (completion date) instead of last (creation date)
         # This fixes the bug where items were filtered by creation date instead of completion date
         todos = things.tasks(status="completed", stop_date=f">={start_date}", include_items=True)
+        todos = _filter_by_area(todos)
 
         if not todos:
             log_operation_end("get-logbook", True, time.time() - start_time, count=0)
@@ -341,6 +415,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 def get_trash() -> str:
     """Get trashed todos."""
     todos = things.trash(include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return "No items in trash"
@@ -361,8 +436,11 @@ def get_todos(project_uuid: str | None = None) -> str:
         project = things.get(project_uuid)
         if not project or project.get("type") != "project":
             return f"Error: Invalid project UUID '{project_uuid}'"
+        if ALLOWED_AREA_UUID is not None and project.get("area") != ALLOWED_AREA_UUID:
+            return f"Error: Project is not in the allowed area '{_get_allowed_area_title()}'"
 
     todos = things.todos(project=project_uuid, start=None, include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return "No todos found"
@@ -384,8 +462,11 @@ def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
         project = things.get(project_uuid)
         if not project or project.get("type") != "project":
             return f"Error: Invalid project UUID '{project_uuid}'"
+        if ALLOWED_AREA_UUID is not None and project.get("area") != ALLOWED_AREA_UUID:
+            return f"Error: Project is not in the allowed area '{_get_allowed_area_title()}'"
 
     items = things.todos(project=project_uuid, start=None, include_items=True)
+    items = _filter_by_area(items)
 
     if not items:
         return "No todos found"
@@ -413,6 +494,7 @@ def get_projects(include_items: bool = False) -> str:
         include_items: Include tasks within projects.
     """
     projects = things.projects()
+    projects = _filter_by_area(projects)
 
     if not projects:
         return "No projects found"
@@ -430,6 +512,8 @@ def get_areas(include_items: bool = False) -> str:
         include_items: Include projects and tasks within areas
     """
     areas = things.areas()
+    if ALLOWED_AREA_UUID is not None:
+        areas = [a for a in areas if a["uuid"] == ALLOWED_AREA_UUID]
 
     if not areas:
         return "No areas found"
@@ -467,6 +551,7 @@ def get_tagged_items(tag: str) -> str:
         tag: Tag title to filter by
     """
     todos = things.todos(tag=tag, include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return f"No items found with tag '{tag}'"
@@ -487,6 +572,7 @@ def search_todos(query: str) -> str:
         query: Search term to look for in todo titles and notes
     """
     todos = things.search(query, include_items=True)
+    todos = _filter_by_area(todos)
 
     if not todos:
         return f"No todos found matching '{query}'"
@@ -527,7 +613,10 @@ def search_advanced(
         kwargs["start"] = start_date
     if tag:
         kwargs["tag"] = tag
-    if area:
+    # Allowed area takes priority over any caller-supplied area
+    if ALLOWED_AREA_UUID is not None:
+        kwargs["area"] = ALLOWED_AREA_UUID
+    elif area:
         kwargs["area"] = area
     if type:
         kwargs["type"] = type
@@ -588,6 +677,16 @@ def add_task(
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
         logger.debug(f"  processed tags: {tags!r} (type: {type(tags)})")
+
+        # Enforce area filter on write destination
+        if ALLOWED_AREA_UUID is not None:
+            if list_id or list_title:
+                err = _check_write_target(list_id, list_title)
+                if err:
+                    return err
+            else:
+                list_id = ALLOWED_AREA_UUID
+                list_title = None
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
@@ -673,6 +772,17 @@ def add_new_project(
         tags = params["tags"]
         todos = params["todos"]
 
+        # Enforce area filter: override/validate the target area
+        if ALLOWED_AREA_UUID is not None:
+            if area_id and area_id != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Access restricted to area '{_get_allowed_area_title()}'"
+            if area_title:
+                allowed_title = _get_allowed_area_title()
+                if area_title != allowed_title:
+                    return f"⚠️ Error: Access restricted to area '{allowed_title}'"
+            area_id = ALLOWED_AREA_UUID
+            area_title = None
+
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
             title = title.replace("+", " ").replace("%20", " ")
@@ -751,6 +861,16 @@ def update_task(
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
+
+        # Enforce area filter
+        if ALLOWED_AREA_UUID is not None:
+            todo = things.get(id)
+            if not todo or not _in_allowed_area(todo):
+                return f"⚠️ Error: Todo is not in the allowed area '{_get_allowed_area_title()}'"
+            if list_id or list_name:
+                err = _check_write_target(list_id, list_name)
+                if err:
+                    return err
 
         # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
@@ -848,6 +968,18 @@ def update_existing_project(
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
 
+        # Enforce area filter
+        if ALLOWED_AREA_UUID is not None:
+            proj = things.get(id)
+            if not proj or not _in_allowed_area(proj):
+                return f"⚠️ Error: Project is not in the allowed area '{_get_allowed_area_title()}'"
+            if area_id and area_id != ALLOWED_AREA_UUID:
+                return f"⚠️ Error: Access restricted to area '{_get_allowed_area_title()}'"
+            if area_title:
+                allowed_title = _get_allowed_area_title()
+                if area_title != allowed_title:
+                    return f"⚠️ Error: Access restricted to area '{allowed_title}'"
+
         # Clean up string parameters to handle URL encoding
         if isinstance(title, str):
             title = title.replace("+", " ").replace("%20", " ")
@@ -933,6 +1065,8 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
             try:
                 item = things.get(id)
                 if item:
+                    if ALLOWED_AREA_UUID is not None and not _in_allowed_area(item):
+                        return f"Error: Item is not in the allowed area '{_get_allowed_area_title()}'"
                     if item.get("type") == "to-do":
                         return format_todo(item)
                     elif item.get("type") == "project":
@@ -961,6 +1095,7 @@ def search_all_items(query: str) -> str:
     try:
         # Use the Python things library for search (same as search_todos)
         todos = things.search(query, include_items=True)
+        todos = _filter_by_area(todos)
 
         if not todos:
             return f"No items found matching '{query}'"
@@ -987,6 +1122,7 @@ def get_recent(period: str) -> str:
 
         # Get recent items
         items = things.last(period, include_items=True)
+        items = _filter_by_area(items)
 
         if not items:
             return f"No items found in the last {period}"
@@ -1007,11 +1143,22 @@ def get_recent(period: str) -> str:
 # Main entry point
 def run_things_mcp_server():
     """Run the Things MCP server."""
+    global ALLOWED_AREA_UUID
+
     # Check if Things app is available
     if ensure_things_ready():
         logger.info("Things app is running and ready for operations")
     else:
         logger.warning("Things app is not running at startup. Operations will attempt to connect when needed.")
+
+    # Resolve area filter from environment
+    try:
+        ALLOWED_AREA_UUID = _resolve_area_filter()
+        if ALLOWED_AREA_UUID:
+            logger.info(f"Area filter active: restricted to area '{_get_allowed_area_title()}' ({ALLOWED_AREA_UUID})")
+    except ValueError as e:
+        logger.error(f"Invalid THINGS_AREA_FILTER configuration: {e}")
+        raise SystemExit(1) from e
 
     # Run the MCP server
     mcp.run()
