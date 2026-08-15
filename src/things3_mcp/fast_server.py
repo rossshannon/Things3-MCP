@@ -11,6 +11,7 @@ from .applescript_bridge import (
     add_project,
     add_todo,
     ensure_things_ready,
+    is_valid_things_id,
     update_project,
     update_todo,
 )
@@ -596,6 +597,12 @@ def add_task(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
+        # Reject malformed list_id at the tool boundary, before it can reach
+        # AppleScript source generation (defense in depth for CVE-style injection)
+        if list_id and not is_valid_things_id(list_id):
+            logger.warning(f"Ignoring list_id with invalid format: {list_id!r}")
+            list_id = None
+
         # Use the direct AppleScript approach which is more reliable
         logger.info(f"Creating todo using AppleScript: {title}")
 
@@ -680,6 +687,12 @@ def add_new_project(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
+        # Reject malformed area_id at the tool boundary, before it can reach
+        # AppleScript source generation (defense in depth for CVE-style injection)
+        if area_id and not is_valid_things_id(area_id):
+            logger.warning(f"Ignoring area_id with invalid format: {area_id!r}")
+            area_id = None
+
         # Use the direct AppleScript approach which is more reliable
         logger.info(f"Creating project using AppleScript: {title}")
 
@@ -748,6 +761,12 @@ def update_task(
             If both list_id and list_name are provided, list_id takes priority.
     """
     try:
+        # Reject a malformed id at the tool boundary, before it can reach
+        # AppleScript source generation (defense in depth for CVE-style injection)
+        if not is_valid_things_id(id):
+            logger.error(f"Rejected update_todo call with invalid id format: {id!r}")
+            return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
@@ -759,6 +778,10 @@ def update_task(
             notes = notes.replace("+", " ").replace("%20", " ")
         if isinstance(list_name, str):
             list_name = list_name.replace("+", " ").replace("%20", " ")
+
+        if list_id and not is_valid_things_id(list_id):
+            logger.warning(f"Ignoring list_id with invalid format: {list_id!r}")
+            list_id = None
 
         logger.info(f"Updating todo using AppleScript: {id}")
 
@@ -843,6 +866,16 @@ def update_existing_project(
         for param_name, param_value in locals().items():
             if param_name != "self":  # Skip self parameter
                 logger.info(f"  {param_name}: {param_value!r}")
+
+        # Reject a malformed id at the tool boundary, before it can reach
+        # AppleScript source generation (defense in depth for CVE-style injection)
+        if not is_valid_things_id(id):
+            logger.error(f"Rejected update_project call with invalid id format: {id!r}")
+            return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+
+        if area_id and not is_valid_things_id(area_id):
+            logger.warning(f"Ignoring area_id with invalid format: {area_id!r}")
+            area_id = None
 
         # Preprocess only the tags parameter
         params = preprocess_array_params(tags=tags)
