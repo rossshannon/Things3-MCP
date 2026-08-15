@@ -7,6 +7,7 @@ all the complexities of string escaping and error handling.
 """
 
 import logging
+import re
 import subprocess  # nosec B404 - Required for running AppleScript commands
 import tempfile
 from datetime import datetime
@@ -14,6 +15,28 @@ from datetime import datetime
 from .date_converter import update_applescript_with_due_date
 
 logger = logging.getLogger(__name__)
+
+# Things assigns opaque IDs (typically ~22-character mixed-case alphanumeric
+# strings; some IDs, e.g. ones supplied via the x-callback-url scheme, may also
+# contain hyphens or underscores). This whitelist blocks the characters needed to
+# break out of an AppleScript string literal (quotes, ampersands, parentheses,
+# whitespace) while accepting any legitimately formed Things ID.
+THINGS_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+
+
+def is_valid_things_id(value: str) -> bool:
+    """Check whether `value` is safe to interpolate into AppleScript as an id literal.
+
+    Args:
+    ----
+        value: The id/list_id/area_id string to check.
+
+    Returns:
+    -------
+        True if the value only contains characters that cannot break out of an
+        AppleScript string literal, False otherwise.
+    """
+    return bool(THINGS_ID_PATTERN.match(value))
 
 
 def run_applescript(script: str, timeout: int = 8) -> str:
@@ -232,19 +255,22 @@ def add_todo(  # noqa: PLR0913
 
     # Handle project/area assignment by ID
     if list_id:
-        script_parts.append("try")
-        script_parts.append("  -- Try to find as project by ID")
-        script_parts.append(f'  set target_project to first project whose id is "{list_id}"')
-        script_parts.append("  set project of newTodo to target_project")
-        script_parts.append("on error")
-        script_parts.append("  try")
-        script_parts.append("    -- Try to find as area by ID")
-        script_parts.append(f'    set target_area to first area whose id is "{list_id}"')
-        script_parts.append("    set area of newTodo to target_area")
-        script_parts.append("  on error")
-        script_parts.append("    -- Neither project nor area found with ID, will create todo without assignment")
-        script_parts.append("  end try")
-        script_parts.append("end try")
+        if not is_valid_things_id(list_id):
+            logger.warning(f"Ignoring list_id with invalid format: {list_id!r}")
+        else:
+            script_parts.append("try")
+            script_parts.append("  -- Try to find as project by ID")
+            script_parts.append(f'  set target_project to first project whose id is "{list_id}"')
+            script_parts.append("  set project of newTodo to target_project")
+            script_parts.append("on error")
+            script_parts.append("  try")
+            script_parts.append("    -- Try to find as area by ID")
+            script_parts.append(f'    set target_area to first area whose id is "{list_id}"')
+            script_parts.append("    set area of newTodo to target_area")
+            script_parts.append("  on error")
+            script_parts.append("    -- Neither project nor area found with ID, will create todo without assignment")
+            script_parts.append("  end try")
+            script_parts.append("end try")
 
     # Get the ID of the created todo
     script_parts.append("return id of newTodo")
@@ -408,6 +434,11 @@ def update_todo(
     -------
         "true" if successful, error message if failed
     """
+    # Validate the id before it is interpolated into AppleScript source
+    if not is_valid_things_id(id):
+        logger.error(f"Invalid id format for update_todo: {id!r}")
+        return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+
     # Ensure Things is ready
     if not ensure_things_ready():
         logger.error("Things app is not ready for operations")
@@ -460,26 +491,29 @@ def update_todo(
         script_parts.append(f"                set targetArea to first area whose name is {escaped_list}")
         script_parts.append("                set area of theTodo to targetArea")
         script_parts.append("            on error")
-        script_parts.append(f'                return "Error: List/Project/Area not found - {list_name}"')
+        script_parts.append(f'                return "Error: List/Project/Area not found - " & {escaped_list}')
         script_parts.append("            end try")
         script_parts.append("        end try")
         script_parts.append("    end try")
 
     # Handle list assignment by ID (projects or areas only)
     if list_id:
-        script_parts.append("    try")
-        # Try to find as project by ID
-        script_parts.append(f'        set targetProject to first project whose id is "{list_id}"')
-        script_parts.append("        set project of theTodo to targetProject")
-        script_parts.append("    on error")
-        script_parts.append("        try")
-        # Try to find as area by ID
-        script_parts.append(f'            set targetArea to first area whose id is "{list_id}"')
-        script_parts.append("            set area of theTodo to targetArea")
-        script_parts.append("        on error")
-        script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')
-        script_parts.append("        end try")
-        script_parts.append("    end try")
+        if not is_valid_things_id(list_id):
+            logger.warning(f"Ignoring list_id with invalid format: {list_id!r}")
+        else:
+            script_parts.append("    try")
+            # Try to find as project by ID
+            script_parts.append(f'        set targetProject to first project whose id is "{list_id}"')
+            script_parts.append("        set project of theTodo to targetProject")
+            script_parts.append("    on error")
+            script_parts.append("        try")
+            # Try to find as area by ID
+            script_parts.append(f'            set targetArea to first area whose id is "{list_id}"')
+            script_parts.append("            set area of theTodo to targetArea")
+            script_parts.append("        on error")
+            script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')
+            script_parts.append("        end try")
+            script_parts.append("    end try")
 
     # Handle completion status
     if completed is not None:
@@ -543,6 +577,10 @@ def add_project(
     if not title or not title.strip():
         logger.error("Title cannot be empty")
         return False
+
+    if area_id and not is_valid_things_id(area_id):
+        logger.warning(f"Ignoring area_id with invalid format: {area_id!r}")
+        area_id = None
 
     # Ensure Things is ready
     if not ensure_things_ready():
@@ -713,6 +751,15 @@ def update_project(
     """
     logger.info(f"Updating project {id} with title={title}, notes={notes}, when={when}, deadline={deadline}, tags={tags}, completed={completed}, canceled={canceled}, list_name={list_name}, area_title={area_title}")
 
+    # Validate the id before it is interpolated into AppleScript source
+    if not is_valid_things_id(id):
+        logger.error(f"Invalid id format for update_project: {id!r}")
+        return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+
+    if area_id and not is_valid_things_id(area_id):
+        logger.warning(f"Ignoring area_id with invalid format: {area_id!r}")
+        area_id = None
+
     script_parts = ['tell application "Things3"']
     script_parts.append("try")
     script_parts.append(f'    set theProject to project id "{id}"')
@@ -745,7 +792,7 @@ def update_project(
         script_parts.append(f"        set targetArea to first area whose name is {escaped_area}")
         script_parts.append("        set area of theProject to targetArea")
         script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found - {area_title}"')
+        script_parts.append(f'        return "Error: Area not found - " & {escaped_area}')
         script_parts.append("    end try")
 
     # Handle other property updates
