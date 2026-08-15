@@ -765,7 +765,7 @@ def update_task(
         # AppleScript source generation (defense in depth for CVE-style injection)
         if not is_valid_things_id(id):
             logger.error(f"Rejected update_todo call with invalid id format: {id!r}")
-            return "⚠️ Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+            return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
 
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
@@ -871,7 +871,7 @@ def update_existing_project(
         # AppleScript source generation (defense in depth for CVE-style injection)
         if not is_valid_things_id(id):
             logger.error(f"Rejected update_project call with invalid id format: {id!r}")
-            return "⚠️ Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
+            return "Error: Invalid id format - id must contain only letters, digits, hyphens, and underscores"
 
         if area_id and not is_valid_things_id(area_id):
             logger.warning(f"Ignoring area_id with invalid format: {area_id!r}")

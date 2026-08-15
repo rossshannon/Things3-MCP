@@ -70,9 +70,7 @@ def _assert_marker_absent(marker_path: str) -> None:
     assert not os.path.exists(marker_path), f"Injection payload executed! Marker file was created: {marker_path}"
 
 
-# ============================================================================
 # is_valid_things_id() unit tests
-# ============================================================================
 
 
 @pytest.mark.parametrize(
@@ -113,9 +111,7 @@ def test_is_valid_things_id_rejects_unsafe_input(value):
     assert is_valid_things_id(value) is False
 
 
-# ============================================================================
 # update_todo / update_project - required `id` is validated up front
-# ============================================================================
 
 
 def test_update_todo_rejects_injection_in_id(tmp_path):
@@ -136,9 +132,7 @@ def test_update_project_rejects_injection_in_id(tmp_path):
         _assert_marker_absent(marker)
 
 
-# ============================================================================
 # add_todo / update_todo - optional `list_id` is validated and safely ignored
-# ============================================================================
 
 
 def test_add_todo_ignores_injection_in_list_id(tmp_path, test_namespace):
@@ -170,9 +164,7 @@ def test_update_todo_ignores_injection_in_list_id(tmp_path, test_namespace):
         delete_todo_by_id(todo_id)
 
 
-# ============================================================================
 # add_project / update_project - optional `area_id` is validated and safely ignored
-# ============================================================================
 
 
 def test_add_project_ignores_injection_in_area_id(tmp_path, test_namespace):
@@ -203,9 +195,7 @@ def test_update_project_ignores_injection_in_area_id(tmp_path, test_namespace):
         delete_project_by_id(project_id)
 
 
-# ============================================================================
 # fast_server.py MCP tool boundary - defense in depth
-# ============================================================================
 
 
 def test_mcp_update_todo_rejects_injection_in_id_without_calling_bridge(tmp_path):
@@ -260,9 +250,7 @@ def test_mcp_add_new_project_ignores_injection_in_area_id(tmp_path, test_namespa
         delete_project_by_id(match.group(1))
 
 
-# ============================================================================
 # Regression: legitimate ids keep working end to end
-# ============================================================================
 
 
 def test_update_todo_still_works_with_valid_id(test_namespace):
