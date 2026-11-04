@@ -95,7 +95,7 @@ class Journal:
         """Durably reserve a unique attempt before the worker may be spawned."""
         with self.lock:
             key = str(uuid.uuid4())
-            record = {"operation_id": key, "correlation_id": correlation, "action": action, "outcome": "dispatched", "created_at": now_iso(), "created_epoch": time.time()}
+            record: dict[str, Any] = {"operation_id": key, "correlation_id": correlation, "action": action, "outcome": "dispatched", "created_at": now_iso(), "created_epoch": time.time()}
             if self.capture_payloads:
                 record["payload"] = params
             self._prune(1, len(self._encoded(record)) + COMPLETION_RESERVE)
@@ -144,4 +144,5 @@ class Journal:
         with self.lock:
             self._prune(0, 0)
             records = sorted(self.records.values(), key=lambda r: (r["created_epoch"], r["operation_id"]), reverse=True)
-            return [{k: v for k, v in record.items() if k != "payload"} for record in records if correlation is None or record["correlation_id"] == correlation][:limit]
+            matches = [record for record in records if correlation is None or record["correlation_id"] == correlation]
+            return [{k: v for k, v in record.items() if k != "payload"} for record in matches[:limit]]

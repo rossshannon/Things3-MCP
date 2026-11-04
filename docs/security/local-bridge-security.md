@@ -1,171 +1,81 @@
-# Local Bridge Security Model
+# Local bridge security model
 
-This document explains the security trade-off behind the signed/self-signed Things3 MCP Bridge.
+The bridge gives macOS one signed app identity to authorise and lets local clients request a fixed set of app operations. It improves permission ownership and failure handling. It does not isolate all programs running as the same user, and signing alone does not confine filesystem access.
 
-The short version: the bridge improves reliability by giving macOS one stable local app identity to authorise, but it also creates a local service that can exercise that authorised access on behalf of anything that can successfully call it.
-
-## Why the Bridge Exists
-
-macOS privacy controls attach Full Disk Access and Automation decisions to code identity. Without the bridge, Things access can come from changing executables such as Claude Desktop, `node`, virtualenv Python, Terminal, or `/usr/bin/osascript`. That causes repeated prompts and unattended failures.
-
-The bridge changes the boundary:
+## Authority and trust
 
 ```text
-MCP client
-  -> Things3-MCP server
-     -> local Unix socket plus bearer token
-        -> signed Things3 MCP Bridge.app
-           -> Things SQLite database
-           -> Things AppleScript Automation
-           -> JSON cache
+MCP client → Things3-MCP server → Unix socket + bearer token
+  → signed bridge → bounded app worker
+    → Things database reads / Things Apple Events
+    → private cache and operation journal
 ```
 
-This is a convenience and reliability trade-off, not a claim that the bridge makes local Things access risk-free.
+The runtime directory is owner-only; tokens, sockets and private data files use restrictive modes. This blocks access by other Unix users. An unsandboxed process running as the same user may still read the token/cache, call the bridge or alter user-writable files. Token possession authorises the fixed routes. A correlation label is attribution, not a separate identity. There are no per-bot credentials.
 
-## Assets
+The bridge has no TCP listener or public HTTP endpoint. Its authentication does not make it safe to forward the socket to untrusted callers. Remote access belongs in a separately secured client transport. A compromised or prompt-injected authorised client can request the legitimate operations; keep client tool permissions appropriate to the intended use.
 
-The bridge can expose or affect:
+The protected assets include app data and mutations, cached task contents, operation metadata, optional payload records, the bearer token, installed bundle and signing key.
 
-- Things task, project, area, tag, and note contents.
-- The JSON cache at `~/Library/Application Support/Things3-MCP/cache/latest.json`.
-- Bridge token and socket files under `~/Library/Application Support/Things3-MCP/`.
-- Bridge logs under `~/Library/Logs/Things3-MCP/`.
-- Things writes made through Automation, such as creating or updating todos and projects.
-- The local Code Signing identity used to sign `Things3 MCP Bridge.app`.
+## Database access and scripting are separate
 
-## Trust Boundaries
+| Capability | Authority and limits |
+| --- | --- |
+| Live SQLite reads | May require Full Disk Access to reach the protected Things group container. Readers open the database read-only; there are no direct database writes. This does not confine the whole process. |
+| Apple Events | Automation consent lets the signed bridge control Things. Supported scripting does not require System Events, Accessibility or Screen Recording. |
+| Cache | A private copy outside the original app container. Its timestamp, age and original backend must remain visible; it may be stale or have limited scripting coverage. |
+| Synthetic adapter | Only echoes text and reads/writes its own counter. It needs no Things dependency or privacy grant. |
 
-The bridge protects against other Unix users by using owner-only permissions for the socket, token, cache directory, and cache file.
+Cultured Code supports its automation interfaces rather than direct live database integrations. Read-only SQLite remains an unsupported integration with an undocumented schema. Apple Events fallback has limited fields and coverage. Do not equate its snapshot with a complete SQLite snapshot. See [Things integration guidance](https://culturedcode.com/things/support/articles/2967034/) and [third-party AI guidance](https://culturedcode.com/things/support/articles/5510170/).
 
-The bridge does not protect against all code running as the same macOS user. Any unsandboxed process with the same user privileges may be able to read the token file, inspect the cache, call the socket, or replace files in user-writable locations. If a same-user attacker already exists, the bridge may give that attacker a simpler path through macOS TCC to Things data.
+A failed database read does not establish failed Automation permission, and a failed write does not establish that Full Disk Access is missing. Status reports observed capability results and leaves untested permissions unknown. A running app, an authenticated status response and a successful live operation are different evidence.
 
-Treat the bridge token as a local bearer credential. Possession of the token authorises bridge calls.
+## Code restrictions and OS confinement
 
-## What Self-Signing Changes
+The compiled action table, parameter validation and fixed helper paths limit the interface exposed to callers. They do not constrain arbitrary code after a process compromise. Do not expose arbitrary script bodies, shell commands, Python imports, executable paths or caller-selected app identifiers.
 
-Self-signing creates or uses a local Code Signing identity, commonly named `Things3 MCP Local`, and signs the app bundle so macOS can identify it consistently between rebuilds.
+The default app is **unsandboxed**. Full Disk Access is broad and must not be described as a grant only for Things. An explicit signed App Sandbox profile can narrow filesystem access even when the user also grants Full Disk Access: FDA does not bypass sandbox checks. [Apple DTS explains this distinction](https://developer.apple.com/forums/thread/807142).
 
-Self-signing does not provide notarisation, Apple review, malware scanning, or third-party provenance. It only says: "this local machine has signed this code with this local identity".
+The experimental Things profile names only the Things group-container directory for read-only filesystem access, Things as its Apple Events target, and app-owned container state. Normal sandbox resources still exist; this is not access to only one directory. Restricting the target app does not create an OS-enforced create-only or read-only scripting role. The adapter's operation policy remains necessary. [Apple documents path and Apple Events exceptions](https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/AppSandboxTemporaryExceptionEntitlements.html).
 
-The important side effects are:
+A native synthetic probe demonstrated denied writes to read-only files and denied private sibling/symlink access in the parent and child. Unix IPC worked inside the probe's own sandbox container without network entitlements; the same socket failed in an external state directory. That is evidence for the native probe only. Frozen Python, real Things data, FDA interaction, intended-client TCC attribution and locked-session operation require their own tests.
 
-- Full Disk Access is granted to a stable app identity rather than a transient Python or Node binary.
-- Automation permission is granted to that app identity when writes are used.
-- Re-signing different code with the same local identity can preserve the privacy subject that macOS recognises.
-- Misuse of the local signing identity/private key can undermine the trust decision because an attacker may be able to sign other code as the bridge identity.
+An explicit file picker and security-scoped bookmark may suit another adapter, but do not automatically bypass protected app containers. The reference does not implement bookmark storage or worker handoff. Validate the exact target and restart lifecycle before claiming narrower consent. [Apple describes the file-access constraints](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox).
 
-For that reason, only sign code and dependencies you trust.
+## Signing and build trust
 
-### Can Someone Change the Python After FDA Is Granted?
+A local code-signing identity can give macOS a stable subject between builds. It does not provide notarisation, Apple review or third-party provenance, and a successful signature check does not prove that macOS retained consent. Ad-hoc signing is for tests. Developer ID distribution adds hardened runtime and requires a separate notarisation/Gatekeeper workflow.
 
-In the intended flow, no: the bridge is built into an app bundle and then signed. macOS code signing is meant to detect changes to signed code and bundled resources after signing. macOS privacy grants are also recorded against the app's code identity, not against the plain path alone. If someone simply edits or replaces files inside the signed app bundle, the signature should no longer validate as the same approved app.
+Code signatures seal bundled code and resources. Protect the local signing key: someone who can modify the source and sign it again with the trusted identity can undermine the original trust decision. Same-user token theft can also invoke the legitimate bridge without modifying the bundle.
 
-The real risk is adjacent:
+Build from reviewed source and the committed lockfile. The build uses a fresh exactly synchronised environment, records input/toolchain hashes and rejects changing source inputs. Final signing proceeds inside out; final hashes and signature details are separate evidence. Retain export provenance when building an extracted source tree. These measures aid review; they do not make a compromised source or dependency trustworthy. See [the build and lifecycle guide](../bridge-build.md).
 
-- If a same-user attacker can use the same local Code Signing identity/private key, they may be able to modify the bundle, re-sign it with the same identity and bundle identifier, and satisfy the privacy requirement macOS recorded for the original bridge.
-- If the bridge launches external helpers through user-writable paths, PATH lookup, or environment overrides, an attacker may not need to modify the signed bundle; they may be able to influence what the authorised bridge executes.
-- If a same-user attacker can read the bridge token, they can call the legitimate bridge without modifying it at all.
+Installation verifies the candidate and staged copy, retains the old app/plist, and checks the installed build identity, process ID and executable through authenticated status. Failed readiness triggers rollback; failed rollback is reported separately. The installer does not grant permissions, edit TCC, create signing identities or publish an app.
 
-So the risk is not "Python source is inherently mutable after signing"; the risk is "a self-signed, user-installed bridge is only as trustworthy as the local signing key, installed bundle, helper execution paths, and same-user process environment".
+## Mutation outcomes and recovery data
 
-Mitigations:
+A mutation is durably recorded before dispatch. If it cannot obtain a worker slot or journal capacity, execution does not start. A timeout or malformed response after dispatch can leave the app changed. The result then remains `outcome_unknown`; do not automatically retry or switch to direct AppleScript.
 
-- Keep the local Code Signing private key protected in Keychain. Do not import it with broad always-allow access for arbitrary processes.
-- Rebuild and re-sign only from a trusted checkout and lockfile.
-- Prefer absolute system paths for external helpers and avoid user-writable PATH lookup.
-- Consider installing the final app in a less casually mutable location, such as `/Applications`, for higher-assurance local setups.
-- Re-run `codesign --verify --deep --strict --verbose=2 ~/Applications/Things3\ MCP\ Bridge.app` after rebuilds or if the bundle may have been touched.
+In 2.5, automatic provider mode uses the bridge only for writes. Explicit `direct` mode retains the legacy path and its separate permission/timeout risks. Cache-only mode refuses writes. `THINGS3_MCP_ALLOW_DIRECT_FALLBACK=1` affects automatic reads only.
 
-## Main Risks
+Authenticated `/operations/<id>` and `/operations?correlation_id=...&limit=25` provide inspection, also exposed through MCP tools. A reused correlation label creates a new attempt. No journal entry is automatically replayed. Reconcile the app's actual state before deliberately issuing another request.
 
-### Same-User Token Use
+The private `operations/` directory beside the socket has seven-day age retention, a 1,000-record limit and a 10 MiB budget. Inactive records are pruned on access or admission; active records are never pruned. This is not a timed erasure promise while the service is idle or stopped. Metadata includes action, outcome, timestamps, caller label and a bounded result identifier when available. Even metadata can be sensitive.
 
-The token is stored with mode `0600`, and its parent directory is `0700`, which blocks other Unix users. That still leaves same-user processes. A hostile process running as the user may read the token and call the bridge.
+Payload capture is off by default. Set `THINGS3_MCP_BRIDGE_JOURNAL_PAYLOADS=1` for Things or `CLAWBRIDGE_JOURNAL_PAYLOADS=1` for the synthetic adapter in the server environment to retain request bodies. The matching installer persists an explicit `0` or `1` when supplied for a new LaunchAgent. `.env` is not loaded automatically. Payloads can contain titles and notes; single-record inspection may return them, while list responses omit them. Disabling capture affects new records only.
 
-Impact: read task data, refresh/read cache-backed data, diagnose access, or request supported Things writes.
+The cache holds app contents separately from the journal. It is not covered by journal age/count/byte limits. New LaunchAgents send stdout/stderr to `/dev/null`, avoiding an unbounded process-output log. Existing logs, old state and installation backups are preserved; inspect them before sharing diagnostics or retiring a machine.
 
-Mitigations:
+## Operating boundary
 
-- Only run the bridge on a machine/user account where you trust same-user processes.
-- Avoid installing untrusted MCP servers or developer tooling under the same account.
-- Keep the socket and token on the default owner-only path.
-- Rotate the token by stopping the LaunchAgent, deleting `bridge.token`, and reinstalling/restarting the bridge.
+Use the bridge only where you trust the local account, reviewed app/dependencies, signing-key custody and authorised clients. Keep clients that need only existing snapshots in cache mode. Do not grant broad access to general Python, Node, a terminal or a bot as a workaround for an unverified bridge configuration.
 
-### Prompt Injection Through MCP Clients
+“Away” means an awake Mac and a logged-in user after interactive consent. Locked-session results must name the exact signed candidate, client and grants. Sleep, logout, FileVault preboot and approval of new dialogs are outside the guarantee. Unit tests, native sandbox probes, frozen signatures and real locked-session operations are separate evidence.
 
-An LLM or MCP client with access to the Things MCP server can request reads and writes. The bridge makes those operations more reliable while AFK, which is the point, but it also means a bad prompt/tool chain can succeed more consistently.
+For another application, start with [the adaptation guide](../adapting-clawbridge.md) and choose its scripting and data capabilities explicitly.
 
-Impact: exfiltration of task context through the client, or unwanted task/project mutations.
+## Further references
 
-Mitigations:
-
-- Give Things MCP access only to MCP clients you trust.
-- Keep write tools disabled or use `THINGS3_MCP_PROVIDER=cache` in contexts that should be read-only.
-- Review MCP client permissions and tool-call approval settings.
-
-### Cache and Log Persistence
-
-The bridge cache contains task and project data. Logs may include task titles, parameters, IDs, diagnostics, and error text.
-
-Impact: sensitive task content persists outside Things' own app container.
-
-Mitigations:
-
-- Keep cache and log paths owner-only.
-- Clear cache/logs before sharing diagnostics or machines.
-- Avoid logging full notes or generated AppleScript in production use.
-
-### Build-Time Supply Chain
-
-The bridge app bundle is built from this checkout and Python dependencies. Signing the app and granting Full Disk Access means build-time compromise can become privacy-granted code.
-
-Impact: malicious dependency or modified source gets signed and authorised.
-
-Mitigations:
-
-- Build from a trusted checkout.
-- Use the checked-in lockfile.
-- Rebuild only after reviewing meaningful dependency/source changes.
-- Prefer Developer ID signing and notarisation for public binary distribution.
-
-### Path and Helper Execution
-
-Any external helper launched by the bridge inherits the practical risk of the bridge context. The implementation should use absolute system paths for platform tools and avoid user-writable PATH lookup.
-
-Impact: helper hijacking can execute unexpected code in the bridge's privacy context.
-
-Mitigations:
-
-- Use absolute paths such as `/usr/bin/osascript`.
-- Keep LaunchAgent PATH minimal.
-- Verify any app-bundled helper before executing it.
-
-## Safer Operating Modes
-
-- `THINGS3_MCP_PROVIDER=cache`: read-only, no live bridge calls, no writes.
-- `THINGS3_MCP_PROVIDER=bridge`: live bridge required for reads and writes.
-- `THINGS3_MCP_PROVIDER=auto` with `THINGS3_MCP_ALLOW_DIRECT_FALLBACK=0`: bridge for live reads, cache fallback for reads, bridge/direct chain for writes.
-- Avoid `THINGS3_MCP_ALLOW_DIRECT_FALLBACK=1` for unattended use because it can reintroduce direct Things database access from transient processes.
-
-## When Not to Enable the Bridge
-
-Do not enable or authorise the bridge if:
-
-- You do not trust this source checkout or dependencies.
-- You regularly run untrusted local code as the same macOS user.
-- You cannot accept Things data being cached outside Things' own container.
-- You want a hard sandbox boundary between MCP clients and Things data.
-- You need a distributable binary security model. Use Developer ID signing and notarisation for that.
-
-## User-Facing Decision
-
-The bridge is a reasonable trade-off for a personal Mac where the user wants reliable local AI access to Things and already trusts their local account, source checkout, and MCP clients.
-
-It is a poor trade-off if the user expects it to isolate Things data from other same-user processes or untrusted LLM/tooling workflows. In that case, prefer cache-only mode or skip the bridge.
-
-## References
-
-- Apple, [Code Signing Services](https://developer.apple.com/documentation/security/code-signing-services)
-- Apple, [Applying Code Requirements](https://developer.apple.com/documentation/security/applying-code-requirements)
-- Apple, [TN3127: Inside Code Signing: Requirements](https://developer.apple.com/documentation/Technotes/tn3127-inside-code-signing-requirements)
-- Apple, [TN3126: Inside Code Signing: Hashes](https://developer.apple.com/documentation/technotes/tn3126-inside-code-signing-hashes)
+- Apple: [code signing requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements) and [code signing hashes](https://developer.apple.com/documentation/technotes/tn3126-inside-code-signing-hashes).
+- Apple: [inside-out signing](https://developer.apple.com/library/archive/technotes/tn2206/) and [notarisation workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+- Apple: [LaunchAgent lifecycle](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).

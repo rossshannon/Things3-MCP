@@ -11,7 +11,7 @@ from typing import Any
 
 import things
 
-from .base import record_read
+from .base import coerce_write_result, record_read
 
 
 def _live_read(function):
@@ -118,21 +118,7 @@ class DirectThingsProvider:
     # bridge work in the first place.
 
     def _coerce(self, result: Any, op_desc: str) -> dict[str, Any]:
-        from .base import ProviderError
-
-        if isinstance(result, bool):
-            if result:
-                return {"ok": True}
-            raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
-        if isinstance(result, str):
-            stripped = result.strip()
-            lowered = stripped.lower()
-            if lowered == "true":
-                return {"ok": True}
-            if not stripped or any(marker in lowered for marker in ("error:", "applescript error", "⚠️", "failed", "exception")):
-                raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
-            return {"ok": True, "id": stripped}
-        raise ProviderError("applescript_failed", "Things returned an invalid operation result", outcome="outcome_unknown")
+        return coerce_write_result(result)
 
     def add_task(self, params: dict[str, Any]) -> dict[str, Any]:
         from things3_mcp import applescript_bridge as ab

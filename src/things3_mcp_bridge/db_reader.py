@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from things3_mcp.providers.base import ProviderError
+from things3_mcp.providers.base import ProviderError, coerce_write_result
 
 SNAPSHOT_ACTIONS = ("inbox", "today", "upcoming", "anytime", "someday", "todos", "projects", "areas", "tags")
 
@@ -501,10 +501,6 @@ def _trace(stage: str, detail: str = "") -> None:
 
 WRITE_ACTIONS = {"add_task", "update_task", "add_project", "update_project"}
 
-# Marker prefixes that applescript_bridge functions return when an operation
-# fails. Match the pattern used by the existing MCP server in fast_server.py.
-_ERROR_MARKERS = ("error:", "applescript error", "⚠️", "failed", "exception")
-
 
 def _coerce_write_result(result: Any, op_desc: str) -> dict[str, Any]:
     """Normalize an applescript_bridge return value into a worker envelope.
@@ -518,20 +514,7 @@ def _coerce_write_result(result: Any, op_desc: str) -> dict[str, Any]:
     and raise :class:`RuntimeError` for failures so the parent worker emits a
     clean error envelope.
     """
-    if isinstance(result, bool):
-        if result:
-            return {"ok": True}
-        raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
-    if isinstance(result, str):
-        stripped = result.strip()
-        lowered = stripped.lower()
-        if lowered == "true":
-            return {"ok": True}
-        if not stripped or any(marker in lowered for marker in _ERROR_MARKERS):
-            raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
-        # Looks like a UUID or other success identifier.
-        return {"ok": True, "id": stripped}
-    raise ProviderError("applescript_failed", "Things returned an invalid operation result", outcome="outcome_unknown")
+    return coerce_write_result(result)
 
 
 def run_write_action(action: str, params: dict[str, Any]) -> dict[str, Any]:

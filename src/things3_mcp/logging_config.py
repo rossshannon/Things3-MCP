@@ -91,7 +91,6 @@ class OperationLogFilter(logging.Filter):
         record.exc_text = None
         record.stack_info = None
 
-        # Add operation context to the record.
         for key, value in (self._context.get() or {}).items():
             setattr(record, key, value)
         return True

@@ -64,6 +64,23 @@ class ProviderError(RuntimeError):
         return "\n".join(bits)
 
 
+def coerce_write_result(result: Any) -> dict[str, Any]:
+    """Normalise a Things script result without assuming a failed write is safe to retry."""
+    if isinstance(result, bool):
+        if result:
+            return {"ok": True}
+        raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
+    if isinstance(result, str):
+        stripped = result.strip()
+        lowered = stripped.lower()
+        if lowered == "true":
+            return {"ok": True}
+        if not stripped or any(marker in lowered for marker in ("error:", "applescript error", "⚠️", "failed", "exception")):
+            raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
+        return {"ok": True, "id": stripped}
+    raise ProviderError("applescript_failed", "Things returned an invalid operation result", outcome="outcome_unknown")
+
+
 class ThingsProvider(Protocol):
     """Read facade used by the MCP server."""
 

@@ -486,7 +486,6 @@ def install(config: BuildConfig, source: Path, home: Path, timeout: float = 15) 
     ensure_directory(plist.parent)
     staging = Path(tempfile.mkdtemp(prefix=f".{config.bundle_id}-install-", dir=target.parent))
     candidate = staging / "candidate.app"
-    # Failures here cannot affect the running installation.
     shutil.copytree(source, candidate, symlinks=True)
     if verify_bundle(candidate, config) != manifest:
         raise PackagingError("Candidate changed while staging; installation left untouched")

@@ -57,7 +57,11 @@ include = [
     "uv.lock",
     ".python-version",
     "docs/bridge-build.md",
+    "docs/adapting-clawbridge.md",
     "docs/security/local-bridge-security.md",
+    "reference/clawbridge",
+    "tests",
+    "pytest.ini",
     "things_fast_server.py"
 ]
 

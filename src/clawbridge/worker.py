@@ -35,8 +35,8 @@ def _exchange(process: subprocess.Popen[bytes], payload: bytes, timeout: float) 
     deadline = time.monotonic() + timeout
     output = bytearray()
     with selectors.DefaultSelector() as selector:
-        for stream in (process.stdin, process.stdout, process.stderr):
-            os.set_blocking(stream.fileno(), False)
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            os.set_blocking(pipe.fileno(), False)
         selector.register(process.stdin, selectors.EVENT_WRITE)
         selector.register(process.stdout, selectors.EVENT_READ)
         selector.register(process.stderr, selectors.EVENT_READ)
@@ -64,7 +64,6 @@ def _exchange(process: subprocess.Popen[bytes], payload: bytes, timeout: float) 
                     output.extend(chunk)
                     if len(output) > MAX_RESPONSE_BYTES:
                         raise ValueError("Worker output limit")
-                # Stderr is deliberately discarded in fixed-size chunks.
         try:
             process.wait(timeout=max(0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired as exc:

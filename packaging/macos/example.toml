@@ -8,3 +8,6 @@ token_name = "bridge.token"
 collect_submodules = ["clawbridge"]
 apple_event_targets = []
 sandbox_read_only_home = []
+
+[environment_patterns]
+CLAWBRIDGE_JOURNAL_PAYLOADS = "[01]"

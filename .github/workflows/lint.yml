@@ -9,6 +9,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
@@ -18,12 +20,12 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
-      run: pip install uv
+      run: python -m pip install uv==0.13.6
 
     - name: Install dependencies
       run: uv sync --locked --group dev
@@ -44,10 +46,36 @@ jobs:
       run: uv run --locked mypy src/
 
     - name: Security scan
-      run: uv run --locked bandit -r src/
+      run: uv run --locked bandit -r src/ -c pyproject.toml
 
     - name: Check dependencies for vulnerabilities
       run: uv run --locked safety --stage cicd scan --output screen
       env:
         SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
       # Note: Requires SAFETY_API_KEY secret to be set in GitHub repo settings
+
+  synthetic-macos-bundle:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.12.16"
+    - name: Install uv
+      run: python -m pip install uv==0.13.6
+    - name: Install locked build tools
+      run: uv sync --locked --no-default-groups --group build
+    - name: Build synthetic adapter
+      run: scripts/build_bridge_app.sh --config packaging/macos/example.toml --output build/ci-example
+    - name: Sign synthetic adapter for testing
+      run: scripts/sign_bridge_app.sh --config packaging/macos/example.toml --app 'build/ci-example/ClawBridge Example.app' --profile ad-hoc-test
+    - name: Verify frozen worker and Unix transport
+      run: .venv/bin/python scripts/smoke_example_bridge.py --app 'build/ci-example/ClawBridge Example.app' --runtime /private/tmp/clawbridge-ci-check --result build/ci-example/smoke.json
+    - name: Retain synthetic build evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: synthetic-bridge-evidence
+        path: |
+          build/ci-example/*.json
+          build/ci-example/ClawBridge Example.app/Contents/Resources/build-manifest.json

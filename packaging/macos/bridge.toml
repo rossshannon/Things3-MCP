@@ -13,6 +13,7 @@ sandbox_read_only_home = ["Library/Group Containers/JLMPQHK86H.com.culturedcode.
 
 [environment_patterns]
 THINGS3_MCP_DATA_FOLDER = "ThingsData-[A-Za-z0-9_-]+"
+THINGS3_MCP_BRIDGE_JOURNAL_PAYLOADS = "[01]"
 
 [state_environment]
 THINGS3_MCP_CACHE_FILE = "cache/latest.json"
