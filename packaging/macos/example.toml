@@ -1,0 +1,13 @@
+name = "ClawBridge Example"
+bundle_id = "org.example.ClawBridgeExample"
+entrypoint = "clawbridge.demo:main"
+usage_description = ""
+state_directory = "Library/Application Support/ClawBridgeExample"
+socket_name = "bridge.sock"
+token_name = "bridge.token"
+collect_submodules = ["clawbridge"]
+apple_event_targets = []
+sandbox_read_only_home = []
+
+[environment_patterns]
+CLAWBRIDGE_JOURNAL_PAYLOADS = "[01]"

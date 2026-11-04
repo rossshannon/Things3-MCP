@@ -1,6 +1,6 @@
 [project]
 name = "Things3-MCP-server"
-version = "2.0.7"
+version = "2.5.0"
 description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,31 +23,48 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.2.0",
+    "mcp[cli]>=1.30.0,<2",
     "things-py>=0.0.15",
 ]
 
 [project.scripts]
 Things3-MCP-server = "things3_mcp.fast_server:run_things_mcp_server"
+Things3-MCP-bridge = "things3_mcp_bridge.server:main"
+clawbridge-mcp = "clawbridge_mcp.server:main"
 
 [project.urls]
-"Homepage" = "https://github.com/rossshannon/things-fastmcp"
-"Bug Tracker" = "https://github.com/rossshannon/things-fastmcp/issues"
-"Documentation" = "https://github.com/rossshannon/things-fastmcp#readme"
+"Homepage" = "https://github.com/rossshannon/Things3-MCP"
+"Bug Tracker" = "https://github.com/rossshannon/Things3-MCP/issues"
+"Documentation" = "https://github.com/rossshannon/Things3-MCP#readme"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/things3_mcp"]
+packages = ["src/things3_mcp", "src/things3_mcp_bridge", "src/clawbridge", "src/clawbridge_mcp"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "src/things3_mcp",
+    "src/things3_mcp_bridge",
+    "src/clawbridge",
+    "src/clawbridge_mcp",
+    "packaging/macos",
+    "scripts",
+    ".env.example",
     "README.md",
     "LICENSE",
     "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    "docs/bridge-build.md",
+    "docs/adapting-clawbridge.md",
+    "docs/examples",
+    "docs/security/local-bridge-security.md",
+    "reference/clawbridge",
+    "tests",
+    "pytest.ini",
     "things_fast_server.py"
 ]
 
@@ -132,6 +149,7 @@ ignore-decorators = ["pytest.fixture"]  # Don't require docstrings for pytest fi
     "D103",  # Allow missing function docstrings in tests
     "D104",  # Allow missing package docstrings in tests
     "D107",  # Allow missing __init__ docstrings in tests
+    "D105",
     "D200",  # Allow one-line docstrings in tests
     "D205",  # Allow missing blank line between summary and description in tests
     "D400",  # Allow first line without period in tests
@@ -142,6 +160,9 @@ ignore-decorators = ["pytest.fixture"]  # Don't require docstrings for pytest fi
     "PTH120",  # Allow os.path.dirname in tests
 ]
 "src/things3_mcp/applescript_bridge.py" = ["Q000", "Q001", "Q002", "Q003", "W291", "E501"]  # AppleScript has different quote/string requirements
+"src/things3_mcp/providers/*.py" = ["D102", "D107"]
+"src/things3_mcp_bridge/*.py" = ["D102", "D107"]
+"scripts/*.py" = ["D100", "D103"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -153,6 +174,7 @@ exclude = [
 # MyPy Configuration
 [tool.mypy]
 python_version = "3.12"
+platform = "darwin"
 warn_return_any = false        # Relaxed: Allow Any returns
 warn_unused_configs = true
 disallow_untyped_defs = false  # Relaxed: Allow untyped function definitions
@@ -210,12 +232,17 @@ per_file_ignores = [
 ]
 
 [dependency-groups]
+build = [
+    "pyinstaller==6.20.0",
+    "pyinstaller-hooks-contrib==2026.4",
+]
 dev = [
     "bandit>=1.8.6",
     "build>=1.2.2.post1",
     "hatchling>=1.27.0",
     "mypy>=1.17.0",
     "pre-commit>=4.2.0",
+    "pyinstaller>=6.20.0",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-html>=4.1.1",
@@ -224,3 +251,9 @@ dev = [
     "safety>=3.6.0",
     "twine>=6.1.0",
 ]
+
+[tool.uv]
+# 7-day dependency cooldown: refuse package versions published in the last
+# week so freshly-uploaded malicious releases (typically caught within that
+# window) are excluded from the resolver.
+exclude-newer = "1 week"

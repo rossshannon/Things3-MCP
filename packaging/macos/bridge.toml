@@ -1,0 +1,19 @@
+name = "Things3 MCP Bridge"
+bundle_id = "com.rossshannon.things3-mcp.bridge"
+entrypoint = "things3_mcp_bridge.server:main"
+icon = "packaging/macos/Things3MCPBridge.icns"
+usage_description = "Things3 MCP Bridge reads your Things 3 tasks, projects, areas and tags, and creates or updates them when an authorised local client asks."
+state_directory = "Library/Application Support/Things3-MCP"
+socket_name = "bridge.sock"
+token_name = "bridge.token"
+collect_submodules = ["things", "things3_mcp", "things3_mcp_bridge", "clawbridge"]
+local_signing_identity = "Things3 MCP Local"
+apple_event_targets = ["com.culturedcode.ThingsMac"]
+sandbox_read_only_home = ["Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac"]
+
+[environment_patterns]
+THINGS3_MCP_DATA_FOLDER = "ThingsData-[A-Za-z0-9_-]+"
+THINGS3_MCP_BRIDGE_JOURNAL_PAYLOADS = "[01]"
+
+[state_environment]
+THINGS3_MCP_CACHE_FILE = "cache/latest.json"

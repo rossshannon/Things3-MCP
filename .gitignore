@@ -49,6 +49,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 cover/
 
 # Translations
@@ -171,6 +172,7 @@ cython_debug/
 
 # Test files and temporary development files
 test_*.sh
+tmp/
 
 # MCP development
 *.log

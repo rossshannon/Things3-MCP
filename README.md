@@ -8,7 +8,7 @@
 
 This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server lets you use Claude Desktop to interact with your task management data in [Things 3](https://culturedcode.com/things). You can ask Claude or your MCP client of choice to create tasks, analyze projects, help manage priorities, and more.
 
-This MCP server leverages a combination of the [Things.py](https://github.com/thingsapi/things.py) library and [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/), enabling reading and writing to Things 3.
+This MCP server uses a combination of the [Things.py](https://github.com/thingsapi/things.py) library and [Things 3’s AppleScript support](https://culturedcode.com/things/support/articles/4562654/), enabling reading and writing to Things 3.
 
 ## Why Things MCP?
 
@@ -29,76 +29,135 @@ This MCP server unlocks the power of AI for your task management:
 - Support for nested data (projects within areas, todos within projects)
 - Checklist/Subtask support - Read and display existing checklist items from todos
 
-## Installation
+## Things3-MCP 2.5 source candidate
 
-#### Prerequisites
-* Python 3.12+
-* Claude Desktop
-* Things 3 for MacOS
+This checkout contains the 2.5.0 source candidate with the signed local bridge and an adaptable ClawBridge reference. It is not a statement that 2.5.0 has been published to PyPI. Use a reviewed source revision for this workflow. The existing 24 MCP tools remain, with three new tools for bridge status and operation inspection.
 
-#### Step 1: Install the package
+The included ClawBridge reference routes fixed MCP tools through an authenticated owner-private Unix socket to a small signed macOS app and bounded worker. The signed app is the permission-bearing execution backend; the MCP server does not automatically gain its permissions. The standalone counter, Music and catalogue profiles include fixed MCP tools. Start with [exporting the reference](docs/adapting-clawbridge.md#export-the-reference), then follow its synthetic MCP guide. The default Things provider supports the existing 24 tools and three inspection tools through the bridge.
 
-**Option A: Install from PyPI in a virtual environment (recommended)**
-```bash
-# Create a virtual environment in your home directory
-python3 -m venv ~/.venvs/things3-mcp-env
-source ~/.venvs/things3-mcp-env/bin/activate
+In this source checkout, install the MCP client with `uv sync --locked --group dev` and inspect its options with `uv run --locked clawbridge-mcp --help`; the standalone export instead uses the `mcp` extra described in its guide.
 
-# Install the package
-pip install Things3-MCP-server==2.0.6
-```
+## Data access and safety
 
-**Option B: Install from source (for development/contributors)**
-```bash
-# Install uv if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# Restart your terminal afterwards
+The implementation never writes directly to Things' SQLite database. Creates, updates, completion and movement use Things' AppleScript interface so the app owns its changes and sync. Database readers open SQLite read-only; this is a reader setting, not operating-system confinement of the entire bridge.
 
-# Clone and install the package with development dependencies
+Cultured Code recommends its supported automation interfaces and does not support direct database integrations. Raw SQLite reads remain an unsupported live integration even when read-only. The Apple Events fallback returns a limited set of fields and is not equivalent to a full database snapshot. See [Things' integration guidance](https://culturedcode.com/things/support/articles/2967034/) and [its guidance on third-party AI tools](https://culturedcode.com/things/support/articles/5510170/).
+
+## Install the source candidate
+
+You need macOS, Things 3, uv, the pinned Python in `.python-version`, and an MCP client such as Claude Desktop. Building the app also needs Apple's command-line tools.
+
+```sh
 git clone https://github.com/rossshannon/Things3-MCP
 cd Things3-MCP
-uv venv
-uv pip install -e ".[dev]"  # Install in development mode with extra dependencies
+# Select the reviewed 2.5 source revision before installing.
+uv sync --locked --group build
 ```
 
-### Step 2: Configure Claude Desktop
-Edit the Claude Desktop configuration file:
-```bash
-code ~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
+Configure your MCP client with absolute paths. Claude Desktop uses `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-Add the Things server to the mcpServers key in the configuration file:
-
-**Option A: Using PyPI package in virtual environment**
 ```json
 {
-    "mcpServers": {
-        "things": {
-            "command": "~/.venvs/things3-mcp-env/bin/Things3-MCP-server"
-        }
+  "mcpServers": {
+    "things": {
+      "command": "/ABSOLUTE/PATH/TO/uv",
+      "args": ["--directory", "/ABSOLUTE/PATH/TO/Things3-MCP", "run", "--locked", "Things3-MCP-server"],
+      "env": {
+        "THINGS3_MCP_PROVIDER": "auto",
+        "THINGS3_MCP_ALLOW_DIRECT_FALLBACK": "0"
+      }
     }
+  }
 }
 ```
 
-**Option B: Using source installation (for development/contributors)**
-```json
-{
-    "mcpServers": {
-        "things": {
-            "command": "uv",
-            "args": [
-                "--directory",
-                "/ABSOLUTE/PATH/TO/PARENT/FOLDER/Things3-MCP",
-                "run",
-                "Things3-MCP-server"
-            ]
-        }
-    }
-}
+Restart the client after changing its configuration. The [PyPI page](https://pypi.org/project/Things3-MCP-server/) lists published versions; older published versions do not establish the behaviour documented for this candidate.
+
+## Local bridge and access while away
+
+The bridge gives macOS a stable app identity to authorise. The MCP server talks to it over an owner-only Unix socket with a bearer token:
+
+```text
+MCP client → Things3-MCP server → local socket + token
+  → signed Things3 MCP Bridge.app → bounded worker
+    → read-only Things database / Things Apple Events
+    → private cache and operation records
 ```
 
-### Step 3: Restart Claude Desktop
-Restart the Claude Desktop app to enable the integration.
+This aims to support an awake Mac with the user logged in after interactive consent. A locked screen needs separate validation. It does not promise operation during sleep, after logout, before FileVault unlock or through a new consent prompt. A signature check and a responding socket do not prove those conditions.
+
+### Build, sign and install
+
+Read [the build and lifecycle guide](docs/bridge-build.md) for the locked isolated build, signing profiles, retained evidence and rollback procedure. Building does not install, launch or request permissions.
+
+```sh
+scripts/build_bridge_app.sh --output build/local-candidate
+scripts/sign_bridge_app.sh --app 'build/local-candidate/Things3 MCP Bridge.app' \
+  --profile local --identity 'Things3 MCP Local'
+codesign --verify --deep --strict 'build/local-candidate/Things3 MCP Bridge.app'
+```
+
+Local signing requires an existing Code Signing identity in Keychain; the script never creates or trusts a certificate. An Apple Developer account is not required to use an existing local identity on your own Mac. Ad-hoc test signing does not provide a stable consent identity. Distribution uses the separate Developer ID profile, hardened runtime, notarisation and Gatekeeper validation.
+
+Installation is a separate, deliberate action:
+
+```sh
+scripts/install_bridge_launchagent.sh --app 'build/local-candidate/Things3 MCP Bridge.app'
+```
+
+The installer stages and verifies the candidate, retains the prior app/plist, and requires authenticated status from the exact installed build and process. Failed readiness triggers rollback. It installs `~/Applications/Things3 MCP Bridge.app` and a per-user LaunchAgent; it never changes macOS privacy grants. The LaunchAgent starts at login and restarts a failed process. Starting the bridge does not itself read the Things database or send Apple Events.
+
+### Choose permissions
+
+Database access and scripting are separate capabilities. A protected SQLite read may need Full Disk Access for the signed bridge. Things AppleScript reads and writes need Automation consent for that bridge to control Things. These are user choices in **System Settings → Privacy & Security**; supported Things scripting needs neither System Events, Accessibility nor Screen Recording.
+
+Full Disk Access is broad, and the default app is unsandboxed. Fixed routes and path validation limit what this service exposes; they are not an operating-system sandbox. An experimental signed App Sandbox profile is documented in [the build guide](docs/bridge-build.md#experimental-app-sandbox-profile). It requires separate frozen-app and real-application acceptance before use. Security-scoped bookmarks do not automatically bypass protected app containers. Read [the security model](docs/security/local-bridge-security.md) before authorising the bridge.
+
+### Verify the intended capability
+
+`get_bridge_status` inspects identity, cache state and the last observed read/write results without requesting consent. App process state is currently reported as unknown; this status call does not inspect the Things process. Unknown or untested permissions stay unknown. A live read and a write must be verified independently.
+
+```sh
+uv run --locked python scripts/check_bridge.py
+# Explicitly exercise a live snapshot; this can encounter a privacy prompt:
+uv run --locked python scripts/check_bridge.py --snapshot
+```
+
+Inspect the returned backend. SQLite and the limited Apple Events fallback have different coverage. The default cache is `~/Library/Application Support/Things3-MCP/cache/latest.json`. New LaunchAgents discard stdout/stderr; authenticated status and operation records provide bounded diagnostics. Old log files are not removed.
+
+### Provider modes and 2.5 migration
+
+| Mode | Reads | Writes |
+| --- | --- | --- |
+| `auto` (default) | Bridge, then last good cache. Direct reads only with the explicit fallback setting. | Bridge only. |
+| `bridge` | Bridge required; inspect reported source for any bridge-side cache fallback. | Bridge required. |
+| `cache` | Last snapshot only. | Refused. |
+| `direct` | Legacy database access from the MCP process. | Legacy AppleScript from the MCP process. |
+
+**Migration:** automatic mode no longer falls back to direct AppleScript writes. Install and authorise the bridge before relying on writes. A user who deliberately needs the legacy path can set `THINGS3_MCP_PROVIDER=direct`, accepting its separate permission identity and weaker timeout boundary. `THINGS3_MCP_ALLOW_DIRECT_FALLBACK=1` affects automatic reads only. Keep it `0` for unattended use.
+
+The MCP bridge call timeout defaults to 35 seconds; the worker deadline defaults to 30 seconds. Client timeout settings must exceed 30 seconds and should stay above the configured worker deadline. A lost response or client timeout still does not establish that a mutation failed. Never retry it automatically. Use its operation ID, or its correlation label if the response was lost, to inspect the result. A later intentional request is a new attempt.
+
+Read output identifies its source. Cached output includes snapshot age and original backend; an Apple Events snapshot retains its limited-coverage warning. Direct bridge callers can send `X-Require-Live: true` when a cached result is unacceptable.
+
+### Operation records
+
+Every dispatched bridge mutation receives an operation ID. `get_bridge_operation(operation_id)` returns its record; `list_bridge_operations(correlation_id=None, limit=25)` lists recent attempts. Outcomes distinguish `not_started`, `succeeded`, `failed` and `outcome_unknown`. An unknown outcome means the app may have changed; inspect the record and app state before deciding whether to try again. Requests are never replayed automatically.
+
+Direct socket clients may attach `X-Correlation-ID`, containing 1–128 ASCII letters, digits or `._:-`. It is a caller label, not authentication or deduplication. The same label can identify several distinct attempts.
+
+The private `operations/` directory beside the socket defaults to metadata only. Its limits are seven days, 1,000 records and 10 MiB; age expiry runs when the journal is accessed, rather than on a background deletion timer. Old inactive records are pruned when needed; active ones are preserved. If storage cannot admit a record, execution does not begin. `THINGS3_MCP_BRIDGE_JOURNAL_PAYLOADS=1` in the bridge process environment explicitly enables request payload retention. This may retain titles and notes; leave it off unless required. To persist this intentional opt-in in a newly installed LaunchAgent:
+
+```sh
+THINGS3_MCP_BRIDGE_JOURNAL_PAYLOADS=1 scripts/install_bridge_launchagent.sh \
+  --app 'build/local-candidate/Things3 MCP Bridge.app'
+```
+
+Set the value to `0` on a later install to disable new payload capture; that does not erase existing records. `.env.example` documents configuration but is not loaded automatically.
+
+### Adapt the bridge
+
+[Adapting ClawBridge](docs/adapting-clawbridge.md) explains the fixed adapter interface, permission choices and verification boundaries. [Three small examples](docs/examples/README.md) cover private counter state, Music AppleScript and read-only SQLite. `scripts/export_clawbridge.py` generates a standalone reference with no Things runtime dependency, pinned tools and revision/hash provenance. The Things checkout remains the core's source of truth.
 
 ### Sample Usage with Claude Desktop
 * “What’s on my todo list today?”
@@ -120,7 +179,7 @@ Restart the Claude Desktop app to enable the integration.
 - `get_anytime` - Get todos from Anytime list
 - `get_someday` - Get todos from Someday list
 - `get_logbook` - Get completed todos
-- `get_trash` - Get trashed todos
+- `get_trash` - Get trashed todos, paged by `limit` and `offset` (defaults to 50 items, capped at 200)
 
 #### Random Sampling (for LLM Enrichment)
 - `get_random_inbox` - Get a random sample of todos from Inbox
@@ -142,6 +201,11 @@ Restart the Claude Desktop app to enable the integration.
 
 #### Time-based Operations
 - `get_recent` - Get recently created items
+
+#### Bridge Inspection
+- `get_bridge_status` - Inspect identity, cache and observed capabilities without requesting consent
+- `get_bridge_operation` - Look up a mutation by operation ID without replaying it
+- `list_bridge_operations` - List recent records; optional correlation filter and limit of 1–100
 
 #### Modification Operations
 - `add_todo` - Create a new todo with full parameter support
@@ -299,50 +363,28 @@ The random sampling tools (`get_random_inbox`, `get_random_anytime`, `get_random
 
 This project uses `pyproject.toml` to manage dependencies and build configuration. It's built using the [Model Context Protocol](https://modelcontextprotocol.io), which allows Claude to securely access tools and data.
 
-### Development Workflow
+### Development workflow
 
-#### Setting up a development environment
+Use the committed lockfile and Python pin:
 
-```bash
-# Clone the repository
-git clone https://github.com/rossshannon/Things3-MCP
-cd Things3-MCP
-
-# Set up a virtual environment with development dependencies
-uv venv
-uv pip install -e ".[dev]"  # Install in development mode with extra dependencies
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy src/
+uv run --locked bandit -r src/ -c pyproject.toml
 ```
 
-#### Testing changes during development
+The default suite is hermetic: it uses synthetic fixtures and skips tests marked `live_things`. The test guard blocks personal Things data, real AppleScript, permission commands and pathname-based Unix-socket connections outside temporary fixtures. It does not establish real macOS consent or locked-session behaviour.
 
-Run the comprehensive test suite to ensure everything is working as expected:
+Live tests can create and delete records. Run them only with a disposable Things library and explicit approval for that work:
 
-```bash
-# Run all tests (116 tests, ~3-4 minutes)
-uv run pytest
-
-# Run tests with coverage report
-uv run pytest --cov=things3_mcp --cov-report=term-missing
-
-# Run specific test file
-uv run pytest tests/test_list_assignment_operations.py
-
-# Run tests with minimal output
-uv run pytest -q
-
-# Run tests matching a pattern
-uv run pytest -k "error_handling"
+```sh
+uv run --locked pytest --live-things --allow-things-cleanup
 ```
 
-**Test Configuration:**
-- **116 comprehensive tests** covering all functionality
-- **Automatic cleanup** - tests don't affect your existing Things data
-- **Edge case coverage** - malformed UUIDs, timeouts, error conditions
-- **Integration testing** - tests against real Things app
-
-The tests clean up after themselves and don't affect your existing data, so you can run them as often as you like.
-
-![Things 3 MCP Test Suite](https://github.com/rossshannon/Things3-MCP/raw/main/docs/images/Things3-mcp-test-suite.png)
+Both flags are required. Cleanup is not a promise that a personal library is safe to use for testing. Keep source tests, frozen bundle verification, real Things results and locked-session results as separate evidence.
 
 ## Troubleshooting
 
@@ -356,7 +398,7 @@ The server includes error handling for:
 
 ### Common Issues
 
-1. **Things app not running**: Make sure the Things app is running on your Mac for AppleScript methods to work.
+- **Things app not running**: Make sure the Things app is running on your Mac for AppleScript methods to work.
 
 ### Checking Logs
 

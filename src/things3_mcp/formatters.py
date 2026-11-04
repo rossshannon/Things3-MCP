@@ -11,9 +11,21 @@ import things
 logger = logging.getLogger(__name__)
 
 
-def format_todo(todo: dict) -> str:
+def _relation_title(item: dict, relation: str, get_item) -> str | None:
+    title = item.get(f"{relation}_title")
+    if isinstance(title, str):
+        return title
+    try:
+        parent = get_item(item[relation])
+        return parent["title"] if parent else None
+    except Exception:  # nosec B110 - relationship labels are optional decoration
+        return None
+
+
+def format_todo(todo: dict, get_item=None) -> str:
     """Helper function to format a single todo into a readable string."""
-    logger.debug(f"Formatting todo: {todo}")
+    get_item = get_item or things.get
+    logger.debug("Formatting Things item")
     todo_text = f"Title: {todo['title']}"
 
     # Add UUID for reference
@@ -42,23 +54,11 @@ def format_todo(todo: dict) -> str:
     if todo.get("notes"):
         todo_text += f"\nNotes: {todo['notes']}"
 
-    # Add project info if present
-    if todo.get("project"):
-        try:
-            project = things.get(todo["project"])
-            if project:
-                todo_text += f"\nProject: {project['title']}"
-        except Exception:  # nosec B110 - Ignore missing project info, not all todos have projects
-            pass
-
-    # Add area info if present
-    if todo.get("area"):
-        try:
-            area = things.get(todo["area"])
-            if area:
-                todo_text += f"\nArea: {area['title']}"
-        except Exception:  # nosec B110 - Ignore missing area info, not all todos have areas
-            pass
+    for relation, label in (("project", "Project"), ("area", "Area")):
+        if todo.get(relation):
+            title = _relation_title(todo, relation, get_item)
+            if title is not None:
+                todo_text += f"\n{label}: {title}"
 
     # Add tags if present
     if todo.get("tags"):
@@ -74,23 +74,24 @@ def format_todo(todo: dict) -> str:
     return todo_text
 
 
-def format_project(project: dict, include_items: bool = False) -> str:
+def format_project(project: dict, include_items: bool = False, get_item=None, get_todos=None) -> str:
     """Helper function to format a single project."""
+    get_item = get_item or things.get
+    get_todos = get_todos or things.todos
     project_text = f"Title: {project['title']}\nUUID: {project['uuid']}"
 
     if project.get("area"):
-        try:
-            area = things.get(project["area"])
-            if area:
-                project_text += f"\nArea: {area['title']}"
-        except Exception:  # nosec B110 - Ignore missing area info, not all projects have areas
-            pass
+        title = _relation_title(project, "area", get_item)
+        if title is not None:
+            project_text += f"\nArea: {title}"
 
     if project.get("notes"):
         project_text += f"\nNotes: {project['notes']}"
 
     if include_items:
-        todos = things.todos(project=project["uuid"])
+        todos = project.get("items")
+        if todos is None:
+            todos = get_todos(project=project["uuid"])
         if todos:
             project_text += "\n\nTasks:"
             for todo in todos:
@@ -99,21 +100,27 @@ def format_project(project: dict, include_items: bool = False) -> str:
     return project_text
 
 
-def format_area(area: dict, include_items: bool = False) -> str:
+def format_area(area: dict, include_items: bool = False, get_projects=None, get_todos=None) -> str:
     """Helper function to format a single area."""
+    get_projects = get_projects or things.projects
+    get_todos = get_todos or things.todos
     area_text = f"Title: {area['title']}\nUUID: {area['uuid']}"
 
     if area.get("notes"):
         area_text += f"\nNotes: {area['notes']}"
 
     if include_items:
-        projects = things.projects(area=area["uuid"])
+        projects = area.get("projects")
+        if projects is None:
+            projects = get_projects(area=area["uuid"])
         if projects:
             area_text += "\n\nProjects:"
             for project in projects:
                 area_text += f"\n- {project['title']}"
 
-        todos = things.todos(area=area["uuid"])
+        todos = area.get("items")
+        if todos is None:
+            todos = get_todos(area=area["uuid"])
         if todos:
             area_text += "\n\nTasks:"
             for todo in todos:
@@ -122,15 +129,18 @@ def format_area(area: dict, include_items: bool = False) -> str:
     return area_text
 
 
-def format_tag(tag: dict, include_items: bool = False) -> str:
+def format_tag(tag: dict, include_items: bool = False, get_todos=None) -> str:
     """Helper function to format a single tag."""
+    get_todos = get_todos or things.todos
     tag_text = f"Title: {tag['title']}\nUUID: {tag['uuid']}"
 
     if tag.get("shortcut"):
         tag_text += f"\nShortcut: {tag['shortcut']}"
 
     if include_items:
-        todos = things.todos(tag=tag["title"])
+        todos = tag.get("items")
+        if todos is None:
+            todos = get_todos(tag=tag["title"])
         if todos:
             tag_text += "\n\nTagged Items:"
             for todo in todos:

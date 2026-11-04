@@ -35,7 +35,7 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
 
     # Step 1: Accept an ISO string, validate it in Python
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", deadline):
-        logger.error(f"Invalid deadline format: {deadline}. Expected YYYY-MM-DD")
+        logger.error("Deadline processing failed")
         return
 
     try:
@@ -58,9 +58,9 @@ def update_applescript_with_due_date(script_parts: list, deadline: str, item_var
             # Negative days for past dates
             script_parts.append(f"    set due date of {item_var} to (current date) - {abs(days_diff)} * days")
 
-        logger.debug(f"Generated arithmetic AppleScript date construction for {deadline} ({days_diff:+d} days)")
+        logger.debug("Deadline processing completed")
 
     except ValueError:
-        logger.error(f"Invalid date: {deadline}")
-    except Exception as e:
-        logger.error(f"Error setting deadline: {e!s}")
+        logger.error("Deadline processing failed")
+    except Exception:
+        logger.error("Deadline processing failed")

@@ -13,6 +13,8 @@ from unittest.mock import patch
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import pytest  # noqa: E402
+
 from things3_mcp.applescript_bridge import add_todo  # noqa: E402
 from things3_mcp.fast_server import add_task  # noqa: E402
 
@@ -46,12 +48,16 @@ def test_applescript_error_logging_detail():
 
                 # Check that the error was logged
                 log_output = log_capture.getvalue()
-                assert "Failed to create todo" in log_output, "Should log failure details"
+                assert "AppleScript operation failed" in log_output
+                assert "Test Todo" not in log_output
+                assert "fake-id" not in log_output
+                assert "Error: AppleScript timed out" not in log_output
 
     finally:
         logger.removeHandler(handler)
 
 
+@pytest.mark.live_things
 def test_mcp_server_error_propagation():
     """Test that MCP server properly propagates and formats AppleScript errors."""
     title = f"Error Propagation Test {generate_random_string(5)}"
@@ -79,6 +85,7 @@ def test_mcp_server_error_propagation():
             pass  # Ignore cleanup failures
 
 
+@pytest.mark.live_things
 def test_error_message_format_consistency():
     """Test that all error messages follow consistent formatting."""
     title = f"Format Test {generate_random_string(5)}"
@@ -127,7 +134,7 @@ def test_applescript_timeout_error_detection():
     ]
 
     for timeout_error in timeout_errors:
-        with patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
+        with patch("things3_mcp.applescript_bridge.ensure_things_ready", return_value=True), patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
             mock_run.return_value = timeout_error
 
             result = add_todo(title="Timeout Test", list_id="some-id")
@@ -146,7 +153,7 @@ def test_applescript_temp_file_error_detection():
     ]
 
     for temp_error in temp_file_errors:
-        with patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
+        with patch("things3_mcp.applescript_bridge.ensure_things_ready", return_value=True), patch("things3_mcp.applescript_bridge.run_applescript") as mock_run:
             mock_run.return_value = temp_error
 
             result = add_todo(title="Temp Error Test", list_id="some-id")
@@ -155,78 +162,52 @@ def test_applescript_temp_file_error_detection():
             assert result is False, f"Should return False for temp file error: {temp_error}"
 
 
-def test_error_logging_includes_context():
-    """Test that error logs include sufficient context for debugging."""
-    # Capture log output
-    log_capture = io.StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things3_mcp.fast_server")
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+def test_error_logging_includes_context(monkeypatch, caplog):
+    """Operation logs remain useful without retaining parameters or error payloads."""
+    from things3_mcp import fast_server
+    from things3_mcp.providers import ProviderError
 
-    try:
-        title = f"Context Test {generate_random_string(5)}"
+    class FailingProvider:
+        def add_task(self, params):
+            assert params["title"] == "private-title-canary"
+            raise ProviderError("outcome_unknown", "private-error-canary", outcome="outcome_unknown", correlation_id="safe-correlation")
 
-        # Test with parameters that will be logged
-        result = add_task(title=title, list_id="test-id-for-logging")
-
-        # Should return some result
-        assert isinstance(result, str), "Should return string result"
-
-        # Check that the operation was logged with context
-        log_output = log_capture.getvalue()
-        assert title in log_output, "Should log the title being processed"
-        assert "list_id" in log_output, "Should log the parameters being used"
-
-        # Clean up if todo was created
-        import re
-
-        match = re.search(r"ID: ([^)]+)\)", result)
-        if match:
-            try:
-                delete_todo_by_id(match.group(1))
-            except Exception:
-                pass  # Ignore cleanup failures
-
-    finally:
-        logger.removeHandler(handler)
+    monkeypatch.setattr(fast_server, "get_provider", lambda: FailingProvider())
+    with caplog.at_level(logging.DEBUG):
+        result = fast_server.add_task(title="private-title-canary", notes="private-note-canary", list_id="private-id-canary")
+    assert "safe-correlation" in result
+    assert "Things add_task failed" in caplog.text
+    assert "private-" not in caplog.text
 
 
+@pytest.mark.live_things
 def test_success_logging_includes_location():
-    """Test that successful operations log location information."""
-    # Capture log output
-    log_capture = io.StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things3_mcp.applescript_bridge")
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    """Successful add_task results include the destination list/area/project.
 
+    Historically this asserted on log lines from ``things3_mcp.applescript_bridge``,
+    but with writes routed through the bridge worker subprocess those logs no
+    longer surface in the test process. The MCP tool's return value still
+    carries the location ("in <List>"), which is the user-facing contract.
+    """
     created_todos = []
 
     try:
         title = f"Success Logging Test {generate_random_string(5)}"
 
-        # Create a real todo to test location logging
         result = add_task(title=title)
 
-        # Should be a success message
-        assert "✅" in result, "Should be successful"
+        assert "✅" in result, f"Should be successful: {result}"
+        assert "(ID: " in result, f"Should include the new todo's UUID: {result}"
+        assert " in " in result, f"Should include location information: {result}"
 
-        # Extract todo ID for cleanup
+        # Extract the UUID for cleanup.
         import re
 
         match = re.search(r"ID: ([^)]+)\)", result)
         if match:
             created_todos.append(match.group(1))
 
-        # Check that location was logged
-        log_output = log_capture.getvalue()
-        assert "Successfully created todo via AppleScript with ID:" in log_output, "Should log successful creation"
-        assert "in " in log_output, "Should include location information in logs"
-
     finally:
-        logger.removeHandler(handler)
-        # Clean up created todos
         for todo_id in created_todos:
             try:
                 delete_todo_by_id(todo_id)
@@ -234,41 +215,25 @@ def test_success_logging_includes_location():
                 pass  # Ignore cleanup failures
 
 
-def test_edge_case_parameter_logging():
-    """Test that edge case parameters are properly logged for debugging."""
-    # Capture log output
-    log_capture = io.StringIO()
-    handler = logging.StreamHandler(log_capture)
-    logger = logging.getLogger("things3_mcp.fast_server")
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+def test_edge_case_parameter_logging(monkeypatch, caplog):
+    """Empty parameters keep their behaviour without logging task content."""
+    from things3_mcp import fast_server
 
-    try:
-        # Test with edge case parameters
-        title = f"Edge Case Test {generate_random_string(5)}"
+    captured = {}
 
-        result = add_task(
-            title=title,
-            list_id="",  # Empty ID
-            list_title=None,  # None title
-            tags=[],  # Empty tags
-            notes="",  # Empty notes
-        )
+    class Provider:
+        def add_task(self, params):
+            captured.update(params)
+            return {"id": "synthetic-id"}
 
-        # Should still work (create in Inbox)
-        assert "✅" in result, "Should succeed despite edge case parameters"
+        def get(self, _uuid):
+            return {"start": "Inbox"}
 
-        # Check that parameters were logged
-        log_output = log_capture.getvalue()
-        assert "list_id:" in log_output, "Should log list_id parameter"
-        assert "list_title:" in log_output, "Should log list_title parameter"
-
-        # Extract and clean up created todo
-        import re
-
-        match = re.search(r"ID: ([^)]+)\)", result)
-        if match:
-            delete_todo_by_id(match.group(1))
-
-    finally:
-        logger.removeHandler(handler)
+    monkeypatch.setattr(fast_server, "get_provider", Provider)
+    with caplog.at_level(logging.DEBUG):
+        result = fast_server.add_task(title="private-title-canary", list_id="", list_title=None, tags=[], notes="")
+    assert "✅" in result
+    assert "in List: Inbox" in result
+    assert captured == {"title": "private-title-canary", "list_id": "", "tags": [], "notes": ""}
+    assert "MCP create todo requested" in caplog.text
+    assert "private-title-canary" not in caplog.text

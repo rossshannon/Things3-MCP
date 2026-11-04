@@ -10,6 +10,7 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import pytest  # noqa: E402
 import things  # noqa: E402
 
 from things3_mcp.applescript_bridge import (  # noqa: E402
@@ -30,6 +31,9 @@ from .conftest import (  # noqa: E402
 # ============================================================================
 # BUILT-IN LIST OPERATIONS TESTS
 # ============================================================================
+
+
+pytestmark = pytest.mark.live_things
 
 
 def test_update_todo_to_inbox(test_namespace):

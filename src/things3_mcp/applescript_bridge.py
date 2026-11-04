@@ -7,101 +7,57 @@ all the complexities of string escaping and error handling.
 """
 
 import logging
+import re
 import subprocess  # nosec B404 - Required for running AppleScript commands
-import tempfile
 from datetime import datetime
 
 from .date_converter import update_applescript_with_due_date
+from .providers.base import ProviderError
 
 logger = logging.getLogger(__name__)
 
 
+class AppleScriptError(ProviderError):
+    """A sanitised app-operation failure with a conservative mutation outcome."""
+
+
+def _script_error(raw_error: str) -> AppleScriptError:
+    # Raw app errors can contain task content. Use them only for classification.
+    if "-1743" in raw_error or "not authorized to send apple events" in raw_error.lower():
+        return AppleScriptError("automation_denied", "Things Automation access was denied", authorization_hint="Allow this bridge to control Things in System Settings > Privacy & Security > Automation.", outcome="outcome_unknown")
+    return AppleScriptError("applescript_failed", "Things did not confirm completion; the operation may have changed some items", outcome="outcome_unknown")
+
+
 def run_applescript(script: str, timeout: int = 8) -> str:
-    """Run an AppleScript command and return its output."""
-    logger.debug(f"Running AppleScript:\n{script}")
-
+    """Execute a script over stdin without retaining its content in a file."""
+    process = None
     try:
-        # Handle special characters by writing to a temporary file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".applescript", delete=False) as f:
-            f.write(script)
-            script_path = f.name
-
-        logger.info(f"Running script from file: {script_path}")
-
-        # Run the AppleScript from the file
-        process = subprocess.Popen(["osascript", script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # nosec B607 B603
-        stdout, stderr = process.communicate(timeout=timeout)
-
-        # Clean up the temporary file
-        import os
-
-        os.unlink(script_path)
-
-        # Log the results
-        logger.debug(f"AppleScript return code: {process.returncode}")
-        logger.debug(f"AppleScript stdout: {stdout.decode('utf-8') if stdout else 'None'}")
-        logger.debug(f"AppleScript stderr: {stderr.decode('utf-8') if stderr else 'None'}")
-
-        # Check for errors
+        process = subprocess.Popen(["/usr/bin/osascript", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # nosec B603
+        stdout, stderr = process.communicate(input=script.encode("utf-8"), timeout=timeout)
         if process.returncode != 0:
-            error_msg = stderr.decode("utf-8") if stderr else "Unknown error"
-            logger.error(f"AppleScript error: {error_msg}")
-            return error_msg
-
-        # Return the output
+            raise _script_error(stderr.decode("utf-8", errors="replace"))
         output = stdout.decode("utf-8").strip()
-        logger.debug(f"AppleScript output (raw): {output!r}")
-
-        # Convert boolean responses to consistent string format
-        if output.lower() == "true":
-            logger.debug("Converting 'true' response")
-            return "true"
-        elif output.lower() == "false":
-            logger.debug("Converting 'false' response")
-            return "false"
-        else:
-            logger.debug("Returning raw output")
-            return output
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"AppleScript timed out after {timeout} seconds")
-        process.kill()
-        return "Error: AppleScript timed out"
-    except Exception as e:
-        logger.error(f"Error running AppleScript: {e!s}")
-        return f"Error: {e!s}"
+        if output.lower().startswith("error:"):
+            raise _script_error(output)
+        logger.debug("AppleScript execution completed")
+        return output.lower() if output.lower() in {"true", "false"} else output
+    except subprocess.TimeoutExpired as exc:
+        if process is not None:
+            process.kill()
+            process.communicate()
+        logger.error("AppleScript execution timed out")
+        raise AppleScriptError("applescript_timeout", "Things did not confirm completion before the deadline", outcome="outcome_unknown") from exc
+    except AppleScriptError:
+        logger.error("AppleScript execution failed")
+        raise
+    except Exception as exc:
+        logger.error("AppleScript execution failed")
+        raise AppleScriptError("applescript_unavailable", "The local AppleScript process failed", outcome="outcome_unknown" if process is not None else "failed") from exc
 
 
 def ensure_things_ready() -> bool:
-    """Ensure Things app is ready for AppleScript operations.
-
-    Returns:
-    -------
-        bool: True if Things is ready, False otherwise
-    """
-    try:
-        # First check if Things is running
-        check_script = 'tell application "System Events" to (name of processes) contains "Things3"'
-        result = run_applescript(check_script, timeout=5)
-
-        if not result or result.lower() != "true":
-            logger.warning("Things app is not running")
-            return False
-
-        # Then check if Things is responsive
-        ping_script = 'tell application "Things3" to return name'
-        result = run_applescript(ping_script, timeout=5)
-
-        if not result:
-            logger.warning("Things app is not responsive")
-            return False
-
-        logger.debug("Things app is ready for operations")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error checking Things readiness: {e!s}")
-        return False
+    """Observe process state without launching Things or requesting consent."""
+    return run_applescript('application id "com.culturedcode.ThingsMac" is running', timeout=5).lower() == "true"
 
 
 def escape_applescript_string(text: str) -> str:
@@ -122,7 +78,7 @@ def escape_applescript_string(text: str) -> str:
         return '""'
 
     # Replace any "+" with spaces (URL decoding)
-    text = text.replace("+", " ")
+    text = text.replace("+", " ").replace("\\", "\\\\")
 
     # Handle carriage returns and tabs that can break AppleScript syntax
     # Preserve newlines as they're valid in AppleScript strings
@@ -184,11 +140,10 @@ def add_todo(  # noqa: PLR0913
 
     # Ensure Things is ready
     if not ensure_things_ready():
-        logger.error("Things app is not ready for operations")
-        return False
+        raise AppleScriptError("app_not_running", "Things is not running; open Things before requesting a mutation", outcome="failed")
 
     # Build the AppleScript command
-    script_parts = ['tell application "Things3"', "try"]
+    script_parts = ['tell application id "com.culturedcode.ThingsMac"', "try"]
 
     # Create the todo with basic properties first
     properties = [f"name:{escape_applescript_string(title)}"]
@@ -234,12 +189,12 @@ def add_todo(  # noqa: PLR0913
     if list_id:
         script_parts.append("try")
         script_parts.append("  -- Try to find as project by ID")
-        script_parts.append(f'  set target_project to first project whose id is "{list_id}"')
+        script_parts.append(f'  set target_project to first project whose id is {escape_applescript_string(list_id)}')
         script_parts.append("  set project of newTodo to target_project")
         script_parts.append("on error")
         script_parts.append("  try")
         script_parts.append("    -- Try to find as area by ID")
-        script_parts.append(f'    set target_area to first area whose id is "{list_id}"')
+        script_parts.append(f'    set target_area to first area whose id is {escape_applescript_string(list_id)}')
         script_parts.append("    set area of newTodo to target_area")
         script_parts.append("  on error")
         script_parts.append("    -- Neither project nor area found with ID, will create todo without assignment")
@@ -248,37 +203,22 @@ def add_todo(  # noqa: PLR0913
 
     # Get the ID of the created todo
     script_parts.append("return id of newTodo")
-    script_parts.append("on error errMsg")
-    script_parts.append('  log "Error creating todo: " & errMsg')
-    script_parts.append("  return false")
+    script_parts.append("on error errMsg number errNum")
+    script_parts.append("  error errMsg number errNum")
+
     script_parts.append("end try")
     script_parts.append("end tell")
 
     # Execute the script
     script = "\n".join(script_parts)
-    logger.debug(f"Executing simplified AppleScript: {script}")
+    logger.debug("AppleScript operation progress")
 
     result = run_applescript(script, timeout=8)
-    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
-        # Look up the todo to get location information
-        try:
-            import things
-            todo = things.get(result)
-            if todo:
-                if todo.get("project"):
-                    location = f"Project: {things.get(todo['project'])['title']}"
-                elif todo.get("area"):
-                    location = f"Area: {things.get(todo['area'])['title']}"
-                else:
-                    location = f"List: {todo.get('start', 'Unknown')}"
-                logger.info(f"Successfully created todo via AppleScript with ID: {result} in {location}")
-            else:
-                logger.info(f"Successfully created todo via AppleScript with ID: {result}")
-        except Exception:
-            logger.info(f"Successfully created todo via AppleScript with ID: {result}")
+    if result and result.lower() not in {"true", "false"} and re.fullmatch(r"[A-Za-z0-9_-]+", result):
+        logger.info("Successfully created todo via AppleScript")
         return result
     else:
-        logger.error(f"Failed to create todo: {result}")
+        logger.error("AppleScript operation failed")
         return False
 
 
@@ -296,7 +236,7 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
     if not when:
         return
 
-    logger.info(f"Handling scheduling: when='{when}', item_ref='{item_ref}'")
+    logger.info("AppleScript operation progress")
 
     # Check if it's a valid date format first
     is_date_format = is_valid_date_format(when)
@@ -319,17 +259,17 @@ def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref:
             target_date = datetime.strptime(when, "%Y-%m-%d").date()
             current_date = datetime.now().date()
             days_diff = (target_date - current_date).days
-            logger.debug(f"Date calculation: target={target_date}, current={current_date}, diff={days_diff} days")
+            logger.debug("AppleScript operation progress")
 
             if days_diff <= 0:
                 script_parts.append(f"    schedule {item_ref} for (current date)")
             else:
                 script_parts.append(f"    schedule {item_ref} for (current date) + {days_diff} * days")
-        except ValueError as e:
-            logger.error(f"Date parsing error: {e}")
-            logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
+        except ValueError:
+            logger.error("AppleScript operation failed")
+            logger.warning("AppleScript operation progress")
     else:
-        logger.warning(f"Unsupported when value: {when}")
+        logger.warning("AppleScript operation progress")
 
 
 def _handle_project_when_scheduling(script_parts: list[str], when: str | None, project_ref: str) -> None:
@@ -337,7 +277,7 @@ def _handle_project_when_scheduling(script_parts: list[str], when: str | None, p
     if not when:
         return
 
-    logger.info(f"Handling project scheduling: when='{when}', project_ref='{project_ref}'")
+    logger.info("AppleScript operation progress")
 
     # Check if it's a valid date format first
     is_date_format = is_valid_date_format(when)
@@ -360,17 +300,17 @@ def _handle_project_when_scheduling(script_parts: list[str], when: str | None, p
             target_date = datetime.strptime(when, "%Y-%m-%d").date()
             current_date = datetime.now().date()
             days_diff = (target_date - current_date).days
-            logger.debug(f"Project date calculation: target={target_date}, current={current_date}, diff={days_diff} days")
+            logger.debug("AppleScript operation progress")
 
             if days_diff <= 0:
                 script_parts.append(f"    schedule {project_ref} for (current date)")
             else:
                 script_parts.append(f"    schedule {project_ref} for (current date) + {days_diff} * days")
-        except ValueError as e:
-            logger.error(f"Project date parsing error: {e}")
-            logger.warning(f"Invalid date format '{when}', expected YYYY-MM-DD")
+        except ValueError:
+            logger.error("AppleScript operation failed")
+            logger.warning("AppleScript operation progress")
     else:
-        logger.warning(f"Unsupported when value for project: {when}")
+        logger.warning("AppleScript operation progress")
 
 
 def update_todo(
@@ -410,13 +350,12 @@ def update_todo(
     """
     # Ensure Things is ready
     if not ensure_things_ready():
-        logger.error("Things app is not ready for operations")
-        return "Error: Things app is not ready"
+        raise AppleScriptError("app_not_running", "Things is not running; open Things before requesting a mutation", outcome="failed")
 
     # Build the AppleScript command to find and update the todo
-    script_parts = ['tell application "Things3"']
+    script_parts = ['tell application id "com.culturedcode.ThingsMac"']
     script_parts.append("try")
-    script_parts.append(f'    set theTodo to to do id "{id}"')
+    script_parts.append(f'    set theTodo to to do id {escape_applescript_string(id)}')
 
     # Update properties one at a time (simplified)
     if title:
@@ -460,7 +399,7 @@ def update_todo(
         script_parts.append(f"                set targetArea to first area whose name is {escaped_list}")
         script_parts.append("                set area of theTodo to targetArea")
         script_parts.append("            on error")
-        script_parts.append(f'                return "Error: List/Project/Area not found - {list_name}"')
+        script_parts.append('                return "Error: Destination not found"')
         script_parts.append("            end try")
         script_parts.append("        end try")
         script_parts.append("    end try")
@@ -469,15 +408,15 @@ def update_todo(
     if list_id:
         script_parts.append("    try")
         # Try to find as project by ID
-        script_parts.append(f'        set targetProject to first project whose id is "{list_id}"')
+        script_parts.append(f'        set targetProject to first project whose id is {escape_applescript_string(list_id)}')
         script_parts.append("        set project of theTodo to targetProject")
         script_parts.append("    on error")
         script_parts.append("        try")
         # Try to find as area by ID
-        script_parts.append(f'            set targetArea to first area whose id is "{list_id}"')
+        script_parts.append(f'            set targetArea to first area whose id is {escape_applescript_string(list_id)}')
         script_parts.append("            set area of theTodo to targetArea")
         script_parts.append("        on error")
-        script_parts.append(f'            return "Error: Project/Area not found with ID - {list_id}"')
+        script_parts.append('                return "Error: Destination not found"')
         script_parts.append("        end try")
         script_parts.append("    end try")
 
@@ -497,16 +436,16 @@ def update_todo(
 
     # Return true on success
     script_parts.append("    return true")
-    script_parts.append("on error errMsg")
-    script_parts.append('    return "Error: " & errMsg')
+    script_parts.append("on error errMsg number errNum")
+    script_parts.append("    error errMsg number errNum")
     script_parts.append("end try")
     script_parts.append("end tell")
 
     # Execute the script
     script = "\n".join(script_parts)
-    logger.debug(f"Generated AppleScript:\n{script}")
+    logger.debug("AppleScript operation progress")
     result = run_applescript(script)
-    logger.debug(f"AppleScript result: {result!r}")
+    logger.debug("AppleScript operation progress")
     return result
 
 
@@ -546,17 +485,16 @@ def add_project(
 
     # Ensure Things is ready
     if not ensure_things_ready():
-        logger.error("Things app is not ready for operations")
-        return False
+        raise AppleScriptError("app_not_running", "Things is not running; open Things before requesting a mutation", outcome="failed")
 
     # Build the AppleScript command
-    script_parts = ['tell application "Things3"']
+    script_parts = ['tell application id "com.culturedcode.ThingsMac"']
 
     # Handle area assignment BEFORE creating the project
     if area_id or area_title:
         if area_id:
             # Try to find area by ID first
-            script_parts.append(f'set area_id to "{area_id}"')
+            script_parts.append(f'set area_id to {escape_applescript_string(area_id)}')
             script_parts.append("try")
             script_parts.append("  set target_area to first area whose id is area_id")
             script_parts.append("  set area_ref to target_area")
@@ -620,27 +558,14 @@ def add_project(
 
     # Execute the script
     script = "\n".join(script_parts)
-    logger.debug(f"Executing AppleScript: {script}")
+    logger.debug("AppleScript operation progress")
 
     result = run_applescript(script, timeout=8)
-    if result and result != "false" and "script error" not in result and not result.startswith("/var/folders/") and not result.startswith("Error:"):
-        # Look up the project to get location information for logging
-        try:
-            import things
-            project = things.get(result)
-            if project:
-                if project.get("area"):
-                    location = f"Area: {things.get(project['area'])['title']}"
-                else:
-                    location = "List: Inbox"
-                logger.info(f"Successfully created project via AppleScript with ID: {result} in {location}")
-            else:
-                logger.info(f"Successfully created project via AppleScript with ID: {result}")
-        except Exception:
-            logger.info(f"Successfully created project via AppleScript with ID: {result}")
+    if result and result.lower() not in {"true", "false"} and re.fullmatch(r"[A-Za-z0-9_-]+", result):
+        logger.info("Successfully created project via AppleScript")
         return result
     else:
-        logger.error(f"Failed to create project: {result}")
+        logger.error("AppleScript operation failed")
         return False
 
 
@@ -664,7 +589,7 @@ def move_project_to_list(script_parts: list[str], list_name: str, project_ref: s
     """
     valid_lists = ["Today", "Anytime", "Someday", "Trash"]
     if list_name not in valid_lists:
-        logger.warning(f"Invalid list name: {list_name}. Must be one of: {', '.join(valid_lists)}")
+        logger.warning("AppleScript operation progress")
         return False
 
     # Move using the 'move' command instead of setting container
@@ -711,21 +636,23 @@ def update_project(
     -------
         "true" if successful, error message if failed
     """
-    logger.info(f"Updating project {id} with title={title}, notes={notes}, when={when}, deadline={deadline}, tags={tags}, completed={completed}, canceled={canceled}, list_name={list_name}, area_title={area_title}")
+    logger.info("Updating project via AppleScript")
+    if not ensure_things_ready():
+        raise AppleScriptError("app_not_running", "Things is not running; open Things before requesting a mutation", outcome="failed")
 
-    script_parts = ['tell application "Things3"']
+    script_parts = ['tell application id "com.culturedcode.ThingsMac"']
     script_parts.append("try")
-    script_parts.append(f'    set theProject to project id "{id}"')
+    script_parts.append(f'    set theProject to project id {escape_applescript_string(id)}')
 
     # Handle list moves first
     if list_name:
         if list_name in ["Inbox", "Logbook"]:
             error_msg = "Projects cannot be moved to Inbox or Logbook. To move to Logbook, mark the project as completed instead."
-            logger.error(error_msg)
+            logger.error("Invalid project destination")
             return f"Error: {error_msg}"
         if not move_project_to_list(script_parts, list_name, "theProject"):
             error_msg = f"Invalid list name: {list_name}"
-            logger.error(error_msg)
+            logger.error("Invalid project destination")
             return f"Error: {error_msg}"
     elif when:
         _handle_project_when_scheduling(script_parts, when, "theProject")
@@ -734,10 +661,10 @@ def update_project(
     if area_id:
         # Use area_id if provided (takes precedence over area_title)
         script_parts.append("    try")
-        script_parts.append(f'        set targetArea to first area whose id is "{area_id}"')
+        script_parts.append(f'        set targetArea to first area whose id is {escape_applescript_string(area_id)}')
         script_parts.append("        set area of theProject to targetArea")
         script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found with ID - {area_id}"')
+        script_parts.append('                return "Error: Destination not found"')
         script_parts.append("    end try")
     elif area_title:
         escaped_area = escape_applescript_string(area_title)
@@ -745,7 +672,7 @@ def update_project(
         script_parts.append(f"        set targetArea to first area whose name is {escaped_area}")
         script_parts.append("        set area of theProject to targetArea")
         script_parts.append("    on error")
-        script_parts.append(f'        return "Error: Area not found - {area_title}"')
+        script_parts.append('                return "Error: Destination not found"')
         script_parts.append("    end try")
 
     # Handle other property updates
@@ -768,14 +695,14 @@ def update_project(
         script_parts.append("    set status of theProject to canceled")
 
     script_parts.append("    return true")
-    script_parts.append("on error errMsg")
-    script_parts.append('    return "Error: " & errMsg')
+    script_parts.append("on error errMsg number errNum")
+    script_parts.append("    error errMsg number errNum")
     script_parts.append("end try")
     script_parts.append("end tell")
 
     # Execute the script
     script = "\n".join(script_parts)
-    logger.debug(f"Generated AppleScript:\n{script}")
+    logger.debug("AppleScript operation progress")
     result = run_applescript(script)
-    logger.debug(f"AppleScript result: {result!r}")
+    logger.debug("AppleScript operation progress")
     return result
