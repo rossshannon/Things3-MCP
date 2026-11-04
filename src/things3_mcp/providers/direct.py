@@ -110,13 +110,6 @@ class DirectThingsProvider:
     def last(self, period: str, include_items: bool = True) -> list[dict[str, Any]]:
         return things.last(period, include_items=include_items)
 
-    # --- Write API ---------------------------------------------------------
-    # These delegate to the legacy applescript_bridge from inside the MCP
-    # server process. They preserve historical behaviour for users who haven't
-    # set up the signed bridge — useful as a fallback when the bridge is down,
-    # but suffers the original transient-runtime TCC issues that motivated the
-    # bridge work in the first place.
-
     def _coerce(self, result: Any, op_desc: str) -> dict[str, Any]:
         return coerce_write_result(result)
 

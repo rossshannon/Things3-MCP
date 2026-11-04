@@ -14,7 +14,7 @@ from clawbridge.protocol import error_envelope, ok_envelope
 from clawbridge.runtime import ensure_token as _ensure_token
 from clawbridge.server import BridgeRequestHandler as CoreRequestHandler
 from clawbridge.server import UnixHTTPServer as CoreHTTPServer
-from clawbridge.server import build_identity
+from clawbridge.server import build_identity, serve_until_stopped
 from clawbridge.worker import run_worker as _run_worker
 from clawbridge.worker import worker_main
 from things3_mcp import __version__
@@ -175,8 +175,7 @@ class BridgeRequestHandler(CoreRequestHandler):
 
 def serve(socket_path: Path = DEFAULT_SOCKET, *, token_file: Path = DEFAULT_TOKEN_FILE) -> None:
     """Run the Things bridge with explicit ownership of its local endpoint."""
-    with UnixHTTPServer(socket_path, token_file=token_file) as server:
-        server.serve_forever()
+    serve_until_stopped(UnixHTTPServer(socket_path, token_file=token_file))
 
 
 def snapshot_once() -> int:

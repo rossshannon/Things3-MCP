@@ -21,6 +21,7 @@ class ProviderError(RuntimeError):
         outcome: str | None = None,
         operation_id: str | None = None,
         correlation_id: str | None = None,
+        journal_warning: str | None = None,
     ) -> None:
         super().__init__(message)
         self.error_code = error_code
@@ -30,6 +31,7 @@ class ProviderError(RuntimeError):
         self.outcome = outcome
         self.operation_id = operation_id
         self.correlation_id = correlation_id
+        self.journal_warning = journal_warning
 
     def to_dict(self) -> dict[str, Any]:
         """Return an MCP-safe diagnostic payload."""
@@ -42,7 +44,7 @@ class ProviderError(RuntimeError):
             payload["authorization_hint"] = self.authorization_hint
         if self.cache_status:
             payload["cache_status"] = self.cache_status
-        for key in ("outcome", "operation_id", "correlation_id"):
+        for key in ("outcome", "operation_id", "correlation_id", "journal_warning"):
             value = getattr(self, key)
             if value is not None:
                 payload[key] = value
@@ -55,7 +57,7 @@ class ProviderError(RuntimeError):
             bits.append(f"Authorization hint: {self.authorization_hint}")
         if self.cache_status:
             bits.append(f"Cache status: {self.cache_status}")
-        for key in ("outcome", "operation_id", "correlation_id"):
+        for key in ("outcome", "operation_id", "correlation_id", "journal_warning"):
             value = getattr(self, key)
             if value is not None:
                 bits.append(f"{key}: {value}")
@@ -128,7 +130,6 @@ class WriteUnsupportedError(ProviderError):
         )
 
 
-# Backwards-compatible alias for callers that imported the older name.
 WriteUnsupported = WriteUnsupportedError
 
 

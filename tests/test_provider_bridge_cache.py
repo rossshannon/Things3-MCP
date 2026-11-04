@@ -140,8 +140,8 @@ def test_check_bridge_snapshot_fails_when_bridge_prerequisites_are_missing(monke
         def status(self):
             return {"available": False}
 
-    monkeypatch.setattr(check_bridge, "DEFAULT_SOCKET", tmp_path / "missing.sock")
-    monkeypatch.setattr(check_bridge, "DEFAULT_TOKEN_FILE", tmp_path / "missing.token")
+    monkeypatch.setenv("THINGS3_MCP_BRIDGE_SOCKET", str(tmp_path / "missing.sock"))
+    monkeypatch.setenv("THINGS3_MCP_BRIDGE_TOKEN_FILE", str(tmp_path / "missing.token"))
     monkeypatch.setattr(check_bridge, "APP_BUNDLE", tmp_path / "Things3 MCP Bridge.app")
     monkeypatch.setattr(check_bridge, "CacheStore", FakeCacheStore)
     monkeypatch.setattr(sys, "argv", ["check_bridge.py", "--snapshot"])

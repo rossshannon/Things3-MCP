@@ -2,7 +2,7 @@
 
 import json
 import random
-from functools import wraps
+from functools import cache, wraps
 
 from mcp.server.fastmcp import FastMCP
 
@@ -61,7 +61,7 @@ def _with_read_provenance(function):
 
 
 def _operation_details(result: dict) -> str:
-    parts = [f"{key}: {result[key]}" for key in ("operation_id", "correlation_id", "outcome") if result.get(key)]
+    parts = [f"{key}: {result[key]}" for key in ("operation_id", "correlation_id", "outcome", "journal_warning") if result.get(key)]
     return "\n" + "\n".join(parts) if parts else ""
 
 
@@ -114,8 +114,22 @@ def _resolve_project_location(project_id: str) -> str:
         return "Unknown"
 
 
+def _cached_get_item(provider):
+    """Share successful and unavailable parent lookups within one response."""
+
+    @cache
+    def get_item(uuid: str):
+        try:
+            return provider.get(uuid)
+        except Exception:  # noqa: BLE001 - optional parent labels must not block a read
+            return None
+
+    return get_item
+
+
 def _format_todo_items(items: list[dict], provider) -> str:
-    return "\n\n---\n\n".join(format_todo(item, get_item=provider.get) for item in items)
+    get_item = _cached_get_item(provider)
+    return "\n\n---\n\n".join(format_todo(item, get_item=get_item) for item in items)
 
 
 def _sample_items(items: list[dict], count: int) -> list[dict]:
@@ -276,9 +290,9 @@ def get_random_inbox(count: int = 5) -> str:
             log_operation_end("get-random-inbox", True, time.time() - start_time, count=0)
             return "No items found in Inbox"
 
-        formatted = [format_todo(item, get_item=provider.get) for item in sampled]
+        formatted = _format_todo_items(sampled, provider)
         log_operation_end("get-random-inbox", True, time.time() - start_time, count=len(sampled))
-        return "\n\n---\n\n".join(formatted)
+        return formatted
     except ProviderError as e:
         log_operation_end("get-random-inbox", False, time.time() - start_time, error=str(e))
         return _provider_error_response(e)
@@ -312,8 +326,7 @@ def get_random_anytime(count: int = 5) -> str:
     if not sampled:
         return "No items in Anytime list"
 
-    formatted = [format_todo(item, get_item=provider.get) for item in sampled]
-    return "\n\n---\n\n".join(formatted)
+    return _format_todo_items(sampled, provider)
 
 
 @mcp.tool(name="get_someday")
@@ -371,8 +384,6 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
         try:
             provider = get_provider()
-            # stop_date filter selects by completion date — fixes the historical
-            # bug where items were filtered by creation date instead.
             todos = provider.tasks(status="completed", stop_date=f">={start_date}", include_items=True)
         except ProviderError as e:
             log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
@@ -382,7 +393,6 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
             log_operation_end("get-logbook", True, time.time() - start_time, count=0)
             return "No completed items found"
 
-        # Sort by completion date, newest first; tolerate None values.
         todos.sort(key=lambda x: x.get("stop_date") or "", reverse=True)
 
         if len(todos) > limit:
@@ -526,7 +536,8 @@ def get_projects(include_items: bool = False) -> str:
     if not projects:
         return "No projects found"
 
-    formatted_projects = [format_project(project, include_items, get_item=provider.get, get_todos=provider.todos) for project in projects]
+    get_item = _cached_get_item(provider)
+    formatted_projects = [format_project(project, include_items, get_item=get_item, get_todos=provider.todos) for project in projects]
     return "\n\n---\n\n".join(formatted_projects)
 
 
@@ -660,7 +671,6 @@ def search_advanced(
     if type:
         kwargs["type"] = type
 
-    # Execute search with applicable filters via the provider chain.
     # Preserve the legacy "Error in advanced search:" contract — callers (and
     # tests) rely on this prefix to distinguish search failures from no-results
     # outcomes. ProviderError gets unwrapped to its underlying message so
@@ -727,7 +737,6 @@ def add_task(
 
         try:
             params = {"title": title, "notes": notes, "when": when, "deadline": deadline, "tags": tags, "list_id": list_id, "list_title": list_title}
-            # Drop None values so the provider doesn't pass them as kwargs to applescript_bridge.
             params = {k: v for k, v in params.items() if v is not None}
             result = get_provider().add_task(params)
         except ProviderError as bridge_error:
@@ -803,7 +812,6 @@ def add_new_project(
         if not project_id:
             return "Error: Failed to create project (no ID returned)"
 
-        # Resolve location via the provider chain — see _resolve_todo_location.
         location = _resolve_project_location(project_id)
 
         return f"✅ Successfully created project: {title} (ID: {project_id}) in {location}" + _operation_details(result)
@@ -990,7 +998,6 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
         elif id == "trash":
             return get_trash()
         else:
-            # For specific item IDs, route through the provider chain.
             try:
                 provider = get_provider()
                 item = provider.get(id)
@@ -1063,11 +1070,12 @@ def get_recent(period: str) -> str:
         return f"No items found in the last {period}"
 
     formatted_items = []
+    get_item = _cached_get_item(provider)
     for item in items:
         if item.get("type") == "to-do":
-            formatted_items.append(format_todo(item, get_item=provider.get))
+            formatted_items.append(format_todo(item, get_item=get_item))
         elif item.get("type") == "project":
-            formatted_items.append(format_project(item, include_items=False, get_item=provider.get, get_todos=provider.todos))
+            formatted_items.append(format_project(item, include_items=False, get_item=get_item, get_todos=provider.todos))
 
     return "\n\n---\n\n".join(formatted_items)
 

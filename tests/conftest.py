@@ -84,7 +84,7 @@ def pytest_sessionstart(session):
             executable, argv = args[:2]
             command = [os.fsdecode(executable), *(os.fsdecode(arg) for arg in argv)] if isinstance(argv, list | tuple) else [os.fsdecode(executable), os.fsdecode(argv)]
             blocked = {"osascript", "tccutil", "sqlite3", "things-cli", "thingscli", "Things3-MCP-bridge"}
-            if any(Path(arg).name in blocked or "things3_mcp_bridge.db_reader" in arg for arg in command):
+            if any(Path(arg).name in blocked or any(module in arg for module in ("things3_mcp_bridge.db_reader", "things3_mcp_bridge.server")) for arg in command):
                 denied("AppleScript, live worker, or permission command")
         elif event == "os.system":
             denied("shell command")

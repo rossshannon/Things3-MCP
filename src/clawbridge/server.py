@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import signal
 import socket
 import socketserver
 import sys
@@ -13,6 +14,7 @@ import uuid
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from types import FrameType
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -39,8 +41,8 @@ def build_identity(*, bundle_id: str, version: str) -> dict[str, str]:
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     """Bound request threads, worker concurrency, and durable mutation admission."""
 
-    daemon_threads = True
-    block_on_close = False
+    daemon_threads = False
+    block_on_close = True
 
     def __init__(
         self,
@@ -78,11 +80,9 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
         self.lease.bound()
 
     def server_close(self) -> None:
-        """Close this instance's endpoint and release its lock."""
-        try:
-            super().server_close()
-        finally:
-            self.lease.close()
+        """Drain request handlers before releasing endpoint and journal ownership."""
+        super().server_close()
+        self.lease.close()
 
     def process_request(self, request: Any, client_address: Any) -> None:
         """Reject excess clients without creating another request thread."""
@@ -154,6 +154,27 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
             if mutation_reserved:
                 self.mutations.release()
             self.workers.release()
+
+
+def serve_until_stopped(server: UnixHTTPServer) -> None:
+    """Serve on the main thread and drain requests on SIGTERM or SIGINT."""
+    stopping = False
+
+    def request_stop(_signum: int, _frame: FrameType | None) -> None:
+        nonlocal stopping
+        stopping = True
+
+    previous = {signum: signal.signal(signum, request_stop) for signum in (signal.SIGTERM, signal.SIGINT)}
+    previous_timeout = server.timeout
+    try:
+        server.timeout = 0.2
+        with server:
+            while not stopping:
+                server.handle_request()
+    finally:
+        server.timeout = previous_timeout
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 class BridgeRequestHandler(BaseHTTPRequestHandler):

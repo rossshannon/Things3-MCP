@@ -11,6 +11,17 @@ import things
 logger = logging.getLogger(__name__)
 
 
+def _relation_title(item: dict, relation: str, get_item) -> str | None:
+    title = item.get(f"{relation}_title")
+    if isinstance(title, str):
+        return title
+    try:
+        parent = get_item(item[relation])
+        return parent["title"] if parent else None
+    except Exception:  # nosec B110 - relationship labels are optional decoration
+        return None
+
+
 def format_todo(todo: dict, get_item=None) -> str:
     """Helper function to format a single todo into a readable string."""
     get_item = get_item or things.get
@@ -43,23 +54,11 @@ def format_todo(todo: dict, get_item=None) -> str:
     if todo.get("notes"):
         todo_text += f"\nNotes: {todo['notes']}"
 
-    # Add project info if present
-    if todo.get("project"):
-        try:
-            project = get_item(todo["project"])
-            if project:
-                todo_text += f"\nProject: {project['title']}"
-        except Exception:  # nosec B110 - Ignore missing project info, not all todos have projects
-            pass
-
-    # Add area info if present
-    if todo.get("area"):
-        try:
-            area = get_item(todo["area"])
-            if area:
-                todo_text += f"\nArea: {area['title']}"
-        except Exception:  # nosec B110 - Ignore missing area info, not all todos have areas
-            pass
+    for relation, label in (("project", "Project"), ("area", "Area")):
+        if todo.get(relation):
+            title = _relation_title(todo, relation, get_item)
+            if title is not None:
+                todo_text += f"\n{label}: {title}"
 
     # Add tags if present
     if todo.get("tags"):
@@ -82,12 +81,9 @@ def format_project(project: dict, include_items: bool = False, get_item=None, ge
     project_text = f"Title: {project['title']}\nUUID: {project['uuid']}"
 
     if project.get("area"):
-        try:
-            area = get_item(project["area"])
-            if area:
-                project_text += f"\nArea: {area['title']}"
-        except Exception:  # nosec B110 - Ignore missing area info, not all projects have areas
-            pass
+        title = _relation_title(project, "area", get_item)
+        if title is not None:
+            project_text += f"\nArea: {title}"
 
     if project.get("notes"):
         project_text += f"\nNotes: {project['notes']}"

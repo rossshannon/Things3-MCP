@@ -12,7 +12,7 @@ from typing import Any
 from .actions import Action
 from .protocol import ok_envelope
 from .runtime import atomic_write, private_directory, private_open
-from .server import BridgeRequestHandler, UnixHTTPServer, build_identity
+from .server import BridgeRequestHandler, UnixHTTPServer, build_identity, serve_until_stopped
 from .worker import run_worker, worker_main
 
 DEFAULT_RUNTIME = Path.home() / "Library" / "Application Support" / "ClawBridgeDemo"
@@ -79,8 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.health:
         print(json.dumps(ok_envelope({"adapter": "synthetic", "version": "0.1.0"})))
         return 0
-    with create_server(Path(args.socket).expanduser(), Path(args.token_file).expanduser(), capture_payloads=os.environ.get("CLAWBRIDGE_JOURNAL_PAYLOADS") == "1") as server:
-        server.serve_forever()
+    serve_until_stopped(create_server(Path(args.socket).expanduser(), Path(args.token_file).expanduser(), capture_payloads=os.environ.get("CLAWBRIDGE_JOURNAL_PAYLOADS") == "1"))
     return 0
 
 

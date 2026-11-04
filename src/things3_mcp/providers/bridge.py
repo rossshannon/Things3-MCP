@@ -107,10 +107,11 @@ class BridgeThingsProvider:
                 outcome=envelope.get("outcome"),
                 operation_id=envelope.get("operation_id"),
                 correlation_id=correlation_id or envelope.get("correlation_id"),
+                journal_warning=envelope.get("journal_warning"),
             )
         if mutation:
             data = dict(envelope["data"])
-            data.update({key: envelope[key] for key in ("operation_id", "outcome") if key in envelope})
+            data.update({key: envelope[key] for key in ("operation_id", "outcome", "journal_warning") if key in envelope})
             data["correlation_id"] = correlation_id
             return data
         source = envelope.get("source", "unknown")
@@ -125,9 +126,13 @@ class BridgeThingsProvider:
         if valid and "protocol_version" in envelope:
             valid = type(envelope["protocol_version"]) is int and envelope["protocol_version"] == 1
         if valid:
-            for key in ("source", "snapshot_source", "generated_at", "error_code", "message", "authorization_hint", "operation_id", "correlation_id"):
+            for key in ("source", "snapshot_source", "error_code", "message", "authorization_hint", "operation_id", "correlation_id"):
                 if key in envelope and not isinstance(envelope[key], str):
                     valid = False
+            if "generated_at" in envelope and envelope["generated_at"] is not None and not isinstance(envelope["generated_at"], str):
+                valid = False
+            if "journal_warning" in envelope and (not isinstance(envelope["journal_warning"], str) or len(envelope["journal_warning"]) > 1024):
+                valid = False
             for key in ("live_error", "cache_status"):
                 if key in envelope and not isinstance(envelope[key], dict):
                     valid = False
@@ -257,8 +262,6 @@ class BridgeThingsProvider:
     def last(self, period: str, include_items: bool = True) -> list[dict[str, Any]]:
         data = self._request("GET", f"/things/last/{period}?include_items={str(include_items).lower()}")
         return self._list_data(data)
-
-    # --- Write API --------------------------------------------------------
 
     def _write(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         data = self._request(method, path, json_body=body, mutation=True)

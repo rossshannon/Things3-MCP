@@ -152,19 +152,20 @@ def test_accidental_command():
     assert not calls.exists()
 
 
-def test_live_worker_launch_fails_before_execution(isolated_suite):
+@pytest.mark.parametrize("module, arguments", [("db_reader", []), ("server", ["--worker-action", "add_task"])])
+def test_live_worker_launch_fails_before_execution(isolated_suite, module, arguments):
     project, _, run = isolated_suite
     package = project / "things3_mcp_bridge"
     package.mkdir()
     (package / "__init__.py").write_text("")
     sentinel = project / "worker-launched"
-    (package / "db_reader.py").write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n")
-    result = run("""
+    (package / f"{module}.py").write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n")
+    result = run(f"""
 import subprocess
 import sys
 
 def test_accidental_worker():
-    subprocess.run([sys.executable, "-m", "things3_mcp_bridge.db_reader"], check=True)
+    subprocess.run([sys.executable, "-m", "things3_mcp_bridge.{module}", *{arguments!r}], check=True)
 """)
     assert result.returncode == 1
     assert "Hermetic test blocked" in result.stdout

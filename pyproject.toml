@@ -146,7 +146,7 @@ ignore-decorators = ["pytest.fixture"]  # Don't require docstrings for pytest fi
     "D103",  # Allow missing function docstrings in tests
     "D104",  # Allow missing package docstrings in tests
     "D107",  # Allow missing __init__ docstrings in tests
-    "D105",  # Allow missing magic method docstrings in tests
+    "D105",
     "D200",  # Allow one-line docstrings in tests
     "D205",  # Allow missing blank line between summary and description in tests
     "D400",  # Allow first line without period in tests

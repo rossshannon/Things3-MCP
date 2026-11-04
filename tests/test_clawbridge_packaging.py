@@ -1,7 +1,8 @@
 import json
 import plistlib
 import subprocess
-from dataclasses import replace
+import sys
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,152 @@ def test_home_escaping_and_uninstall_preserves_state(fixture):
     assert not plist.exists()
     assert (state / "token").read_text() == "preserve-token"
     assert not any("unload" in call for call in calls)
+
+
+def competing_lifecycle(config, source, home, operation):
+    code = """
+import json
+import sys
+from pathlib import Path
+from clawbridge import packaging
+
+def no_system_commands(*args, **kwargs):
+    raise AssertionError('Competing operation reached a system command')
+
+packaging.run_command = no_system_commands
+config = packaging.BuildConfig(**json.loads(sys.argv[1]))
+try:
+    if sys.argv[4] == 'install':
+        packaging.install(config, Path(sys.argv[2]), Path(sys.argv[3]))
+    else:
+        packaging.uninstall(config, Path(sys.argv[3]))
+except packaging.PackagingError as error:
+    if 'Another lifecycle operation' not in str(error):
+        raise
+    print('blocked')
+else:
+    raise AssertionError('Competing lifecycle operation was admitted')
+"""
+    return subprocess.run([sys.executable, "-c", code, json.dumps(asdict(config)), str(source), str(home), operation], capture_output=True, text=True, timeout=10, check=False)
+
+
+@pytest.mark.parametrize("operation", ["install", "uninstall"])
+@pytest.mark.parametrize("phase", ["snapshot", "readiness", "rollback"])
+def test_install_holds_shared_lock_through_snapshot_readiness_and_rollback(fixture, monkeypatch, operation, phase):
+    config, source, home, _, _ = fixture
+    target, plist, _ = old_install(config, home)
+    probes = []
+
+    def probe():
+        probes.append(competing_lifecycle(config, source, home, operation))
+
+    if phase == "snapshot":
+        read_bytes = Path.read_bytes
+
+        def before_snapshot(path):
+            if path == plist and not probes:
+                probe()
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", before_snapshot)
+    elif phase == "readiness":
+        wait_ready = packaging.wait_ready
+
+        def during_readiness(*args):
+            probe()
+            return wait_ready(*args)
+
+        monkeypatch.setattr(packaging, "wait_ready", during_readiness)
+    else:
+        atomic_write = packaging.atomic_write
+
+        def during_rollback(path, content):
+            if path == plist and content == b"old-plist":
+                probe()
+            return atomic_write(path, content)
+
+        def fail_readiness(*args):
+            raise packaging.PackagingError("synthetic readiness failure")
+
+        monkeypatch.setattr(packaging, "atomic_write", during_rollback)
+        monkeypatch.setattr(packaging, "wait_ready", fail_readiness)
+    if phase == "rollback":
+        with pytest.raises(packaging.PackagingError, match="previous installation restored"):
+            packaging.install(config, source, home, timeout=0)
+        assert (target / "old-marker").read_text() == "old"
+        assert plist.read_bytes() == b"old-plist"
+    else:
+        packaging.install(config, source, home, timeout=0)
+    assert len(probes) == 1
+    assert probes[0].returncode == 0, probes[0].stderr
+    assert probes[0].stdout.strip() == "blocked"
+    packaging.uninstall(config, home)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("operation", ["install", "uninstall"])
+def test_uninstall_holds_same_interprocess_lock(fixture, monkeypatch, operation):
+    config, source, home, _, _ = fixture
+    target, plist, _ = old_install(config, home)
+    service_loaded = packaging.service_loaded
+    probes = []
+
+    def before_service_observation(domain):
+        probes.append(competing_lifecycle(config, source, home, operation))
+        return service_loaded(domain)
+
+    monkeypatch.setattr(packaging, "service_loaded", before_service_observation)
+    packaging.uninstall(config, home)
+    assert len(probes) == 1
+    assert probes[0].returncode == 0, probes[0].stderr
+    assert probes[0].stdout.strip() == "blocked"
+    assert not target.exists()
+    assert not plist.exists()
+
+
+@pytest.mark.parametrize("unsafe", ["mode", "symlink", "hardlink", "directory", "parent-mode"])
+def test_lifecycle_rejects_unsafe_lock_without_system_commands(fixture, unsafe):
+    config, source, home, calls, _ = fixture
+    target, plist, _ = old_install(config, home)
+    directory = home / "Library/Application Support/ClawBridgeLifecycle"
+    directory.mkdir(mode=0o700)
+    lock = directory / f"{config.bundle_id}.lock"
+    if unsafe == "symlink":
+        destination = home / "unrelated"
+        destination.write_text("preserve")
+        lock.symlink_to(destination)
+    elif unsafe == "directory":
+        lock.mkdir()
+    else:
+        lock.touch(mode=0o600)
+        if unsafe == "mode":
+            lock.chmod(0o644)
+        elif unsafe == "hardlink":
+            (directory / "alias").hardlink_to(lock)
+        else:
+            directory.chmod(0o755)
+    with pytest.raises(packaging.PackagingError, match="lifecycle lock"):
+        packaging.install(config, source, home, timeout=0)
+    with pytest.raises(packaging.PackagingError, match="lifecycle lock"):
+        packaging.uninstall(config, home)
+    assert calls == []
+    assert (target / "old-marker").read_text() == "old"
+    assert plist.read_bytes() == b"old-plist"
+
+
+def test_lifecycle_lock_remains_private_and_reusable(fixture):
+    config, source, home, _, _ = fixture
+    old_install(config, home)
+    packaging.install(config, source, home, timeout=0)
+    directory = home / "Library/Application Support/ClawBridgeLifecycle"
+    lock = directory / f"{config.bundle_id}.lock"
+    assert directory.stat().st_mode & 0o777 == 0o700
+    assert lock.stat().st_mode & 0o777 == 0o600
+    inode = lock.stat().st_ino
+    packaging.uninstall(config, home)
+    assert lock.stat().st_ino == inode
+    packaging.install(config, source, home, timeout=0)
+    assert lock.stat().st_ino == inode
 
 
 def test_existing_shared_parent_modes_are_preserved(fixture):

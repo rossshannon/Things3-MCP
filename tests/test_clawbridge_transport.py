@@ -3,9 +3,14 @@
 import http.client
 import json
 import os
+import signal
 import socket
+import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -198,3 +203,147 @@ def test_worker_slots_are_bounded(demo):
     finally:
         for _ in range(4):
             demo.workers.release()
+
+
+def test_close_retains_ownership_until_mutation_and_completion_are_persisted(tmp_path_factory, monkeypatch):
+    directory = tmp_path_factory.mktemp("close")
+    server = create_server(directory / "bridge.sock", directory / "bridge.token")
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    entered, release_worker = threading.Event(), threading.Event()
+    persisting, release_completion, closed = threading.Event(), threading.Event(), threading.Event()
+    result = []
+
+    def worker(_action, _params):
+        entered.set()
+        assert release_worker.wait(5)
+        return ok_envelope({"id": "finished"}, outcome="succeeded")
+
+    persist = server.journal._persist
+
+    def hold_completion(record):
+        if record["outcome"] != "dispatched":
+            persisting.set()
+            assert release_completion.wait(5)
+        persist(record)
+
+    def close():
+        server.server_close()
+        closed.set()
+
+    server.worker = worker
+    monkeypatch.setattr(server.journal, "_persist", hold_completion)
+    serving.start()
+    caller = threading.Thread(target=lambda: result.append(request(server, "POST", "/demo/increment", {"amount": 1})))
+    closer = threading.Thread(target=close)
+    caller.start()
+    try:
+        assert entered.wait(2)
+        server.shutdown()
+        serving.join(timeout=2)
+        assert not serving.is_alive()
+        closer.start()
+        assert not closed.wait(0.1)
+        with pytest.raises(BlockingIOError):
+            create_server(directory / "bridge.sock", directory / "bridge.token")
+        release_worker.set()
+        assert persisting.wait(2)
+        assert not closed.wait(0.1)
+        with pytest.raises(BlockingIOError):
+            create_server(directory / "bridge.sock", directory / "bridge.token")
+    finally:
+        release_worker.set()
+        release_completion.set()
+        caller.join(timeout=3)
+        if closer.ident is not None:
+            closer.join(timeout=3)
+        server.shutdown()
+        serving.join(timeout=2)
+        server.server_close()
+    assert closed.is_set() and not closer.is_alive() and not caller.is_alive()
+    response = result[0][1]
+    assert response["outcome"] == "succeeded"
+    with create_server(directory / "bridge.sock", directory / "bridge.token") as replacement:
+        assert replacement.journal.lookup(response["operation_id"])["outcome"] == "succeeded"
+
+
+def test_sigterm_drains_synthetic_worker_before_releasing_endpoint(tmp_path_factory, monkeypatch):
+    directory = tmp_path_factory.mktemp("term")
+    module = directory / "synthetic_shutdown.py"
+    module.write_text("""
+import os
+import sys
+import time
+from pathlib import Path
+from clawbridge import demo
+from clawbridge.worker import run_worker, worker_main
+
+directory = Path(os.environ["SYNTHETIC_RUNTIME"])
+if "--worker-action" in sys.argv:
+    def execute(name, params):
+        (directory / "started").write_text("ready")
+        while not (directory / "release").exists():
+            time.sleep(0.01)
+        return {"id": "completed-synthetic-write"}
+    raise SystemExit(worker_main(demo.ACTIONS, sys.argv[-1], execute))
+
+original = demo.create_server
+def create(*args, **kwargs):
+    server = original(*args, **kwargs)
+    server.worker = lambda name, params: run_worker("synthetic_shutdown", demo.ACTIONS[name], params, timeout=5)
+    return server
+demo.create_server = create
+raise SystemExit(demo.main())
+""")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(directory), str(Path(__file__).parents[1] / "src"))))
+    monkeypatch.setenv("SYNTHETIC_RUNTIME", str(directory))
+    endpoint, token = directory / "bridge.sock", directory / "bridge.token"
+    process = subprocess.Popen([sys.executable, "-m", "synthetic_shutdown", "--socket", str(endpoint), "--token-file", str(token)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result, failures = [], []
+    caller = None
+    try:
+        deadline = time.monotonic() + 5
+        while not endpoint.exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        bridge = SimpleNamespace(server_address=str(endpoint), token=token.read_text())
+        assert request(bridge, "GET", "/health")[0] == 200
+
+        def mutate():
+            try:
+                result.append(request(bridge, "POST", "/demo/increment", {"amount": 1}))
+            except Exception as error:
+                failures.append(error)
+
+        caller = threading.Thread(target=mutate)
+        caller.start()
+        while not (directory / "started").exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        process.send_signal(signal.SIGTERM)
+        with pytest.raises(subprocess.TimeoutExpired):
+            process.wait(timeout=0.2)
+        with pytest.raises(BlockingIOError):
+            create_server(endpoint, token)
+        (directory / "release").touch()
+        caller.join(timeout=3)
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0 and stdout == stderr == b""
+        assert not failures and not caller.is_alive()
+        response = result[0][1]
+        assert response["outcome"] == "succeeded"
+        assert not endpoint.exists()
+        with create_server(endpoint, token) as replacement:
+            assert replacement.journal.lookup(response["operation_id"])["outcome"] == "succeeded"
+    finally:
+        (directory / "release").touch()
+        if caller is not None:
+            caller.join(timeout=3)
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=5)

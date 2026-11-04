@@ -38,7 +38,6 @@ DB_PATTERNS = (
 
 JXA_TIMEOUT_SECONDS = float(os.environ.get("THINGS3_MCP_JXA_TIMEOUT", "8"))
 
-# Compact one-line-JXA for simple list reads (fast list enumeration)
 _JXA_SIMPLE = r"""
 ObjC.import('Foundation');
 function run() {

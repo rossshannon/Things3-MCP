@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +120,12 @@ class CacheThingsProvider:
         return value
 
     def _filter_list(self, key: str, **kwargs: Any) -> list[dict[str, Any]]:
+        if key == "todos" and kwargs.get("status", "incomplete") != "incomplete":
+            raise ProviderError(
+                "cache_miss",
+                "Cache snapshots cover incomplete tasks only; completed, canceled and all-status queries require live access.",
+                cache_status={"error_code": "cache_miss", "task_status_coverage": "incomplete"},
+            )
         include_items = kwargs.pop("include_items", None)
         count_only = kwargs.pop("count_only", False)
         result = list(self._list(key))
@@ -128,7 +134,14 @@ class CacheThingsProvider:
                 continue
             if field == "tag":
                 result = [item for item in result if _item_has_tag(item, expected)]
-            elif field in {"uuid", "area", "project", "heading", "status", "type", "start", "deadline", "start_date", "stop_date", "trashed"}:
+            elif field in {"area", "project", "heading", "deadline", "start_date", "stop_date"} and isinstance(expected, bool):
+                result = [item for item in result if (item.get(field) is not None) == expected]
+            elif field in {"deadline", "start_date", "stop_date"}:
+                # stop_date snapshots use local time, but things-py filters its UTC date.
+                if field == "stop_date" or not _is_iso_date(expected):
+                    raise ProviderError("cache_unsupported", f"Cache filtering by this {field!r} date expression requires live access", cache_status=self.store.status())
+                result = [item for item in result if item.get(field) == expected]
+            elif field in {"uuid", "area", "project", "heading", "status", "type", "start", "trashed"}:
                 result = [item for item in result if item.get(field) == expected]
             else:
                 raise ProviderError("cache_unsupported", f"Cache filtering by {field!r} is not supported", cache_status=self.store.status())
@@ -185,9 +198,6 @@ class CacheThingsProvider:
         return self._filter_list("tags", include_items=include_items, **kwargs)
 
     def trash(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        # The cache snapshot doesn't currently include trashed items. Raise so
-        # AutoThingsProvider falls through to the next provider rather than
-        # returning a misleading empty success.
         from .base import ProviderError
 
         raise ProviderError(
@@ -196,9 +206,6 @@ class CacheThingsProvider:
         )
 
     def last(self, period: str, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        # ``last(period)`` requires a creation-date scan that the snapshot
-        # doesn't materialise. Raise so AutoThingsProvider treats it as a cache
-        # miss and falls through to the next provider.
         del period
         from .base import ProviderError
 
@@ -207,7 +214,6 @@ class CacheThingsProvider:
             "Cache snapshot cannot satisfy last(period) — no creation-date index materialised.",
         )
 
-    # --- Write API ---------------------------------------------------------
     # The cache is read-only by design. Surface a clear error so AutoThings
     # write callers don't silently lose mutations into a stale snapshot.
 
@@ -238,6 +244,16 @@ def _strip_nested_items(item: dict[str, Any]) -> dict[str, Any]:
     for nested_key in ("items", "projects", "checklist"):
         stripped.pop(nested_key, None)
     return stripped
+
+
+def _is_iso_date(value: Any) -> bool:
+    """Accept only exact date strings whose cache comparison is unambiguous."""
+    if not isinstance(value, str):
+        return False
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
 
 
 def _item_has_tag(item: dict[str, Any], expected: Any) -> bool:

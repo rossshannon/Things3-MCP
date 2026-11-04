@@ -9,7 +9,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from things3_mcp.providers.bridge import DEFAULT_SOCKET, DEFAULT_TOKEN_FILE, BridgeThingsProvider
+from things3_mcp.providers.base import read_context
+from things3_mcp.providers.bridge import DEFAULT_TIMEOUT_SECONDS, BridgeThingsProvider
 from things3_mcp.providers.cache import CacheStore
 
 APP_BUNDLE = Path.home() / "Applications" / "Things3 MCP Bridge.app"
@@ -36,8 +37,8 @@ def main() -> int:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=20.0,
-        help="Client timeout in seconds for bridge requests. Default: 20.",
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"Client timeout in seconds for bridge requests. Default: {DEFAULT_TIMEOUT_SECONDS:g}.",
     )
     args = parser.parse_args()
 
@@ -48,39 +49,45 @@ def main() -> int:
         "bundle_exists": APP_BUNDLE.exists(),
         "code_signature": code_signature,
         "code_signature_is_adhoc": "Signature=adhoc" in code_signature,
-        "socket_path": str(DEFAULT_SOCKET),
         "socket_reachable": False,
-        "token_file": str(DEFAULT_TOKEN_FILE),
-        "token_file_exists": DEFAULT_TOKEN_FILE.exists(),
         "cache": CacheStore().status(),
         "authorization_status": None,
-        "next_human_action": "If live reads fail, grant Full Disk Access to Things3 MCP Bridge.app and run uv run python scripts/check_bridge.py --snapshot.",
+        "next_human_action": "Use --snapshot to verify live access. If it fails, inspect the reported error and grant only the permission needed by that backend; see docs/bridge-build.md.",
     }
 
-    missing_snapshot_prereqs = []
-    if not DEFAULT_SOCKET.exists():
-        missing_snapshot_prereqs.append(f"bridge socket missing at {DEFAULT_SOCKET}")
-    if not DEFAULT_TOKEN_FILE.exists():
-        missing_snapshot_prereqs.append(f"bridge token missing at {DEFAULT_TOKEN_FILE}")
-
-    if DEFAULT_SOCKET.exists() and DEFAULT_TOKEN_FILE.exists():
+    try:
         provider = BridgeThingsProvider(timeout=args.timeout)
+    except Exception as exc:  # noqa: BLE001 - return configuration failures as diagnostics
+        diagnostics["configuration_error"] = str(exc)
+        print(json.dumps(diagnostics, indent=2, sort_keys=True))
+        return 1
+
+    diagnostics.update({"socket_path": str(provider.socket_path), "token_file": str(provider.token_file), "token_file_exists": provider.token_file.exists()})
+
+    missing_snapshot_prereqs = []
+    if not provider.socket_path.exists():
+        missing_snapshot_prereqs.append(f"bridge socket missing at {provider.socket_path}")
+    if not provider.token_file.exists():
+        missing_snapshot_prereqs.append(f"bridge token missing at {provider.token_file}")
+
+    if not missing_snapshot_prereqs:
         try:
             diagnostics["health"] = provider.health()
             diagnostics["bridge_running"] = True
             diagnostics["socket_reachable"] = True
-            diagnostics["authorization_status"] = "bridge reachable; run snapshot-once to verify live Things authorization"
+            diagnostics["authorization_status"] = "bridge reachable; use --snapshot to verify live Things authorisation"
         except Exception as exc:  # noqa: BLE001 - diagnostic command
             diagnostics["health_error"] = str(exc)
 
         if args.snapshot:
             try:
-                diagnostics["snapshot"] = provider._request("POST", "/snapshot", json_body={})
+                with read_context(require_live=True):
+                    diagnostics["snapshot"] = provider._request("POST", "/snapshot", json_body={})
                 diagnostics["authorization_status"] = "live snapshot succeeded through the installed bridge"
                 diagnostics["cache"] = CacheStore().status()
             except Exception as exc:  # noqa: BLE001 - diagnostic command
                 diagnostics["snapshot_error"] = str(exc)
-                diagnostics["authorization_status"] = "live snapshot failed; check snapshot_error and macOS Full Disk Access"
+                diagnostics["authorization_status"] = "live snapshot failed; inspect snapshot_error for the affected backend and required permission"
     elif args.snapshot:
         diagnostics["snapshot_error"] = "Cannot run live snapshot: " + "; ".join(missing_snapshot_prereqs)
         diagnostics["authorization_status"] = "live snapshot was not attempted because the installed bridge is not reachable"

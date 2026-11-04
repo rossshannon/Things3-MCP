@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import http.client
 import json
@@ -19,9 +20,13 @@ import tempfile
 import time
 import tomllib
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .runtime import RuntimeSafetyError, private_directory, private_open
 
 UNIX_PATH_LIMIT = 104
 
@@ -474,7 +479,32 @@ def atomic_write(path: Path, content: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+@contextmanager
+def lifecycle_lock(config: BuildConfig, home: Path) -> Iterator[None]:
+    """Reserve this home's app lifecycle without replacing the lock inode."""
+    directory = home / "Library/Application Support/ClawBridgeLifecycle"
+    try:
+        private_directory(directory)
+        descriptor = private_open(directory / f"{config.bundle_id}.lock", os.O_RDWR | os.O_CREAT)
+    except (OSError, RuntimeSafetyError) as error:
+        raise PackagingError(f"Cannot use private lifecycle lock: {error}") from error
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise PackagingError(f"Another lifecycle operation is already running for {config.bundle_id}") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def install(config: BuildConfig, source: Path, home: Path, timeout: float = 15) -> Path:
+    """Serialise installation through verification, readiness and any rollback."""
+    with lifecycle_lock(config, home):
+        return _install(config, source, home, timeout)
+
+
+def _install(config: BuildConfig, source: Path, home: Path, timeout: float) -> Path:
     """Verify and stage first, then replace with recovery of the previous app/job."""
     manifest = verify_bundle(source, config)
     target = home / "Applications" / f"{config.name}.app"
@@ -537,16 +567,17 @@ def install(config: BuildConfig, source: Path, home: Path, timeout: float = 15) 
 
 def uninstall(config: BuildConfig, home: Path) -> None:
     """Remove only this agent and app, preserving tokens, journals and caches."""
-    target = home / "Applications" / f"{config.name}.app"
-    plist = home / "Library/LaunchAgents" / f"{config.bundle_id}.plist"
-    reject_symlinks(target)
-    reject_symlinks(plist)
-    domain = f"gui/{os.getuid()}/{config.bundle_id}"
-    if service_loaded(domain):
-        run_command(["launchctl", "bootout", domain])
-    plist.unlink(missing_ok=True)
-    if target.exists():
-        shutil.rmtree(target)
+    with lifecycle_lock(config, home):
+        target = home / "Applications" / f"{config.name}.app"
+        plist = home / "Library/LaunchAgents" / f"{config.bundle_id}.plist"
+        reject_symlinks(target)
+        reject_symlinks(plist)
+        domain = f"gui/{os.getuid()}/{config.bundle_id}"
+        if service_loaded(domain):
+            run_command(["launchctl", "bootout", domain])
+        plist.unlink(missing_ok=True)
+        if target.exists():
+            shutil.rmtree(target)
 
 
 def main() -> int:
