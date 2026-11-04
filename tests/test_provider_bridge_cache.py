@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -119,10 +120,9 @@ def test_bridge_client_parses_error_envelope(monkeypatch, tmp_path):
 
 
 def test_worker_timeout_returns_timeout_envelope(monkeypatch):
-    def fake_run(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(cmd=["worker"], timeout=0.01)
+    from things3_mcp_bridge import server
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(server, "_run_worker", lambda *_args, **_kwargs: {"ok": False, "error_code": "worker_timeout", "message": "deadline", "outcome": "failed"})
     envelope = run_worker("inbox", timeout=0.01)
     assert envelope["ok"] is False
     assert envelope["error_code"] == "things_db_timeout"
@@ -184,7 +184,8 @@ def test_resolve_db_path_globs_group_container_when_env_unset(monkeypatch, tmp_p
     monkeypatch.delenv("THINGSDB", raising=False)
     monkeypatch.delenv("THINGS3_MCP_DATA_FOLDER", raising=False)
 
-    fake_db = tmp_path / "ThingsData-FAKE" / "Things Database.thingsdatabase" / "main.sqlite"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    fake_db = tmp_path / "Library/Group Containers" / db_reader.DEFAULT_THINGS_GROUP_CONTAINER / "ThingsData-FAKE" / "Things Database.thingsdatabase" / "main.sqlite"
     fake_db.parent.mkdir(parents=True)
     fake_db.touch()
 
@@ -202,7 +203,7 @@ def test_resolve_db_path_raises_when_glob_finds_nothing(monkeypatch):
     monkeypatch.setattr(db_reader, "_data_folder_from_thingscli_defaults", lambda: None)
     monkeypatch.setattr(db_reader.glob, "glob", lambda _pattern: [])
 
-    with pytest.raises(FileNotFoundError, match="Full Disk Access"):
+    with pytest.raises(FileNotFoundError, match="database capability"):
         db_reader.resolve_things_db_path()
 
 
@@ -210,7 +211,8 @@ def test_diagnose_access_enumerates_group_container(monkeypatch, tmp_path):
     monkeypatch.delenv("THINGSDB", raising=False)
     monkeypatch.delenv("THINGS3_MCP_DATA_FOLDER", raising=False)
 
-    fake_db = tmp_path / "ThingsData-FAKE" / "Things Database.thingsdatabase" / "main.sqlite"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    fake_db = tmp_path / "Library/Group Containers" / db_reader.DEFAULT_THINGS_GROUP_CONTAINER / "ThingsData-FAKE" / "Things Database.thingsdatabase" / "main.sqlite"
     fake_db.parent.mkdir(parents=True)
     fake_db.touch()
 
@@ -228,7 +230,7 @@ def test_diagnose_access_enumerates_group_container(monkeypatch, tmp_path):
     assert result["things_process_running"] is True
 
 
-def test_things_process_running_uses_system_events(monkeypatch):
+def test_things_process_running_uses_event_free_bundle_property(monkeypatch):
     captured: dict[str, Any] = {}
 
     class FakeCompleted:
@@ -247,7 +249,7 @@ def test_things_process_running_uses_system_events(monkeypatch):
     assert captured["cmd"] == [
         "/usr/bin/osascript",
         "-e",
-        'tell application "System Events" to exists process "Things3"',
+        'application id "com.culturedcode.ThingsMac" is running',
     ]
     assert captured["kwargs"]["timeout"] == 5
 
@@ -263,13 +265,13 @@ def test_things_process_running_returns_false_when_process_absent(monkeypatch):
     assert db_reader.things_process_running() is False
 
 
-def test_things_process_running_returns_false_on_error(monkeypatch):
+def test_things_process_running_returns_unknown_on_error(monkeypatch):
     def fake_run(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd=["osascript"], timeout=5)
 
     monkeypatch.setattr(db_reader.subprocess, "run", fake_run)
 
-    assert db_reader.things_process_running() is False
+    assert db_reader.things_process_running() is None
 
 
 def test_snapshot_falls_back_to_apple_events_when_sqlite_path_unresolved(monkeypatch):
@@ -326,11 +328,11 @@ def test_bridge_provider_add_task_posts_correct_payload(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def request(self, method, path, json=None):
+        def request(self, method, path, json=None, headers=None):
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
-            return FakeResponse({"ok": True, "data": {"id": "new-uuid"}})
+            return FakeResponse({"protocol_version": 1, "ok": True, "data": {"id": "new-uuid"}, "outcome": "succeeded", "operation_id": "operation-1", "correlation_id": headers["X-Correlation-ID"]})
 
     monkeypatch.setattr(provider, "_client", lambda: CapturingClient())
 
@@ -338,7 +340,10 @@ def test_bridge_provider_add_task_posts_correct_payload(monkeypatch, tmp_path):
     assert captured["method"] == "POST"
     assert captured["path"] == "/things/todo"
     assert captured["json"] == {"title": "Hello", "tags": ["a"]}
-    assert result == {"id": "new-uuid"}
+    assert result["id"] == "new-uuid"
+    assert result["outcome"] == "succeeded"
+    assert result["operation_id"] == "operation-1"
+    assert result["correlation_id"]
 
 
 def test_bridge_provider_update_task_uses_patch(monkeypatch, tmp_path):
@@ -355,11 +360,11 @@ def test_bridge_provider_update_task_uses_patch(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def request(self, method, path, json=None):
+        def request(self, method, path, json=None, headers=None):
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
-            return FakeResponse({"ok": True, "data": {}})
+            return FakeResponse({"protocol_version": 1, "ok": True, "data": {}, "outcome": "succeeded", "operation_id": "operation-2", "correlation_id": headers["X-Correlation-ID"]})
 
     monkeypatch.setattr(provider, "_client", lambda: CapturingClient())
 
@@ -405,10 +410,8 @@ def test_auto_provider_writes_use_bridge_when_healthy():
     assert direct.called is False, "Direct provider should not be called when bridge succeeds"
 
 
-def test_auto_provider_writes_fall_back_to_direct_when_bridge_fails():
-    """Bridge failures must fall through to the direct AppleScript path so
-    installs without the bridge built/authorised keep working.
-    """
+def test_auto_provider_never_retries_writes_through_direct():
+    """A failed bridge response must never dispatch the mutation again."""
 
     class FailingBridge(BridgeThingsProvider):
         def __init__(self):
@@ -429,9 +432,9 @@ def test_auto_provider_writes_fall_back_to_direct_when_bridge_fails():
     direct = FakeDirect()
     auto = AutoThingsProvider(providers=[bridge, CacheThingsProvider()], write_providers=[bridge, direct])
 
-    result = auto.add_task({"title": "test"})
-    assert result == {"ok": True, "id": "from-direct"}
-    assert direct.add_task_called_with == {"title": "test"}
+    with pytest.raises(ProviderError, match="socket gone"):
+        auto.add_task({"title": "test"})
+    assert direct.add_task_called_with is None
 
 
 def test_auto_provider_writes_surface_bridge_error_when_no_fallback():
@@ -458,15 +461,15 @@ def test_auto_provider_writes_surface_bridge_error_when_no_fallback():
     assert exc.value.error_code == "bridge_unavailable"
 
 
-def test_default_auto_write_chain_includes_direct():
-    """The factory chain must always include direct so the bridge stays optional."""
+def test_default_auto_write_chain_uses_bridge_only():
+    """Automatic writes have one authority; direct mode remains explicit."""
     from things3_mcp.providers import _auto_write_chain
     from things3_mcp.providers.direct import DirectThingsProvider
 
     chain = _auto_write_chain()
     types = [type(p) for p in chain]
     assert BridgeThingsProvider in types, "Bridge should always be in the write chain"
-    assert DirectThingsProvider in types, "Direct should always be in the write chain (fallback when bridge is absent)"
+    assert DirectThingsProvider not in types, "Direct writes require explicit direct mode"
 
 
 # --- Bridge HTTP authorization (security) ---------------------------------
@@ -478,8 +481,6 @@ def test_bridge_authorization_uses_constant_time_comparison(monkeypatch):
 
     from things3_mcp_bridge import server as bridge_server
 
-    monkeypatch.setattr(bridge_server, "ensure_token", lambda: "real-token-value")
-
     # Hook compare_digest so we can prove it was called.
     calls: list[tuple[str, str]] = []
     real_compare = hmac_module.compare_digest
@@ -488,10 +489,13 @@ def test_bridge_authorization_uses_constant_time_comparison(monkeypatch):
         calls.append((a, b))
         return real_compare(a, b)
 
-    monkeypatch.setattr(bridge_server.hmac, "compare_digest", spy)
+    import clawbridge.server as core_server
+
+    monkeypatch.setattr(core_server.hmac, "compare_digest", spy)
 
     handler = bridge_server.BridgeRequestHandler.__new__(bridge_server.BridgeRequestHandler)
     handler.path = "/things/inbox"
+    handler.server = SimpleNamespace(**{"token": "real-token-value"})
     handler.headers = {"Authorization": "Bearer real-token-value"}
 
     assert handler._authorized() is True
@@ -507,10 +511,9 @@ def test_bridge_authorization_rejects_empty_token_file(monkeypatch):
     """
     from things3_mcp_bridge import server as bridge_server
 
-    monkeypatch.setattr(bridge_server, "ensure_token", lambda: "")
-
     handler = bridge_server.BridgeRequestHandler.__new__(bridge_server.BridgeRequestHandler)
     handler.path = "/things/inbox"
+    handler.server = SimpleNamespace(token="")
     handler.headers = {"Authorization": "Bearer "}
     assert handler._authorized() is False, "Empty token must never authorize"
 
@@ -521,10 +524,9 @@ def test_bridge_authorization_rejects_empty_token_file(monkeypatch):
 def test_bridge_authorization_rejects_missing_header(monkeypatch):
     from things3_mcp_bridge import server as bridge_server
 
-    monkeypatch.setattr(bridge_server, "ensure_token", lambda: "real-token")
-
     handler = bridge_server.BridgeRequestHandler.__new__(bridge_server.BridgeRequestHandler)
     handler.path = "/things/inbox"
+    handler.server = SimpleNamespace(**{"token": "real-token"})
     handler.headers = {}  # no Authorization header at all
     assert handler._authorized() is False
 
@@ -622,8 +624,11 @@ def test_worker_coerces_applescript_error_into_runtime_error(monkeypatch):
 
     monkeypatch.setattr(ab, "add_todo", lambda **_kwargs: "Error: list not found")
 
-    with pytest.raises(RuntimeError, match="list not found"):
+    with pytest.raises(ProviderError) as error:
         db_reader.run_action("add_task", {"title": "x"})
+    assert error.value.error_code == "applescript_failed"
+    assert error.value.outcome == "outcome_unknown"
+    assert "list not found" not in str(error.value)
 
 
 # --- Provider routing for the remaining 8 read tools ----------------------
@@ -866,7 +871,7 @@ def test_bridge_provider_trash_uses_get_endpoint(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def request(self, method, path, json=None):
+        def request(self, method, path, json=None, headers=None):
             captured["method"] = method
             captured["path"] = path
             return FakeResponse({"ok": True, "data": [{"title": "trashed", "uuid": "1", "type": "to-do"}]})
@@ -893,7 +898,7 @@ def test_bridge_provider_last_passes_period_in_path(monkeypatch, tmp_path):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def request(self, method, path, json=None):
+        def request(self, method, path, json=None, headers=None):
             captured["method"] = method
             captured["path"] = path
             return FakeResponse({"ok": True, "data": []})

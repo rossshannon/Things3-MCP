@@ -6,9 +6,22 @@ container from the current process. It is intentionally opt-in for auto fallback
 
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any
 
 import things
+
+from .base import record_read
+
+
+def _live_read(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        result = function(*args, **kwargs)
+        record_read({"source": "direct"})
+        return result
+
+    return wrapped
 
 
 class DirectThingsProvider:
@@ -16,9 +29,11 @@ class DirectThingsProvider:
 
     source = "direct"
 
+    @_live_read
     def inbox(self, include_items: bool = True) -> list[dict[str, Any]]:
         return things.inbox(include_items=include_items)
 
+    @_live_read
     def today(self, include_items: bool = True) -> list[dict[str, Any]]:
         """Return Today, preserving the server's historical None-safe fallback."""
         try:
@@ -34,27 +49,35 @@ class DirectThingsProvider:
             result.sort(key=lambda task: (task.get("today_index") or 999999, task.get("start_date") or ""))
             return result
 
+    @_live_read
     def upcoming(self, include_items: bool = True) -> list[dict[str, Any]]:
         return things.upcoming(include_items=include_items)
 
+    @_live_read
     def anytime(self, include_items: bool = True) -> list[dict[str, Any]]:
         return things.anytime(include_items=include_items)
 
+    @_live_read
     def someday(self, include_items: bool = True) -> list[dict[str, Any]]:
         return things.someday(include_items=include_items)
 
+    @_live_read
     def tasks(self, **kwargs: Any) -> list[dict[str, Any]]:
         return things.tasks(**kwargs)
 
+    @_live_read
     def todos(self, **kwargs: Any) -> list[dict[str, Any]]:
         return things.todos(**kwargs)
 
+    @_live_read
     def search(self, query: str, include_items: bool = True) -> list[dict[str, Any]]:
         return things.search(query, include_items=include_items)
 
+    @_live_read
     def get(self, uuid: str) -> dict[str, Any] | None:
         return things.get(uuid)
 
+    @_live_read
     def projects(self, include_items: bool = False, **kwargs: Any) -> list[dict[str, Any]]:
         projects = things.projects(**kwargs)
         if include_items:
@@ -62,6 +85,7 @@ class DirectThingsProvider:
                 project.setdefault("items", things.todos(project=project.get("uuid"), include_items=True))
         return projects
 
+    @_live_read
     def areas(self, include_items: bool = False, **kwargs: Any) -> list[dict[str, Any]]:
         areas = things.areas(**kwargs)
         if include_items:
@@ -70,6 +94,7 @@ class DirectThingsProvider:
                 area.setdefault("items", things.todos(area=area.get("uuid"), include_items=True))
         return areas
 
+    @_live_read
     def tags(self, include_items: bool = False, **kwargs: Any) -> list[dict[str, Any]]:
         tags = things.tags(**kwargs)
         if include_items:
@@ -77,9 +102,11 @@ class DirectThingsProvider:
                 tag.setdefault("items", things.todos(tag=tag.get("title"), include_items=True))
         return tags
 
+    @_live_read
     def trash(self, include_items: bool = True) -> list[dict[str, Any]]:
         return things.trash(include_items=include_items)
 
+    @_live_read
     def last(self, period: str, include_items: bool = True) -> list[dict[str, Any]]:
         return things.last(period, include_items=include_items)
 
@@ -96,16 +123,16 @@ class DirectThingsProvider:
         if isinstance(result, bool):
             if result:
                 return {"ok": True}
-            raise ProviderError("applescript_failed", f"AppleScript reported failure on {op_desc}")
+            raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
         if isinstance(result, str):
             stripped = result.strip()
             lowered = stripped.lower()
             if lowered == "true":
                 return {"ok": True}
-            if any(marker in lowered for marker in ("error:", "applescript error", "⚠️", "failed", "exception")):
-                raise ProviderError("applescript_failed", f"AppleScript error on {op_desc}: {stripped}")
+            if not stripped or any(marker in lowered for marker in ("error:", "applescript error", "⚠️", "failed", "exception")):
+                raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
             return {"ok": True, "id": stripped}
-        raise ProviderError("applescript_failed", f"Unexpected AppleScript result type on {op_desc}: {type(result).__name__}")
+        raise ProviderError("applescript_failed", "Things returned an invalid operation result", outcome="outcome_unknown")
 
     def add_task(self, params: dict[str, Any]) -> dict[str, Any]:
         from things3_mcp import applescript_bridge as ab

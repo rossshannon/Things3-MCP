@@ -9,16 +9,19 @@ protected app-group container.
 
 from __future__ import annotations
 
-import argparse
 import glob
 import json
 import os
+import re
 import sqlite3
 import subprocess  # nosec B404 - required for invoking the read worker and osascript
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from things3_mcp.providers.base import ProviderError
 
 SNAPSHOT_ACTIONS = ("inbox", "today", "upcoming", "anytime", "someday", "todos", "projects", "areas", "tags")
 
@@ -26,7 +29,6 @@ DEFAULT_THINGS_BUNDLE_ID = "com.culturedcode.ThingsMac"
 CULTURED_CODE_TEAM_ID = "JLMPQHK86H"
 DEFAULT_THINGS_GROUP_CONTAINER = f"{CULTURED_CODE_TEAM_ID}.{DEFAULT_THINGS_BUNDLE_ID}"
 DATA_FOLDER_ENV = "THINGS3_MCP_DATA_FOLDER"
-THINGSCLI_ENV = "THINGS3_MCP_THINGSCLI"
 THINGSCLI_DEFAULTS_TIMEOUT_SECONDS = float(os.environ.get("THINGS3_MCP_THINGSCLI_TIMEOUT", "3"))
 
 DB_PATTERNS = (
@@ -38,8 +40,13 @@ JXA_TIMEOUT_SECONDS = float(os.environ.get("THINGS3_MCP_JXA_TIMEOUT", "8"))
 
 # Compact one-line-JXA for simple list reads (fast list enumeration)
 _JXA_SIMPLE = r"""
-function run(argv) {
-  const app = Application('Things3');
+ObjC.import('Foundation');
+function run() {
+  const input = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+  const text = $.NSString.alloc.initWithDataEncoding(input, $.NSUTF8StringEncoding).js;
+  const request = JSON.parse(text);
+  const argv = [request.action, request.params];
+  const app = Application('com.culturedcode.ThingsMac');
   function v(fn, fallback) { try { const r = fn(); return r===undefined ? fallback : (r instanceof Date&&isNaN(r.getTime())?fallback:r); } catch(e) { return fallback; } }
   function s(todo) { return { uuid: v(()=>todo.id(),null), title: v(()=>todo.name(),''), type:'to-do', status: String(v(()=>todo.status(),'open'))==='completed'?'completed':'incomplete', notes: v(()=>todo.notes(),'')||'', project: null, project_title: null, area: null, area_title: null, tags: null, tag_titles: [], tag_names: '' }; }
   const action = argv[0];
@@ -57,8 +64,13 @@ function run(argv) {
 
 # Parallelised snapshot JXA split into two phases to avoid osascript hangs
 _JXA_LISTS = r"""
-function run(argv) {
-  const app = Application('Things3');
+ObjC.import('Foundation');
+function run() {
+  const input = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+  const text = $.NSString.alloc.initWithDataEncoding(input, $.NSUTF8StringEncoding).js;
+  const request = JSON.parse(text);
+  const argv = [request.action, request.params];
+  const app = Application('com.culturedcode.ThingsMac');
   function v(fn, fallback) { try { const r = fn(); return r===undefined ? fallback : (r instanceof Date&&isNaN(r.getTime())?fallback:r); } catch(e) { return fallback; } }
   function s(todo) {
     return {
@@ -105,8 +117,13 @@ function run(argv) {
 """
 
 _JXA_META = r"""
-function run(argv) {
-  const app = Application('Things3');
+ObjC.import('Foundation');
+function run() {
+  const input = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+  const text = $.NSString.alloc.initWithDataEncoding(input, $.NSUTF8StringEncoding).js;
+  const request = JSON.parse(text);
+  const argv = [request.action, request.params];
+  const app = Application('com.culturedcode.ThingsMac');
   function v(fn, fallback) { try { const r = fn(); return r===undefined ? fallback : (r instanceof Date&&isNaN(r.getTime())?fallback:r); } catch(e) { return fallback; } }
   function projectProps(p) { return { uuid: v(()=>p.id(),null), title: v(()=>p.name(),''), type: 'project' }; }
   function areaProps(a) { const tagNames=String(v(()=>a.tagNames(),'')||'').split(',').map(x=>x.trim()).filter(Boolean); return { uuid: v(()=>a.id(),null), title: v(()=>a.name(),''), type: 'area', tags: tagNames.length?1:null, tag_titles: tagNames, tag_names: tagNames.join(', ') }; }
@@ -124,7 +141,7 @@ def _can_open_sqlite(path: Path) -> bool:
     group container, which can bypass the bridge app's Full Disk Access grant.
     """
     try:
-        uri = f"{path.expanduser().absolute().as_uri()}?mode=ro&immutable=1"
+        uri = f"{path.expanduser().absolute().as_uri()}?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=1) as connection:
             connection.execute("select 1").fetchone()
         return True
@@ -133,31 +150,19 @@ def _can_open_sqlite(path: Path) -> bool:
 
 
 def _valid_sqlite_path(candidate: str | Path | None) -> str | None:
-    """Normalise and validate a candidate Things SQLite path."""
+    """Validate a candidate under the fixed Things container, following links."""
     if not candidate:
         return None
-    path = Path(candidate).expanduser()
+    path = Path(candidate).expanduser().resolve()
+    root = (Path.home() / "Library/Group Containers" / DEFAULT_THINGS_GROUP_CONTAINER).resolve()
+    if not path.is_relative_to(root) or path.name != "main.sqlite" or path.parent.name != "Things Database.thingsdatabase":
+        return None
     return str(path) if _can_open_sqlite(path) else None
 
 
-def _split_env_list(name: str, defaults: tuple[str, ...]) -> tuple[str, ...]:
-    """Read a comma-separated env override while preserving safe defaults."""
-    raw = os.environ.get(name)
-    if not raw:
-        return defaults
-    values = tuple(item.strip() for item in raw.split(",") if item.strip())
-    return values or defaults
-
-
-def _things_bundle_ids() -> tuple[str, ...]:
-    """Return Things bundle IDs to probe, overridable for beta/custom installs."""
-    return _split_env_list("THINGS3_MCP_APP_BUNDLE_IDS", (DEFAULT_THINGS_BUNDLE_ID,))
-
-
 def _things_group_containers() -> tuple[str, ...]:
-    """Return Things group-container names to probe."""
-    defaults = tuple(f"{CULTURED_CODE_TEAM_ID}.{bundle_id}" for bundle_id in _things_bundle_ids())
-    return _split_env_list("THINGS3_MCP_GROUP_CONTAINERS", defaults)
+    """Return the fixed Things data container; requests cannot select paths."""
+    return (DEFAULT_THINGS_GROUP_CONTAINER,)
 
 
 def _db_patterns() -> tuple[str, ...]:
@@ -182,7 +187,7 @@ def _sqlite_path_for_data_folder(container: str, data_folder: str) -> Path:
 def _validated_path_for_data_folder(data_folder: str) -> str | None:
     """Validate a ThingsData-* folder name against configured group containers."""
     folder = data_folder.strip().strip('"').strip("'")
-    if not folder:
+    if not re.fullmatch(r"ThingsData-[A-Za-z0-9-]+", folder):
         return None
     for container in _things_group_containers():
         validated = _valid_sqlite_path(_sqlite_path_for_data_folder(container, folder))
@@ -193,10 +198,7 @@ def _validated_path_for_data_folder(data_folder: str) -> str | None:
 
 def _candidate_thingscli_paths() -> tuple[Path, ...]:
     """Return likely paths for Things' bundled ``thingscli`` helper."""
-    configured = os.environ.get(THINGSCLI_ENV)
     candidates: list[Path] = []
-    if configured:
-        candidates.append(Path(configured).expanduser())
     candidates.extend(
         [
             Path("/Applications/Things3.app/Contents/MacOS/thingscli"),
@@ -225,8 +227,8 @@ def _data_folder_from_thingscli_defaults() -> str | None:
                 timeout=THINGSCLI_DEFAULTS_TIMEOUT_SECONDS,
                 check=False,
             )
-        except Exception as exc:  # noqa: BLE001 - resolver fallback should stay best-effort
-            print(f"thingscli defaults failed for {thingscli}: {exc}", file=sys.stderr)
+        except Exception:  # noqa: BLE001 - resolver fallback should stay best-effort
+            print("Things data-folder discovery unavailable", file=sys.stderr)
             continue
         if completed.returncode != 0:
             continue
@@ -242,7 +244,7 @@ def _data_folder_from_thingscli_defaults() -> str | None:
 def _enumerate_db_patterns() -> list[str]:
     """Glob the protected Things group container for SQLite candidates.
 
-    Only safe to call from inside the bridge worker, which holds Full Disk Access.
+    Only call inside the bridge worker, where filesystem permission is observed.
     ``ThingsData-*`` folder names are random alphanumeric hashes — lexicographic
     sort doesn't reflect recency. Sort by the SQLite file's mtime so a fresh
     data folder takes precedence over a stale sibling left behind by an old
@@ -262,16 +264,20 @@ def resolve_things_db_path() -> str:
     """Resolve the current Things SQLite path.
 
     Env-var hints (``THINGSDB``, ``THINGS3_MCP_DATA_FOLDER``) are honored first
-    so tests and non-default Things data layouts can override discovery. When
+    within the fixed Things container. When
     both are unset/empty, fall back to globbing the protected group container —
-    this is the bridge worker's job and the reason it holds Full Disk Access.
+    this is the bridge worker's job, subject to its own filesystem permission.
     """
     configured = os.environ.get("THINGSDB")
     if configured:
-        validated = _valid_sqlite_path(configured)
+        candidate = Path(configured).expanduser().resolve()
+        root = (Path.home() / "Library/Group Containers" / DEFAULT_THINGS_GROUP_CONTAINER).resolve()
+        if not candidate.is_relative_to(root) or candidate.name != "main.sqlite" or candidate.parent.name != "Things Database.thingsdatabase":
+            raise ProviderError("database_path_unsupported", "The database must be inside the fixed Things container")
+        validated = _valid_sqlite_path(candidate)
         if validated:
             return validated
-        raise FileNotFoundError(f"Configured THINGSDB is not a readable SQLite database: {configured}")
+        raise FileNotFoundError("The configured Things database is unavailable")
 
     configured_folder = os.environ.get(DATA_FOLDER_ENV)
     if configured_folder:
@@ -291,56 +297,11 @@ def resolve_things_db_path() -> str:
         return matches[-1]
 
     raise FileNotFoundError(
-        "Could not find a readable Things SQLite database in the expected group container. Ensure Things 3 has been launched at least once and that the bridge bundle has Full Disk Access in System Settings."
+        "Could not find a readable Things SQLite database in the expected group container. Open Things once to create its data. Inspect the bridge database capability; filesystem access and Automation are separate grants."
     )
 
 
-def _fda_probe() -> dict[str, Any]:
-    """Attempt to list a few FDA-gated directories.
-
-    This lets us tell whether the running process actually has Full Disk Access
-    attributed to it.
-    Each probe is run in its own thread with a 2-second hard cap so we can
-    distinguish "fast deny" (errno=1 EPERM) from "tccd queued the syscall"
-    (timeout — the bundle has a UI grant but tccd isn't matching it).
-    """
-    import threading
-
-    def listdir_with_timeout(path: str) -> dict[str, Any]:
-        result: dict[str, Any] = {"path": path}
-
-        def _runner() -> None:
-            try:
-                entries = sorted(os.listdir(path))
-                result["ok"] = True
-                result["count"] = len(entries)
-                result["first"] = entries[:3]
-            except OSError as exc:
-                result["ok"] = False
-                result["errno"] = exc.errno
-                result["error"] = str(exc)
-
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join(timeout=2.0)
-        if thread.is_alive():
-            result["ok"] = False
-            result["error"] = "syscall did not return within 2s (likely tccd-queued without prompt)"
-            result["timed_out"] = True
-        return result
-
-    return {
-        label: listdir_with_timeout(path)
-        for label, path in (
-            ("home_library_mail", os.path.expanduser("~/Library/Mail")),
-            ("home_library_messages", os.path.expanduser("~/Library/Messages")),
-            ("home_group_containers", os.path.expanduser("~/Library/Group Containers")),
-            ("things_group_container", os.path.expanduser(f"~/Library/Group Containers/{DEFAULT_THINGS_GROUP_CONTAINER}")),
-        )
-    }
-
-
-def things_process_running() -> bool:
+def things_process_running() -> bool | None:
     """Return whether Things.app is currently running.
 
     The bridge can be healthy and the SQLite read path can work even when
@@ -352,7 +313,7 @@ def things_process_running() -> bool:
             [
                 "/usr/bin/osascript",
                 "-e",
-                'tell application "System Events" to exists process "Things3"',
+                'application id "com.culturedcode.ThingsMac" is running',
             ],
             capture_output=True,
             text=True,
@@ -360,8 +321,10 @@ def things_process_running() -> bool:
             check=False,
         )
     except Exception:  # noqa: BLE001 - diagnostics must not fail the whole diagnose path
-        return False
-    return completed.returncode == 0 and completed.stdout.strip().lower() == "true"
+        return None
+    if completed.returncode != 0 or completed.stdout.strip().lower() not in {"true", "false"}:
+        return None
+    return completed.stdout.strip().lower() == "true"
 
 
 def diagnose_access() -> dict[str, Any]:
@@ -376,10 +339,9 @@ def diagnose_access() -> dict[str, Any]:
         try:
             matches = glob.glob(expanded)
         except OSError as exc:
-            patterns.append({"pattern": expanded, "matches": None, "error": str(exc)})
+            patterns.append({"pattern": expanded, "matches": None, "error": type(exc).__name__})
             continue
         patterns.append({"pattern": expanded, "matches": sorted(matches)})
-    fda_probe = _fda_probe()
     try:
         path = resolve_things_db_path()
         exists = Path(path).exists()
@@ -387,11 +349,11 @@ def diagnose_access() -> dict[str, Any]:
         sqlite_ok = False
         sqlite_error = None
         try:
-            with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+            with sqlite3.connect(f"{Path(path).as_uri()}?mode=ro", uri=True) as connection:
                 connection.execute("select 1").fetchone()
                 sqlite_ok = True
         except Exception as exc:  # noqa: BLE001 - diagnostic only
-            sqlite_error = str(exc)
+            sqlite_error = type(exc).__name__
         return {
             "ok": True,
             "path": path,
@@ -401,19 +363,14 @@ def diagnose_access() -> dict[str, Any]:
             "sqlite_error": sqlite_error,
             "things_process_running": things_running,
             "patterns": patterns,
-            "fda_probe": fda_probe,
-            "data_folder_env": os.environ.get(DATA_FOLDER_ENV),
-            "thingsdb_env": os.environ.get("THINGSDB"),
+            "capabilities": {"database": {"state": "available" if sqlite_ok else "unavailable"}, "automation": {"state": "unknown"}},
         }
     except Exception as exc:  # noqa: BLE001 - diagnostic only
         return {
             "ok": False,
-            "error": str(exc),
+            "error": type(exc).__name__,
             "things_process_running": things_running,
             "patterns": patterns,
-            "fda_probe": fda_probe,
-            "data_folder_env": os.environ.get(DATA_FOLDER_ENV),
-            "thingsdb_env": os.environ.get("THINGSDB"),
         }
 
 
@@ -433,15 +390,17 @@ def _run_jxa_script(script_content: str, action: str, params: dict[str, Any] | N
         script_path = f.name
     try:
         completed = subprocess.run(  # noqa: S603 # nosec B603 - fixed executable, no shell
-            ["/usr/bin/osascript", "-l", "JavaScript", script_path, action, json.dumps(params)],
+            ["/usr/bin/osascript", "-l", "JavaScript", script_path],
+            input=json.dumps({"action": action, "params": params}),
             capture_output=True,
             text=True,
             timeout=JXA_TIMEOUT_SECONDS,
             check=False,
         )
         if completed.returncode != 0:
-            msg = completed.stderr.strip() or completed.stdout.strip() or f"osascript rc={completed.returncode}"
-            raise RuntimeError(msg)
+            from things3_mcp.applescript_bridge import _script_error
+
+            raise _script_error(completed.stderr)
         return completed.stdout.strip()
     finally:
         os.unlink(script_path)
@@ -450,6 +409,14 @@ def _run_jxa_script(script_content: str, action: str, params: dict[str, Any] | N
 def run_jxa_action(action: str, params: dict[str, Any] | None = None) -> Any:
     """Read Things through its Apple Events scripting interface."""
     params = params or {}
+    supported = {"inbox", "today", "upcoming", "anytime", "someday", "areas", "projects", "tags", "snapshot"}
+    if action not in supported or any(key != "include_items" for key in params) or (action in {"areas", "projects", "tags"} and params.get("include_items")):
+        raise ProviderError("apple_events_unsupported", "This read requires the database backend; Apple Events fallback does not support this action or filter")
+    running = things_process_running()
+    if running is False:
+        raise ProviderError("app_not_running", "Things is not running; Apple Events reads require an open app", outcome="failed")
+    if running is None:
+        raise ProviderError("app_state_unknown", "Things process state could not be observed")
     if action == "snapshot":
         import concurrent.futures
 
@@ -493,7 +460,7 @@ def run_jxa_action(action: str, params: dict[str, Any] | None = None) -> Any:
 
 def run_sqlite_action(action: str, params: dict[str, Any] | None = None) -> Any:
     """Run a read action against the direct Things SQLite provider."""
-    params = params or {}
+    params = dict(params or {})
     provider = direct_provider()
     if action == "snapshot":
         return {
@@ -554,17 +521,17 @@ def _coerce_write_result(result: Any, op_desc: str) -> dict[str, Any]:
     if isinstance(result, bool):
         if result:
             return {"ok": True}
-        raise RuntimeError(f"AppleScript reported failure on {op_desc}")
+        raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
     if isinstance(result, str):
         stripped = result.strip()
         lowered = stripped.lower()
         if lowered == "true":
             return {"ok": True}
-        if any(marker in lowered for marker in _ERROR_MARKERS):
-            raise RuntimeError(f"AppleScript error on {op_desc}: {stripped}")
+        if not stripped or any(marker in lowered for marker in _ERROR_MARKERS):
+            raise ProviderError("applescript_failed", "Things did not confirm completion", outcome="outcome_unknown")
         # Looks like a UUID or other success identifier.
         return {"ok": True, "id": stripped}
-    raise RuntimeError(f"Unexpected AppleScript result type on {op_desc}: {type(result).__name__}")
+    raise ProviderError("applescript_failed", "Things returned an invalid operation result", outcome="outcome_unknown")
 
 
 def run_write_action(action: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -576,6 +543,7 @@ def run_write_action(action: str, params: dict[str, Any]) -> dict[str, Any]:
     """
     from things3_mcp import applescript_bridge as ab
 
+    params = dict(params)
     if action == "add_task":
         return _coerce_write_result(ab.add_todo(**params), "create todo")
     if action == "update_task":
@@ -593,61 +561,63 @@ def run_write_action(action: str, params: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"Unsupported write action: {action}")
 
 
-def run_action(action: str, params: dict[str, Any] | None = None) -> Any:
-    """Run a read or write action against Things.
+_capabilities: dict[str, dict[str, Any]] = {}
 
-    Reads prefer SQLite and fall back to Apple Events. Writes go straight to
-    AppleScript — there is no SQLite write path (the DB is opened read-only by
-    design) and Things has no other public mutation API beyond AppleScript /
-    URL scheme.
-    """
-    params = params or {}
+
+def capability_observations() -> dict[str, dict[str, Any]]:
+    """Return observations from this worker's current operation only."""
+    return {name: dict(observation) for name, observation in _capabilities.items()}
+
+
+def _observe(capability: str, error: Exception | None = None) -> None:
+    state = "available"
+    observation: dict[str, Any] = {"observed_at": datetime.now(UTC).isoformat()}
+    if error is not None:
+        code = getattr(error, "error_code", "database_unavailable" if capability == "database" else "automation_unavailable")
+        state = "denied" if code == "automation_denied" or isinstance(error, PermissionError) else "unavailable"
+        observation["error_code"] = code
+    observation["state"] = state
+    _capabilities[capability] = observation
+
+
+def run_action(action: str, params: dict[str, Any] | None = None) -> Any:
+    """Execute one fixed operation and record only observed capabilities."""
+    _capabilities.clear()
+    params = dict(params or {})
     if action == "diagnose":
         return diagnose_access()
     if action in WRITE_ACTIONS:
         _trace("write-attempt", action)
         try:
             result = run_write_action(action, params)
-            _trace("write-ok", action)
-            return result
         except Exception as exc:
-            _trace("write-failed", repr(exc)[:200])
+            if getattr(exc, "error_code", None) != "app_not_running":
+                _observe("automation", exc)
+            _trace("write-failed")
             raise
+        _observe("automation")
+        _trace("write-ok", action)
+        return result
     _trace("sqlite-attempt", action)
     try:
         result = run_sqlite_action(action, params)
-        _trace("sqlite-ok", action)
-        return result
-    except Exception as sqlite_exc:  # noqa: BLE001 - fallback path preserves both failures in diagnostics
-        _trace("sqlite-failed", repr(sqlite_exc)[:200])
-        _trace("jxa-attempt", action)
+    except Exception as sqlite_exc:  # noqa: BLE001 - retain separate backend observations
+        _observe("database", sqlite_exc)
+        _trace("sqlite-failed")
         try:
             data = run_jxa_action(action, params)
-            _trace("jxa-ok", action)
-        except Exception as jxa_exc:  # noqa: BLE001
-            _trace("jxa-failed", repr(jxa_exc)[:200])
-            raise RuntimeError(f"SQLite read failed ({sqlite_exc}); Apple Events read failed ({jxa_exc})") from jxa_exc
+        except Exception as jxa_exc:
+            if getattr(jxa_exc, "error_code", None) != "apple_events_unsupported":
+                _observe("automation", jxa_exc)
+            _trace("jxa-failed")
+            if isinstance(jxa_exc, ProviderError):
+                raise
+            raise ProviderError("things_read_unavailable", "The database and Apple Events read backends are unavailable") from jxa_exc
+        _observe("automation")
+        _trace("jxa-ok", action)
         if isinstance(data, dict):
             data.setdefault("_source", "apple_events")
         return data
-
-
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for child worker reads."""
-    parser = argparse.ArgumentParser(description="Things3 MCP bridge read worker")
-    parser.add_argument("action")
-    parser.add_argument("--params", default="{}")
-    args = parser.parse_args(argv)
-
-    try:
-        params = json.loads(args.params)
-        result = run_action(args.action, params)
-        print(json.dumps({"ok": True, "data": result}))
-        return 0
-    except Exception as exc:  # noqa: BLE001 - serialize worker failures to parent
-        print(json.dumps({"ok": False, "error_code": "things_read_unavailable", "message": str(exc)}))
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    _observe("database")
+    _trace("sqlite-ok", action)
+    return result

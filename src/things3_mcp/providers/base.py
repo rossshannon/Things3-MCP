@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 
@@ -15,12 +18,18 @@ class ProviderError(RuntimeError):
         *,
         authorization_hint: str | None = None,
         cache_status: dict[str, Any] | None = None,
+        outcome: str | None = None,
+        operation_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
         self.authorization_hint = authorization_hint
         self.cache_status = cache_status or {}
+        self.outcome = outcome
+        self.operation_id = operation_id
+        self.correlation_id = correlation_id
 
     def to_dict(self) -> dict[str, Any]:
         """Return an MCP-safe diagnostic payload."""
@@ -33,6 +42,10 @@ class ProviderError(RuntimeError):
             payload["authorization_hint"] = self.authorization_hint
         if self.cache_status:
             payload["cache_status"] = self.cache_status
+        for key in ("outcome", "operation_id", "correlation_id"):
+            value = getattr(self, key)
+            if value is not None:
+                payload[key] = value
         return payload
 
     def __str__(self) -> str:
@@ -42,6 +55,12 @@ class ProviderError(RuntimeError):
             bits.append(f"Authorization hint: {self.authorization_hint}")
         if self.cache_status:
             bits.append(f"Cache status: {self.cache_status}")
+        for key in ("outcome", "operation_id", "correlation_id"):
+            value = getattr(self, key)
+            if value is not None:
+                bits.append(f"{key}: {value}")
+        if self.outcome == "outcome_unknown":
+            bits.append("Do not retry automatically. Look up the operation before deciding what to do next.")
         return "\n".join(bits)
 
 
@@ -94,3 +113,42 @@ class WriteUnsupportedError(ProviderError):
 
 # Backwards-compatible alias for callers that imported the older name.
 WriteUnsupported = WriteUnsupportedError
+
+
+# Immutable tuples prevent sibling async contexts from sharing a mutable collector.
+_read_observations: ContextVar[tuple[dict[str, Any], ...] | None] = ContextVar("things_read_observations", default=None)
+_require_live: ContextVar[bool] = ContextVar("things_require_live", default=False)
+
+
+@contextmanager
+def read_context(*, require_live: bool = False) -> Iterator[None]:
+    """Collect read provenance for one tool call, including relation lookups."""
+    observations_token = _read_observations.set(())
+    live_token = _require_live.set(require_live or live_read_required())
+    try:
+        yield
+    finally:
+        _require_live.reset(live_token)
+        _read_observations.reset(observations_token)
+
+
+def live_read_required() -> bool:
+    """Return whether the current call forbids cached results."""
+    return _require_live.get()
+
+
+def record_read(metadata: dict[str, Any]) -> None:
+    """Attach provenance to the current call without changing task shapes."""
+    observations = _read_observations.get()
+    if observations is not None:
+        _read_observations.set((*observations, dict(metadata)))
+
+
+def read_observations() -> tuple[dict[str, Any], ...]:
+    """Return the current call's observations."""
+    return _read_observations.get() or ()
+
+
+def read_context_active() -> bool:
+    """Return whether a containing tool already collects read provenance."""
+    return _read_observations.get() is not None

@@ -2,13 +2,10 @@
 
 import json
 import random
-import traceback
+from functools import wraps
 
 from mcp.server.fastmcp import FastMCP
 
-from .applescript_bridge import (
-    ensure_things_ready,
-)
 from .formatters import format_area, format_project, format_tag, format_todo
 from .logging_config import (
     get_logger,
@@ -17,6 +14,8 @@ from .logging_config import (
     setup_logging,
 )
 from .providers import ProviderError, get_provider
+from .providers.base import read_context, read_context_active, read_observations
+from .providers.bridge import BridgeThingsProvider
 
 # Configure enhanced logging
 setup_logging(console_level="INFO", file_level="DEBUG", structured_logs=True)
@@ -24,6 +23,46 @@ logger = get_logger(__name__)
 
 DEFAULT_TRASH_LIMIT = 50
 MAX_TRASH_LIMIT = 200
+
+
+def _with_read_provenance(function):
+    """Annotate one MCP read response while preserving its public signature."""
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if read_context_active():
+            return function(*args, **kwargs)
+        with read_context():
+            result = function(*args, **kwargs)
+            notes = []
+            for observation in read_observations():
+                source = observation.get("source")
+                note = f"Read source: {source}." if source else ""
+                if source == "cache":
+                    age = observation.get("cache_age_seconds")
+                    note += f" Snapshot age: {age} seconds." if age is not None else " Snapshot age: unknown."
+                    snapshot_source = observation.get("snapshot_source", "unknown")
+                    note += f" Snapshot backend: {snapshot_source}."
+                    if snapshot_source == "apple_events":
+                        note += " This snapshot has limited Apple Events coverage."
+                if source == "unknown":
+                    note += " Freshness was not confirmed by this bridge."
+                if source == "apple_events":
+                    note += " Limited Apple Events fields are available."
+                failure = observation.get("live_error")
+                if isinstance(failure, dict):
+                    note += f" Live read failed: {failure.get('error_code', 'unknown')}."
+                note = note.strip()
+                if note and note not in notes:
+                    notes.append(note)
+            return result + ("\n\n" + "\n".join(notes) if notes else "")
+
+    return wrapped
+
+
+def _operation_details(result: dict) -> str:
+    parts = [f"{key}: {result[key]}" for key in ("operation_id", "correlation_id", "outcome") if result.get(key)]
+    return "\n" + "\n".join(parts) if parts else ""
 
 
 def _provider_error_response(error: ProviderError) -> str:
@@ -104,13 +143,13 @@ def preprocess_array_params(**kwargs):
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
                     result[key] = parsed
-                    logger.debug(f"Parsed stringified array for {key}: {value} -> {parsed}")
+                    logger.debug("Things preprocess_array_params processing")
                 else:
                     result[key] = value
             except (json.JSONDecodeError, ValueError):
                 # If parsing fails, keep as string
                 result[key] = value
-                logger.warning(f"Failed to parse potential array parameter {key}: {value}")
+                logger.warning("Things preprocess_array_params processing")
         else:
             result[key] = value
     return result
@@ -123,6 +162,7 @@ mcp = FastMCP("Things", instructions="Interact with the Things 3 task management
 
 
 @mcp.tool(name="get_inbox")
+@_with_read_provenance
 def get_inbox() -> str:
     """Get todos from Inbox."""
     import time
@@ -149,6 +189,7 @@ def get_inbox() -> str:
 
 
 @mcp.tool(name="get_today")
+@_with_read_provenance
 def get_today() -> str:
     """Get todos due today."""
     import time
@@ -175,6 +216,7 @@ def get_today() -> str:
 
 
 @mcp.tool(name="get_upcoming")
+@_with_read_provenance
 def get_upcoming() -> str:
     """Get all upcoming todos (those with a start date in the future)."""
     try:
@@ -190,6 +232,7 @@ def get_upcoming() -> str:
 
 
 @mcp.tool(name="get_anytime")
+@_with_read_provenance
 def get_anytime() -> str:
     """Get all todos from Anytime list. Note that this will return an extensive list of tasks. It is generally recommended to use get_todos with filters or search_todos instead."""
     try:
@@ -205,6 +248,7 @@ def get_anytime() -> str:
 
 
 @mcp.tool(name="get_random_inbox")
+@_with_read_provenance
 def get_random_inbox(count: int = 5) -> str:
     """Get a random sample of todos from Inbox.
 
@@ -244,6 +288,7 @@ def get_random_inbox(count: int = 5) -> str:
 
 
 @mcp.tool(name="get_random_anytime")
+@_with_read_provenance
 def get_random_anytime(count: int = 5) -> str:
     """Get a random sample of items from the Anytime list.
 
@@ -272,6 +317,7 @@ def get_random_anytime(count: int = 5) -> str:
 
 
 @mcp.tool(name="get_someday")
+@_with_read_provenance
 def get_someday() -> str:
     """Get todos from Someday list."""
     try:
@@ -287,6 +333,7 @@ def get_someday() -> str:
 
 
 @mcp.tool(name="get_logbook")
+@_with_read_provenance
 def get_logbook(period: str = "7d", limit: int = 50) -> str:
     """Get completed todos from Logbook, defaults to last 7 days.
 
@@ -320,7 +367,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         elif unit == "y":
             start_date = (datetime.now() - timedelta(days=number * 365)).strftime("%Y-%m-%d")
 
-        logger.debug(f"Logbook query: period={period}, start_date>={start_date}")
+        logger.debug("Things get_logbook processing")
 
         try:
             provider = get_provider()
@@ -353,6 +400,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
 
 @mcp.tool(name="get_trash")
+@_with_read_provenance
 def get_trash(limit: int = DEFAULT_TRASH_LIMIT, offset: int = 0) -> str:
     """Get trashed todos.
 
@@ -404,6 +452,7 @@ def get_trash(limit: int = DEFAULT_TRASH_LIMIT, offset: int = 0) -> str:
 
 
 @mcp.tool(name="get_todos")
+@_with_read_provenance
 def get_todos(project_uuid: str | None = None) -> str:
     """Get todos from Things, optionally filtered by project.
 
@@ -429,6 +478,7 @@ def get_todos(project_uuid: str | None = None) -> str:
 
 
 @mcp.tool(name="get_random_todos")
+@_with_read_provenance
 def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
     """Get a random sample of todos, optionally filtered by project.
 
@@ -459,6 +509,7 @@ def get_random_todos(project_uuid: str | None = None, count: int = 5) -> str:
 
 
 @mcp.tool(name="get_projects")
+@_with_read_provenance
 def get_projects(include_items: bool = False) -> str:
     """Get all projects from Things.
 
@@ -480,6 +531,7 @@ def get_projects(include_items: bool = False) -> str:
 
 
 @mcp.tool(name="get_areas")
+@_with_read_provenance
 def get_areas(include_items: bool = False) -> str:
     """Get all areas from Things. Use these names when assigning a task or project to an area.
 
@@ -504,6 +556,7 @@ def get_areas(include_items: bool = False) -> str:
 
 
 @mcp.tool(name="get_tags")
+@_with_read_provenance
 def get_tags(include_items: bool = False) -> str:
     """Get all tags.
 
@@ -525,6 +578,7 @@ def get_tags(include_items: bool = False) -> str:
 
 
 @mcp.tool(name="get_tagged_items")
+@_with_read_provenance
 def get_tagged_items(tag: str) -> str:
     """Get items with a specific tag.
 
@@ -548,6 +602,7 @@ def get_tagged_items(tag: str) -> str:
 
 
 @mcp.tool(name="search_todos")
+@_with_read_provenance
 def search_todos(query: str) -> str:
     """Search todos by title or notes.
 
@@ -568,6 +623,7 @@ def search_todos(query: str) -> str:
 
 
 @mcp.tool(name="search_advanced")
+@_with_read_provenance
 def search_advanced(
     status: str | None = None,
     start_date: str | None = None,
@@ -653,20 +709,12 @@ def add_task(
             If both list_id and list_title are provided, list_id takes priority.
     """
     try:
-        # Debug: Log all input parameters
-        logger.debug("MCP add_todo called with parameters:")
-        logger.debug(f"  title: {title!r}")
-        logger.debug(f"  notes: {notes!r}")
-        logger.debug(f"  when: {when!r}")
-        logger.debug(f"  deadline: {deadline!r}")
-        logger.debug(f"  tags: {tags!r} (type: {type(tags)})")
-        logger.debug(f"  list_id: {list_id!r}")
-        logger.debug(f"  list_title: {list_title!r}")
+        logger.debug("MCP create todo requested")
 
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
         tags = params["tags"]
-        logger.debug(f"  processed tags: {tags!r} (type: {type(tags)})")
+        logger.debug("Things add_task processing")
 
         # Clean up title and notes to handle URL encoding
         if isinstance(title, str):
@@ -675,7 +723,7 @@ def add_task(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
-        logger.info(f"Creating todo through provider: {title}")
+        logger.info("Things add_task processing")
 
         try:
             params = {"title": title, "notes": notes, "when": when, "deadline": deadline, "tags": tags, "list_id": list_id, "list_title": list_title}
@@ -683,7 +731,7 @@ def add_task(
             params = {k: v for k, v in params.items() if v is not None}
             result = get_provider().add_task(params)
         except ProviderError as bridge_error:
-            logger.error(f"Provider error creating todo: {bridge_error}")
+            logger.error("Things add_task failed")
             return f"⚠️ Provider error: {bridge_error}"
 
         task_id = result.get("id") if isinstance(result, dict) else None
@@ -695,13 +743,10 @@ def add_task(
         # the location stays "Unknown" — the create itself already succeeded.
         location = _resolve_todo_location(task_id)
 
-        return f"✅ Successfully created todo: {title} (ID: {task_id}) in {location}"
+        return f"✅ Successfully created todo: {title} (ID: {task_id}) in {location}" + _operation_details(result)
 
     except Exception as e:
-        logger.error(f"Error creating todo: {e!s}")
-        import traceback
-
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error("Things add_task failed")
         return f"⚠️ Error creating todo: {e!s}"
 
 
@@ -744,14 +789,14 @@ def add_new_project(
         if isinstance(notes, str):
             notes = notes.replace("+", " ").replace("%20", " ")
 
-        logger.info(f"Creating project through provider: {title}")
+        logger.info("Things add_new_project processing")
 
         try:
             params = {"title": title, "notes": notes, "when": when, "deadline": deadline, "tags": tags, "area_title": area_title, "area_id": area_id, "todos": todos}
             params = {k: v for k, v in params.items() if v is not None}
             result = get_provider().add_project(params)
         except ProviderError as bridge_error:
-            logger.error(f"Provider error creating project: {bridge_error}")
+            logger.error("Things add_new_project failed")
             return f"⚠️ Provider error: {bridge_error}"
 
         project_id = result.get("id") if isinstance(result, dict) else None
@@ -761,13 +806,10 @@ def add_new_project(
         # Resolve location via the provider chain — see _resolve_todo_location.
         location = _resolve_project_location(project_id)
 
-        return f"✅ Successfully created project: {title} (ID: {project_id}) in {location}"
+        return f"✅ Successfully created project: {title} (ID: {project_id}) in {location}" + _operation_details(result)
 
     except Exception as e:
-        logger.error(f"Error creating project: {e!s}")
-        import traceback
-
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error("Things add_new_project failed")
         return f"⚠️ Error creating project: {e!s}"
 
 
@@ -813,7 +855,7 @@ def update_task(
         if isinstance(list_name, str):
             list_name = list_name.replace("+", " ").replace("%20", " ")
 
-        logger.info(f"Updating todo through provider: {id}")
+        logger.info("Things update_task processing")
 
         try:
             params = {
@@ -828,15 +870,14 @@ def update_task(
                 "list_name": list_name,
             }
             params = {k: v for k, v in params.items() if v is not None}
-            get_provider().update_task(id, params)
-            return f"✅ Successfully updated todo with ID: {id}"
+            result = get_provider().update_task(id, params)
+            return f"✅ Successfully updated todo with ID: {id}" + _operation_details(result)
         except ProviderError as bridge_error:
-            logger.error(f"Provider error updating todo: {bridge_error}")
+            logger.error("Things update_task failed")
             return f"⚠️ Provider error: {bridge_error}"
 
     except Exception as e:
-        logger.error(f"Error updating todo: {e!s}")
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error("Things update_task failed")
         return f"⚠️ Error updating todo: {e!s}"
 
 
@@ -877,11 +918,7 @@ def update_existing_project(
         area_id: ID of the area to move the project to
     """
     try:
-        # Log all input parameters for debugging
-        logger.info("Raw input parameters for update_project:")
-        for param_name, param_value in locals().items():
-            if param_name != "self":  # Skip self parameter
-                logger.info(f"  {param_name}: {param_value!r}")
+        logger.debug("MCP update project requested")
 
         # Preprocess only the tags parameter
         params = preprocess_array_params(tags=tags)
@@ -894,9 +931,9 @@ def update_existing_project(
             notes = notes.replace("+", " ").replace("%20", " ")
         if isinstance(area_title, str):
             area_title = area_title.replace("+", " ").replace("%20", " ")
-            logger.info(f"Cleaned area_title: {area_title!r}")
+            logger.info("Things update_existing_project processing")
 
-        logger.info(f"Updating project through provider: {id}")
+        logger.info("Things update_existing_project processing")
 
         try:
             params = {
@@ -912,19 +949,19 @@ def update_existing_project(
                 "area_id": area_id,
             }
             params = {k: v for k, v in params.items() if v is not None}
-            get_provider().update_project(id, params)
-            return f"✅ Successfully updated project with ID: {id}"
+            result = get_provider().update_project(id, params)
+            return f"✅ Successfully updated project with ID: {id}" + _operation_details(result)
         except ProviderError as bridge_error:
-            logger.error(f"Provider error updating project: {bridge_error}")
+            logger.error("Things update_existing_project failed")
             return f"⚠️ Provider error: {bridge_error}"
 
     except Exception as e:
-        logger.error(f"Error updating project: {e!s}")
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error("Things update_existing_project failed")
         return f"⚠️ Error updating project: {e!s}"
 
 
 @mcp.tool(name="show_item")
+@_with_read_provenance
 def show_item(id: str, query: str | None = None, filter_tags: list[str] | None = None) -> str:
     """Show a specific item or list in Things.
 
@@ -973,11 +1010,12 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
             except Exception as e:
                 return f"Error retrieving item '{id}': {e!s}"
     except Exception as e:
-        logger.error(f"Error showing item: {e!s}")
+        logger.error("Things show_item failed")
         return f"Error showing item: {e!s}"
 
 
 @mcp.tool(name="search_items")
+@_with_read_provenance
 def search_all_items(query: str) -> str:
     """Search for items in Things.
 
@@ -991,7 +1029,7 @@ def search_all_items(query: str) -> str:
     except ProviderError as e:
         return _provider_error_response(e)
     except Exception as e:
-        logger.error(f"Error searching: {e!s}")
+        logger.error("Things search_all_items failed")
         return f"Error searching: {e!s}"
 
     if not todos:
@@ -1001,6 +1039,7 @@ def search_all_items(query: str) -> str:
 
 
 @mcp.tool(name="get_recent")
+@_with_read_provenance
 def get_recent(period: str) -> str:
     """Get recently created items.
 
@@ -1017,7 +1056,7 @@ def get_recent(period: str) -> str:
     except ProviderError as e:
         return _provider_error_response(e)
     except Exception as e:
-        logger.error(f"Error getting recent items: {e!s}")
+        logger.error("Things get_recent failed")
         return f"Error getting recent items: {e!s}"
 
     if not items:
@@ -1033,15 +1072,36 @@ def get_recent(period: str) -> str:
     return "\n\n---\n\n".join(formatted_items)
 
 
+@mcp.tool(name="get_bridge_status")
+def get_bridge_status() -> str:
+    """Inspect bridge identity, cache state and observed capabilities without requesting consent."""
+    try:
+        return json.dumps(BridgeThingsProvider().status(), indent=2)
+    except ProviderError as error:
+        return _provider_error_response(error)
+
+
+@mcp.tool(name="get_bridge_operation")
+def get_bridge_operation(operation_id: str) -> str:
+    """Look up one mutation outcome by its operation ID; never replay it."""
+    try:
+        return json.dumps(BridgeThingsProvider().operation(operation_id), indent=2)
+    except ProviderError as error:
+        return _provider_error_response(error)
+
+
+@mcp.tool(name="list_bridge_operations")
+def list_bridge_operations(correlation_id: str | None = None, limit: int = 25) -> str:
+    """List recent mutation records, optionally matching a lost response's correlation ID."""
+    try:
+        return json.dumps(BridgeThingsProvider().operations(correlation_id, limit), indent=2)
+    except ProviderError as error:
+        return _provider_error_response(error)
+
+
 # Main entry point
 def run_things_mcp_server():
     """Run the Things MCP server."""
-    # Check if Things app is available
-    if ensure_things_ready():
-        logger.info("Things app is running and ready for operations")
-    else:
-        logger.warning("Things app is not running at startup. Operations will attempt to connect when needed.")
-
     # Run the MCP server
     mcp.run()
 

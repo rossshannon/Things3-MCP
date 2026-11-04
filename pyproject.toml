@@ -1,6 +1,6 @@
 [project]
 name = "Things3-MCP-server"
-version = "2.0.7"
+version = "2.5.0"
 description = "MCP server for Things 3 with read/write support for tasks, projects, areas and tags."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,27 +32,32 @@ Things3-MCP-server = "things3_mcp.fast_server:run_things_mcp_server"
 Things3-MCP-bridge = "things3_mcp_bridge.server:main"
 
 [project.urls]
-"Homepage" = "https://github.com/rossshannon/things-fastmcp"
-"Bug Tracker" = "https://github.com/rossshannon/things-fastmcp/issues"
-"Documentation" = "https://github.com/rossshannon/things-fastmcp#readme"
+"Homepage" = "https://github.com/rossshannon/Things3-MCP"
+"Bug Tracker" = "https://github.com/rossshannon/Things3-MCP/issues"
+"Documentation" = "https://github.com/rossshannon/Things3-MCP#readme"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/things3_mcp", "src/things3_mcp_bridge"]
+packages = ["src/things3_mcp", "src/things3_mcp_bridge", "src/clawbridge"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "src/things3_mcp",
     "src/things3_mcp_bridge",
+    "src/clawbridge",
     "packaging/macos",
     "scripts",
     ".env.example",
     "README.md",
     "LICENSE",
     "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    "docs/bridge-build.md",
+    "docs/security/local-bridge-security.md",
     "things_fast_server.py"
 ]
 
@@ -219,6 +224,10 @@ per_file_ignores = [
 ]
 
 [dependency-groups]
+build = [
+    "pyinstaller==6.20.0",
+    "pyinstaller-hooks-contrib==2026.4",
+]
 dev = [
     "bandit>=1.8.6",
     "build>=1.2.2.post1",

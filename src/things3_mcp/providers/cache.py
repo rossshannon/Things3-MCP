@@ -8,11 +8,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .base import ProviderError
+from clawbridge.runtime import RuntimeSafetyError, atomic_write, private_directory, private_open
+
+from .base import ProviderError, live_read_required, record_read
 
 APP_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / "Things3-MCP"
 DEFAULT_CACHE_DIR = APP_SUPPORT_DIR / "cache"
 DEFAULT_CACHE_FILE = DEFAULT_CACHE_DIR / "latest.json"
+MAX_CACHE_BYTES = 64 * 1024 * 1024
 
 
 def cache_file_from_env() -> Path:
@@ -21,7 +24,7 @@ def cache_file_from_env() -> Path:
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
-    if not value:
+    if not isinstance(value, str) or not value:
         return None
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -36,41 +39,44 @@ class CacheStore:
         self.path = path or cache_file_from_env()
 
     def read_snapshot(self) -> dict[str, Any]:
-        """Read the latest cache snapshot."""
-        if not self.path.exists():
-            raise ProviderError("cache_missing", f"Things cache is missing at {self.path}", cache_status=self.status())
+        """Read a bounded, private regular file without following symlinks."""
         try:
-            return json.loads(self.path.read_text())
-        except json.JSONDecodeError as exc:
-            raise ProviderError("cache_unreadable", f"Things cache is not valid JSON: {exc}", cache_status=self.status()) from exc
-        except OSError as exc:
-            raise ProviderError("cache_unreadable", f"Things cache could not be read: {exc}", cache_status=self.status()) from exc
+            if any(parent.is_symlink() for parent in self.path.absolute().parents):
+                raise RuntimeSafetyError("Cache paths must not contain symlinks")
+            fd = private_open(self.path, os.O_RDONLY)
+            with os.fdopen(fd, "rb") as source:
+                raw = source.read(MAX_CACHE_BYTES + 1)
+            if len(raw) > MAX_CACHE_BYTES:
+                raise ValueError("Cache exceeds its size limit")
+            snapshot = json.loads(raw)
+            if not isinstance(snapshot, dict) or not isinstance(snapshot.get("data"), dict):
+                raise ProviderError("cache_unreadable", "The cache does not contain a valid snapshot object")
+            return snapshot
+        except FileNotFoundError as exc:
+            raise ProviderError("cache_missing", "Things cache is missing", cache_status={"available": False}) from exc
+        except (OSError, ValueError) as exc:
+            raise ProviderError("cache_unreadable", "Things cache is invalid, unsafe, too large, or unreadable", cache_status={"available": True, "readable": False}) from exc
 
     def write_snapshot(self, snapshot: dict[str, Any]) -> None:
-        """Atomically write a cache snapshot."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.path.parent, 0o700)
-        tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-        payload = json.dumps(snapshot, indent=2, sort_keys=True)
-        with tmp_path.open("w") as handle:
-            os.chmod(tmp_path, 0o600)
-            handle.write(payload)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        tmp_path.replace(self.path)
-        os.chmod(self.path, 0o600)
+        """Atomically replace a snapshot using a unique mode-0600 file."""
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("data"), dict):
+            raise ProviderError("cache_unwritable", "The snapshot must contain a data object")
+        payload = (json.dumps(snapshot, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        if len(payload) > MAX_CACHE_BYTES:
+            raise ProviderError("cache_unwritable", "The snapshot exceeds the cache size limit")
+        private_directory(self.path.parent)
+        atomic_write(self.path, payload)
 
     def status(self) -> dict[str, Any]:
         """Return lightweight cache availability metadata."""
-        available = self.path.exists()
+        available = self.path.exists() or self.path.is_symlink()
         status: dict[str, Any] = {"available": available, "path": str(self.path)}
         if not available:
             return status
         try:
-            snapshot = json.loads(self.path.read_text())
-        except Exception as exc:  # noqa: BLE001 - diagnostic path only
-            status.update({"readable": False, "error": str(exc)})
+            snapshot = self.read_snapshot()
+        except ProviderError as exc:
+            status.update({"available": exc.error_code != "cache_missing", "readable": False, "error_code": exc.error_code})
             return status
         generated_at = snapshot.get("generated_at")
         generated = _parse_datetime(generated_at)
@@ -96,12 +102,20 @@ class CacheThingsProvider:
         self.store = store or CacheStore()
 
     def _data(self) -> dict[str, Any]:
+        if live_read_required():
+            raise ProviderError("live_read_required", "A cache cannot satisfy a live read")
         snapshot = self.store.read_snapshot()
+        generated = _parse_datetime(snapshot.get("generated_at"))
+        age = max(0, int((datetime.now(generated.tzinfo or UTC) - generated).total_seconds())) if generated else None
+        snapshot_source = snapshot.get("source")
+        record_read(
+            {"source": "cache", "snapshot_source": snapshot_source if isinstance(snapshot_source, str) else "unknown", "generated_at": snapshot.get("generated_at") if generated else None, "cache_age_seconds": age}
+        )
         return snapshot.get("data", {})
 
     def _list(self, key: str) -> list[dict[str, Any]]:
         value = self._data().get(key, [])
-        if not isinstance(value, list):
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
             raise ProviderError("cache_unreadable", f"Cache key {key!r} is not a list", cache_status=self.store.status())
         return value
 
@@ -151,8 +165,12 @@ class CacheThingsProvider:
         return [item for item in candidates if needle in str(item.get("title", "")).casefold() or needle in str(item.get("notes", "")).casefold()]
 
     def get(self, uuid: str) -> dict[str, Any] | None:
+        data = self._data()
         for key in ("inbox", "today", "upcoming", "anytime", "someday", "todos", "projects", "areas", "tags"):
-            for item in self._data().get(key, []):
+            items = data.get(key, [])
+            if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+                raise ProviderError("cache_unreadable", "The cache contains invalid items")
+            for item in items:
                 if item.get("uuid") == uuid:
                     return item
         return None

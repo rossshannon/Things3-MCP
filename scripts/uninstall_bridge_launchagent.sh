@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-PLIST_TARGET="${HOME}/Library/LaunchAgents/com.rossshannon.things3-mcp.bridge.plist"
-APP_TARGET="${HOME}/Applications/Things3 MCP Bridge.app"
-
-if [[ -f "${PLIST_TARGET}" ]]; then
-  launchctl unload "${PLIST_TARGET}" >/dev/null 2>&1 || true
-  rm -f "${PLIST_TARGET}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+if [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  exec "${ROOT}/.venv/bin/python" -m clawbridge.packaging uninstall --root "${ROOT}" "$@"
 fi
-
-rm -rf "${APP_TARGET}"
-echo "Uninstalled Things3 MCP Bridge LaunchAgent and app bundle. Cache/token files were left in Application Support."
+exec uv run --locked --project "${ROOT}" python -m clawbridge.packaging uninstall --root "${ROOT}" "$@"

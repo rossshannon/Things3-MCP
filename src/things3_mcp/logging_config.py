@@ -7,6 +7,7 @@ Provides structured logging with multiple outputs and log levels.
 import json
 import logging
 import logging.handlers
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class StructuredFormatter(logging.Formatter):
 
         # Add exception info if present
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            log_data["error_type"] = record.exc_info[0].__name__ if record.exc_info[0] else "Exception"
 
         return json.dumps(log_data)
 
@@ -60,15 +61,15 @@ class OperationLogFilter(logging.Filter):
     def __init__(self):
         """Initialize the operation log filter."""
         super().__init__()
-        self.operation_context = {}
+        self._context = ContextVar("things_operation_context", default=None)
 
     def set_operation_context(self, operation: str, **kwargs):
         """Set the current operation context."""
-        self.operation_context = {"operation": operation, **kwargs}
+        self._context.set({"operation": operation})
 
     def clear_operation_context(self):
         """Clear the operation context."""
-        self.operation_context = {}
+        self._context.set(None)
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Add operation context to log records.
@@ -79,8 +80,19 @@ class OperationLogFilter(logging.Filter):
         Returns:
             bool: Always returns True to allow the record.
         """
-        # Add operation context to the record
-        for key, value in self.operation_context.items():
+        # MCP/http client debug messages can include complete requests, results
+        # or validation errors. Retain diagnostic locations, never their text.
+        if not record.name.startswith(("things3_mcp.", "things3_mcp_bridge.", "clawbridge.")):
+            record.msg = "External component diagnostic (message omitted)"
+            record.args = ()
+        if record.exc_info:
+            record.error_type = record.exc_info[0].__name__ if record.exc_info[0] else "Exception"
+        record.exc_info = None
+        record.exc_text = None
+        record.stack_info = None
+
+        # Add operation context to the record.
+        for key, value in (self._context.get() or {}).items():
             setattr(record, key, value)
         return True
 
@@ -155,13 +167,13 @@ def log_operation_start(operation: str, **kwargs) -> None:
     """Log the start of an operation and set context."""
     operation_filter.set_operation_context(operation, **kwargs)
     logger = logging.getLogger(__name__)
-    logger.info(f"Starting operation: {operation}", extra={"operation": operation, **kwargs})
+    logger.info(f"Starting operation: {operation}", extra={"operation": operation})
 
 
 def log_operation_end(operation: str, success: bool, duration: float = None, **kwargs) -> None:
     """Log the end of an operation."""
     logger = logging.getLogger(__name__)
-    extra = {"operation": operation, "success": success, **kwargs}
+    extra = {"operation": operation, "success": success}
     if duration is not None:
         extra["duration"] = duration
 
