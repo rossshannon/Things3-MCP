@@ -33,6 +33,10 @@ This MCP server unlocks the power of AI for your task management:
 
 This checkout contains the 2.5.0 source candidate with the signed local bridge and an adaptable ClawBridge reference. It is not a statement that 2.5.0 has been published to PyPI. Use a reviewed source revision for this workflow. The existing 24 MCP tools remain, with three new tools for bridge status and operation inspection.
 
+The included ClawBridge reference routes fixed MCP tools through an authenticated owner-private Unix socket to a small signed macOS app and bounded worker. The signed app is the permission-bearing execution backend; the MCP server does not automatically gain its permissions. The standalone counter, Music and catalogue profiles include fixed MCP tools. Start with [exporting the reference](docs/adapting-clawbridge.md#export-the-reference), then follow its synthetic MCP guide. The default Things provider supports the existing 24 tools and three inspection tools through the bridge.
+
+In this source checkout, install the MCP client with `uv sync --locked --group dev` and inspect its options with `uv run --locked clawbridge-mcp --help`; the standalone export instead uses the `mcp` extra described in its guide.
+
 ## Data access and safety
 
 The implementation never writes directly to Things' SQLite database. Creates, updates, completion and movement use Things' AppleScript interface so the app owns its changes and sync. Database readers open SQLite read-only; this is a reader setting, not operating-system confinement of the entire bridge.

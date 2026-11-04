@@ -1,6 +1,6 @@
 # Adapting ClawBridge to another Mac app
 
-ClawBridge provides a small local execution service for fixed app operations. An authorised client sends structured requests over a Unix socket; a signed app owns the macOS permissions and executes a bounded worker. Things3-MCP 2.5 uses this core, and the synthetic adapter demonstrates it without Things or private data.
+ClawBridge routes app-specific MCP tools to a small signed macOS app for fixed app operations. An authorised client sends structured requests over a Unix socket; the signed app owns the macOS permissions and executes a bounded worker. The MCP process does not automatically gain those permissions. Things3-MCP 2.5 uses this core, and the synthetic adapter demonstrates it without Things or private data.
 
 The bridge work began in May 2026 to make local app actions reliable while the user was away. Computer use in clients such as Codex and Grok Bot is useful for interfaces that require visual interaction. Repeated app operations benefit from structured parameters, testable results and explicit permission ownership. The bridge supplies that execution layer; it does not supply a remote control service or replace a client's security policy.
 
@@ -20,10 +20,13 @@ The manifest has a source revision and per-file source paths, hashes and modes. 
 
 ## Define an adapter
 
+The standalone `clawbridge-mcp` server provides fixed `counter`, `music` and `catalogue` profiles over stdio. Follow the exported `REFERENCE.md` for client configuration, including SSH. Define an app-specific tool mapping for another app; never accept a caller-selected command, script, app, path, executable or SQL.
+
 Choose [the closest small example](examples/README.md): counter state, Music scripting or a read-only SQLite catalogue. Start from `src/clawbridge/demo.py` for the smallest adapter:
 
 | Part | Responsibility |
 | --- | --- |
+| [`src/clawbridge_mcp/server.py`](../src/clawbridge_mcp/server.py) | Define fixed MCP tool names, schemas, read-only hints and route mappings. Edit and review this source when adding an app; it is not a dynamic plugin interface. |
 | `ACTIONS` | Fixed names, parameter types, required fields and whether each action mutates state. |
 | Request handler `resolve()` | Map fixed method/path pairs to those actions; reject unsupported routes and query parameters. |
 | `execute()` | Perform one app operation and return structured data. Keep app discovery, script construction and data conversion here. |

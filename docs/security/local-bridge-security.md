@@ -1,5 +1,7 @@
 # Local bridge security model
 
+The standalone MCP profiles use the authenticated owner-private socket boundary. Operator configuration selects the profile and absolute socket and token-file paths; clients cannot choose commands, scripts, apps, paths, SQL or executables. The token stays on the Mac and its value is not a command argument. SSH can carry MCP stdio, but adds neither per-bot authorisation nor a public network listener. The MCP process gains no automatic macOS permissions. Treat operation lookup responses as private when retained payloads are enabled.
+
 The bridge gives macOS one signed app identity to authorise and lets local clients request a fixed set of app operations. It improves permission ownership and failure handling. It does not isolate all programs running as the same user, and signing alone does not confine filesystem access.
 
 ## Authority and trust

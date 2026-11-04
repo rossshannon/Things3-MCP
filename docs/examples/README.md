@@ -1,6 +1,6 @@
 # Choose a small reference
 
-Each example is a complete adapter around the same private socket, authentication, worker and recovery code. Start with the closest example and replace its fixed actions with your app's supported operations.
+Each example exposes fixed MCP tools through a profile and an adapter around the same private socket, authentication, worker and recovery code. Follow the synthetic MCP quick start in the standalone `REFERENCE.md`. Start with the closest example and replace its fixed actions with your app's supported operations.
 
 | Example | What it demonstrates | Privacy permission | Optional App Sandbox scope |
 | --- | --- | --- | --- |

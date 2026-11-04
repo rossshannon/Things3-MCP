@@ -12,6 +12,21 @@ Every request needs the private bearer token. Play and pause are mutations, so t
 
 ## Permissions
 
+The MCP profile `music` exposes `music_state`, `music_play` and `music_pause`, plus `bridge_status`, `get_operation` and `list_operations`. Use the client configuration in the standalone `REFERENCE.md`, selecting `--profile music` and the helper's absolute socket and token paths. The default runtime is `~/Library/Application Support/ClawBridgeMusic/`; expand `~` in client JSON. The MCP process does not start the helper or gain its permissions.
+
+For example, replace the paths with those on your Mac:
+
+```json
+{
+  "mcpServers": {
+    "music": {
+      "command": "/Users/you/clawbridge/.venv/bin/clawbridge-mcp",
+      "args": ["--profile", "music", "--socket", "/Users/you/Library/Application Support/ClawBridgeMusic/bridge.sock", "--token-file", "/Users/you/Library/Application Support/ClawBridgeMusic/bridge.token"]
+    }
+  }
+}
+```
+
 The app needs Automation consent to control Music. It does not read Music's database or request Full Disk Access, Accessibility, Screen Recording or System Events. The usage description names the three supported operations.
 
 For the experimental sandbox build, `scripting_targets` selects only `com.apple.Music.playback`. The Music dictionary supplied with the development host declares that group for play, pause and player state. Inspect your target OS's `/System/Applications/Music.app/Contents/Resources/com.apple.Music.sdef` before adapting this example. Apple recommends scripting access groups when a target provides them, rather than a whole-app temporary exception. [Apple's entitlement reference](https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/AppSandboxTemporaryExceptionEntitlements.html).

@@ -1,5 +1,7 @@
 # Build and install a macOS bridge
 
+The standalone MCP client is installed separately with `uv sync --locked --group dev --extra mcp`; keep `--extra mcp` on subsequent `uv run` commands. In the source checkout, MCP is a normal dependency and needs no extra. The helper build uses a separate locked environment and excludes the MCP SDK. The synthetic signed-candidate smoke accepts `--mcp` to exercise stdio against the same verified helper; install the client extra outside the helper build environment. This does not establish real app consent or locked-session operation.
+
 The bridge is a native PyInstaller **onedir** app. Building, signing and installing are separate commands. A build does not launch an app, install a service, create a certificate or request a privacy grant.
 
 Use the committed `uv.lock` and `.python-version`. The build command creates a fresh environment, selects the locked `build` dependency group with `uv sync --locked --no-default-groups --group build`, and builds for the interpreter's native architecture. Run on macOS with uv, the pinned Python, and Apple's command-line tools available. The shell entry points work from any directory and use the project environment or `uv run --locked`; they do not use Apple's system Python.

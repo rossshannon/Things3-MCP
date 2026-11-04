@@ -11,6 +11,21 @@ Both return `items` and a `truncated` flag. Search is a read despite using HTTP 
 
 ## Fixed path and permissions
 
+The MCP profile `catalogue` exposes `catalogue_items` and `catalogue_search`, plus `bridge_status`, `get_operation` and `list_operations`. Use the client configuration in the standalone `REFERENCE.md`, selecting `--profile catalogue` and the helper's absolute socket and token paths. The default runtime is `~/Library/Application Support/ClawBridgeCatalogueBridge/`; expand `~` in client JSON. The MCP process does not start the helper or gain its permissions.
+
+For example, replace the paths with those on your Mac:
+
+```json
+{
+  "mcpServers": {
+    "catalogue": {
+      "command": "/Users/you/clawbridge/.venv/bin/clawbridge-mcp",
+      "args": ["--profile", "catalogue", "--socket", "/Users/you/Library/Application Support/ClawBridgeCatalogueBridge/bridge.sock", "--token-file", "/Users/you/Library/Application Support/ClawBridgeCatalogueBridge/bridge.token"]
+    }
+  }
+}
+```
+
 The only database path is the account home followed by:
 
 ```text
