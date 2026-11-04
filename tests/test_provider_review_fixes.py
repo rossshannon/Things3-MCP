@@ -89,6 +89,67 @@ def test_stop_date_string_does_not_guess_timezone_from_snapshot(tmp_path):
 
 
 @pytest.mark.parametrize("method", ["tasks", "todos"])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("project", "project-id"),
+        ("area", "area-id"),
+        ("project", False),
+        ("area", False),
+        ("heading", False),
+        ("tag", "work"),
+        ("tag", False),
+        ("deadline", False),
+        ("start_date", False),
+        ("stop_date", False),
+        ("start", "Anytime"),
+        ("trashed", False),
+    ],
+)
+def test_apple_events_cache_rejects_filters_on_unobserved_task_fields(tmp_path, method, field, value):
+    store = CacheStore(tmp_path / "snapshot.json")
+    store.write_snapshot({"source": "apple_events", "data": {"todos": [{"uuid": "task", "type": "to-do", "status": "incomplete", "project": None, "area": None, "tags": None}]}})
+    with pytest.raises(ProviderError) as error:
+        getattr(CacheThingsProvider(store), method)(**{field: value})
+    assert error.value.error_code == "cache_unsupported"
+    assert field in str(error.value)
+
+
+@pytest.mark.parametrize("key,field,value", [("projects", "area", False), ("projects", "tag", False), ("projects", "status", "incomplete"), ("areas", "project", False), ("tags", "tag", False)])
+def test_apple_events_cache_rejects_unobserved_metadata_filters(tmp_path, key, field, value):
+    store = CacheStore(tmp_path / "snapshot.json")
+    store.write_snapshot({"source": "apple_events", "data": {key: [{"uuid": "item", "title": "Item"}]}})
+    with pytest.raises(ProviderError) as error:
+        getattr(CacheThingsProvider(store), key)(**{field: value})
+    assert error.value.error_code == "cache_unsupported"
+
+
+def test_apple_events_cache_keeps_observed_filters_and_unfiltered_rows(tmp_path):
+    task = {"uuid": "task", "type": "to-do", "status": "incomplete", "project": None}
+    store = CacheStore(tmp_path / "snapshot.json")
+    store.write_snapshot({"source": "apple_events", "data": {"todos": [task], "areas": [{"uuid": "area", "type": "area", "tag_titles": ["work"]}]}})
+    provider = CacheThingsProvider(store)
+    assert provider.todos(uuid="task", type="to-do", status="incomplete", project=None) == [task]
+    assert provider.todos() == [task]
+    assert [row["uuid"] for row in provider.areas(tag="work")] == ["area"]
+    assert provider.areas(tag=False) == []
+
+
+def test_cache_filter_coverage_and_rows_use_one_snapshot(monkeypatch, tmp_path):
+    store = CacheStore(tmp_path / "snapshot.json")
+    snapshots = [{"source": "sqlite", "data": {"todos": [{"uuid": "task", "project": "project"}]}}, {"source": "apple_events", "data": {"todos": [{"uuid": "task", "project": None}]}}]
+    calls = []
+
+    def read_snapshot():
+        calls.append(None)
+        return snapshots[min(len(calls) - 1, 1)]
+
+    monkeypatch.setattr(store, "read_snapshot", read_snapshot)
+    assert CacheThingsProvider(store).todos(project="project") == [{"uuid": "task", "project": "project"}]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("method", ["tasks", "todos"])
 @pytest.mark.parametrize("status", ["completed", "canceled", None])
 def test_incomplete_snapshot_rejects_uncaptured_status_coverage(tmp_path, method, status):
     provider = cache_provider(tmp_path, [{"uuid": "open", "status": "incomplete"}, {"uuid": "incidental", "status": "completed"}])

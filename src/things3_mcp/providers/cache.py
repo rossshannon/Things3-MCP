@@ -16,6 +16,12 @@ APP_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / "Things3-MCP
 DEFAULT_CACHE_DIR = APP_SUPPORT_DIR / "cache"
 DEFAULT_CACHE_FILE = DEFAULT_CACHE_DIR / "latest.json"
 MAX_CACHE_BYTES = 64 * 1024 * 1024
+APPLE_EVENTS_FILTER_FIELDS = {
+    "todos": frozenset({"uuid", "type", "status"}),
+    "projects": frozenset({"uuid", "type"}),
+    "areas": frozenset({"uuid", "type", "tag"}),
+    "tags": frozenset({"uuid"}),
+}
 
 
 def cache_file_from_env() -> Path:
@@ -101,7 +107,7 @@ class CacheThingsProvider:
     def __init__(self, store: CacheStore | None = None) -> None:
         self.store = store or CacheStore()
 
-    def _data(self) -> dict[str, Any]:
+    def _snapshot(self) -> dict[str, Any]:
         if live_read_required():
             raise ProviderError("live_read_required", "A cache cannot satisfy a live read")
         snapshot = self.store.read_snapshot()
@@ -111,10 +117,13 @@ class CacheThingsProvider:
         record_read(
             {"source": "cache", "snapshot_source": snapshot_source if isinstance(snapshot_source, str) else "unknown", "generated_at": snapshot.get("generated_at") if generated else None, "cache_age_seconds": age}
         )
-        return snapshot.get("data", {})
+        return snapshot
 
-    def _list(self, key: str) -> list[dict[str, Any]]:
-        value = self._data().get(key, [])
+    def _data(self) -> dict[str, Any]:
+        return self._snapshot()["data"]
+
+    def _list(self, key: str, *, snapshot: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        value = (self._snapshot() if snapshot is None else snapshot)["data"].get(key, [])
         if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
             raise ProviderError("cache_unreadable", f"Cache key {key!r} is not a list", cache_status=self.store.status())
         return value
@@ -128,10 +137,17 @@ class CacheThingsProvider:
             )
         include_items = kwargs.pop("include_items", None)
         count_only = kwargs.pop("count_only", False)
-        result = list(self._list(key))
+        snapshot = self._snapshot()
+        result = list(self._list(key, snapshot=snapshot))
         for field, expected in kwargs.items():
             if expected is None:
                 continue
+            if snapshot.get("source") == "apple_events" and field not in APPLE_EVENTS_FILTER_FIELDS.get(key, frozenset()):
+                raise ProviderError(
+                    "cache_unsupported",
+                    f"Apple Events cache snapshots do not observe the {field!r} field required by this filter; live database access is required",
+                    cache_status={"snapshot_source": "apple_events", "unsupported_filter": field},
+                )
             if field == "tag":
                 result = [item for item in result if _item_has_tag(item, expected)]
             elif field in {"area", "project", "heading", "deadline", "start_date", "stop_date"} and isinstance(expected, bool):
