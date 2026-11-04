@@ -54,7 +54,7 @@ To exercise actual Music access, start the signed executable in the foreground, 
 ```
 
 ```sh
-uv run --locked python - <<'PY'
+.venv/bin/python - <<'PY'
 import http.client
 import socket
 from pathlib import Path

@@ -8,7 +8,6 @@ import socket
 import sqlite3
 import subprocess
 import threading
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -260,28 +259,66 @@ def test_lost_mutation_response_dispatches_once_and_is_recoverable(demo, monkeyp
 
 
 def test_one_deadline_covers_connection_and_response_without_replay(demo, monkeypatch):
-    class DelayedConnection(socket.socket):
+    timers = []
+    entered, release, completed = threading.Event(), threading.Event(), threading.Event()
+    calls = []
+    original_finish = demo.journal.finish
+
+    class ControlledTimer:
+        def __init__(self, interval, callback):
+            assert interval == interface.TIMEOUT_SECONDS
+            self.callback = callback
+            self.started = False
+            self.cancelled = False
+            timers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+        def fire(self):
+            assert self.started and not self.cancelled
+            self.callback()
+
+    class ObservedConnection(socket.socket):
         def connect(self, address):
-            time.sleep(0.3)
+            assert timers and timers[-1].started
             return super().connect(address)
 
-    calls = []
-
-    def delayed_worker(name, _params):
+    def waiting_worker(name, _params):
         calls.append(name)
-        time.sleep(0.3)
+        entered.set()
+        assert release.wait(20)
         return ok_envelope({"accepted": True}, outcome="succeeded")
 
-    demo.worker = delayed_worker
-    monkeypatch.setattr(interface, "TIMEOUT_SECONDS", 0.5)
-    monkeypatch.setattr(interface, "socket", SimpleNamespace(socket=DelayedConnection, AF_UNIX=socket.AF_UNIX, SOCK_STREAM=socket.SOCK_STREAM, SHUT_RDWR=socket.SHUT_RDWR))
+    def finish(key, response):
+        original_finish(key, response)
+        completed.set()
+
+    demo.worker = waiting_worker
+    monkeypatch.setattr(demo.journal, "finish", finish)
+    monkeypatch.setattr(interface, "threading", SimpleNamespace(Timer=ControlledTimer))
+    monkeypatch.setattr(interface, "socket", SimpleNamespace(socket=ObservedConnection, AF_UNIX=socket.AF_UNIX, SOCK_STREAM=socket.SOCK_STREAM, SHUT_RDWR=socket.SHUT_RDWR))
 
     async def protocol():
         async with create_connected_server_and_client_session(mcp_server(demo)) as client:
-            result = envelope(await client.call_tool("counter_increment", {"amount": 1, "correlation_id": "whole-deadline"}), error=True)
-            assert result["outcome"] == "outcome_unknown" and result["correlation_id"] == "whole-deadline"
-            records = envelope(await client.call_tool("list_operations", {"correlation_id": "whole-deadline"}))["data"]
-            assert len(records) == 1 and records[0]["outcome"] == "succeeded"
+            call = asyncio.create_task(client.call_tool("counter_increment", {"amount": 1, "correlation_id": "whole-deadline"}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 10)
+                timers[0].fire()
+                result = envelope(await asyncio.wait_for(call, 10), error=True)
+                assert result["outcome"] == "outcome_unknown" and result["correlation_id"] == "whole-deadline"
+                assert calls == ["increment"]
+                release.set()
+                assert await asyncio.to_thread(completed.wait, 10)
+                records = envelope(await client.call_tool("list_operations", {"correlation_id": result["correlation_id"]}))["data"]
+                assert len(records) == 1 and records[0]["outcome"] == "succeeded"
+            finally:
+                release.set()
+                if not call.done():
+                    await asyncio.wait_for(call, 10)
 
     asyncio.run(protocol())
     assert calls == ["increment"]
@@ -311,6 +348,58 @@ def test_malformed_or_oversized_response_never_claims_mutation_success(demo, mon
 
     asyncio.run(protocol())
     assert len(demo.journal.recent()) == 1
+
+
+@pytest.mark.parametrize("tool", ["counter_echo", "counter_increment"])
+@pytest.mark.parametrize("number_kind", ["nested-overflow", "huge-cache-age", "finite"])
+def test_response_numbers_keep_sanitised_results_and_mutation_recovery(demo, monkeypatch, capsys, tool, number_kind):
+    original = demo.RequestHandlerClass._send
+    worker = demo.worker
+    dispatches = []
+    private_text = "synthetic-private-submitted-text"
+
+    def dispatch(name, params):
+        dispatches.append(name)
+        return worker(name, params)
+
+    def numeric_response(handler, payload, status=200):
+        if handler.path not in {"/demo/echo", "/demo/increment"}:
+            original(handler, payload, status)
+            return
+        payload["data"]["nested"] = [1.25 if number_kind == "finite" else "number-placeholder"]
+        payload["cache_age_seconds"] = 2.5 if number_kind == "finite" else ("age-placeholder" if number_kind == "huge-cache-age" else 0)
+        raw = json.dumps(payload).encode()
+        raw = raw.replace(b'"number-placeholder"', b"1e999" if number_kind == "nested-overflow" else b"1.25")
+        raw = raw.replace(b'"age-placeholder"', b"9" * 1000)
+        handler.send_response(status)
+        handler.send_header("Content-Length", str(len(raw)))
+        handler.end_headers()
+        handler.wfile.write(raw)
+
+    demo.worker = dispatch
+    monkeypatch.setattr(demo.RequestHandlerClass, "_send", numeric_response)
+    mutation = tool == "counter_increment"
+    malformed = number_kind != "finite"
+
+    async def protocol():
+        async with create_connected_server_and_client_session(mcp_server(demo)) as client:
+            arguments = {"amount": 37, "correlation_id": "numeric-recovery"} if mutation else {"text": private_text}
+            result = envelope(await client.call_tool(tool, arguments), error=malformed)
+            if malformed:
+                assert result["error_code"] == ("outcome_unknown" if mutation else "bridge_unavailable")
+                assert private_text not in json.dumps(result)
+            else:
+                assert result["data"]["nested"] == [1.25] and result["cache_age_seconds"] == 2.5
+            if mutation:
+                assert result["correlation_id"] == "numeric-recovery"
+                assert result["outcome"] == ("outcome_unknown" if malformed else "succeeded")
+                records = envelope(await client.call_tool("list_operations", {"correlation_id": result["correlation_id"]}))["data"]
+                assert len(records) == 1 and records[0]["outcome"] == "succeeded"
+
+    asyncio.run(protocol())
+    assert dispatches == ["increment" if mutation else "echo"]
+    captured = capsys.readouterr()
+    assert private_text not in captured.out + captured.err
 
 
 def test_music_protocol_uses_fixed_scripts_with_only_os_call_mocked(tmp_path_factory, monkeypatch):

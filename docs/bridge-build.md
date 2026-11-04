@@ -8,8 +8,9 @@ Use the committed `uv.lock` and `.python-version`. The build command creates a f
 
 The macOS CI job uses `setup-python` with `3.12` only to install uv. That action's available patch releases depend on its distribution catalogue. uv then selects the exact version in `.python-version`, currently `3.12.16`, and the isolated build passes that version explicitly through `--python`. The bootstrap interpreter does not set the app's build runtime. Both project configurations also set mypy's target to `darwin`, so Linux CI checks the macOS code paths while retaining unreachable-code warnings. See the [setup-python v6 version selection](https://github.com/actions/setup-python/blob/v6/docs/advanced-usage.md#available-versions-of-python-and-pypy), [uv Python version selection](https://docs.astral.sh/uv/concepts/python-versions/) and [mypy platform configuration](https://mypy.readthedocs.io/en/stable/config_file.html#confval-platform) documentation.
 
+Prepare the source checkout with `uv sync --locked --group build`. In the standalone repository, use `uv sync --locked --group build --extra mcp` to retain the MCP client. The build then creates its separate helper environment without that extra:
+
 ```sh
-uv sync --locked --group build
 scripts/build_bridge_app.sh --output build/local-candidate
 ```
 

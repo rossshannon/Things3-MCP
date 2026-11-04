@@ -92,7 +92,6 @@ def main():
     child_env = {key: value for key, value in os.environ.items() if not key.startswith(("THINGS", "CLAWBRIDGE", "PYTHON"))}
     process = subprocess.Popen([str(executable), "--socket", str(endpoint), "--token-file", str(token_file)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env, start_new_session=True)
     observations = {"build_id": manifest["build_id"], "source_revision": manifest["source_revision"], "source_dirty": manifest["source_dirty"], "sandbox": manifest["sandbox"]}
-    # Empty sentinel; the credential is read from its private file.
     token = ""  # nosec B105
 
     def request(method, path, payload=None, credential=None):

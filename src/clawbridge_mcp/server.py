@@ -65,7 +65,11 @@ def _validate_envelope(value: Any) -> dict[str, Any]:
             raise ValueError("Invalid bridge metadata")
     if "cache_age_seconds" in value:
         age = value["cache_age_seconds"]
-        if type(age) not in {int, float} or not math.isfinite(age) or age < 0:
+        try:
+            valid_age = type(age) in {int, float} and math.isfinite(age) and age >= 0
+        except OverflowError:
+            valid_age = False
+        if not valid_age:
             raise ValueError("Invalid cache age")
     if value["ok"]:
         if "data" not in value or (value["data"] is not None and not isinstance(value["data"], dict | list) and type(value["data"]) is not int):
@@ -87,7 +91,13 @@ def _decode(raw: bytes) -> dict[str, Any]:
     def constant(_value: str) -> None:
         raise ValueError("Invalid response number")
 
-    return _validate_envelope(json.loads(raw, object_pairs_hook=pairs, parse_constant=constant))
+    def decimal(raw_number: str) -> float:
+        value = float(raw_number)
+        if not math.isfinite(value):
+            raise ValueError("Invalid response number")
+        return value
+
+    return _validate_envelope(json.loads(raw, object_pairs_hook=pairs, parse_constant=constant, parse_float=decimal))
 
 
 def _request(socket_path: Path, token_file: Path, method: str, path: str, body: dict[str, Any], correlation: str | None) -> dict[str, Any]:
@@ -203,7 +213,6 @@ def _prepare(profile: str, name: str, arguments: dict[str, Any]) -> tuple[str, s
         return "GET", f"/operations?{urlencode(query)}", {}, None
     module_name, actions = PROFILES[profile]
     action = name.removeprefix(profile + "_")
-    # App execution modules are not loaded by initialise or tool discovery.
     params = importlib.import_module(module_name).ACTIONS[action].validate(params)
     route_profile = "demo" if profile == "counter" else profile
     return actions[action], f"/{route_profile}/{action}", params, (correlation or str(uuid4())) if name in MUTATIONS else None

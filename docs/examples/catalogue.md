@@ -45,7 +45,7 @@ For a real app, first prefer a supported API or explicit export. If you must rea
 This explicit setup command creates a new database and refuses to replace an existing one. The bridge itself has no write endpoint:
 
 ```sh
-uv run --locked python - <<'PY'
+.venv/bin/python - <<'PY'
 import os
 import pwd
 import sqlite3
