@@ -252,7 +252,6 @@ def create_server(*, profile: str, socket_path: Path, token_file: Path) -> Serve
             envelope = await to_thread.run_sync(_request, socket_path, token_file, *prepared)
         return types.ServerResult(types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps(envelope, allow_nan=False))], structuredContent=envelope, isError=not envelope["ok"]))
 
-    # The pinned SDK's convenience decorator always sets isError=False.
     server.request_handlers[types.CallToolRequest] = call_tool
     return server
 

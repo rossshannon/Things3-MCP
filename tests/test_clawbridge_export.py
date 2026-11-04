@@ -31,7 +31,7 @@ def test_export_records_exact_files_and_hashes(tmp_path):
     assert not any(str(ROOT) in json.dumps(value) for value in manifest.values())
     project = tomllib.loads((destination / "pyproject.toml").read_text())
     assert project["project"]["dependencies"] == []
-    assert project["project"]["optional-dependencies"]["mcp"] == ["mcp==1.11.0", "pydantic==2.9.2", "pydantic-settings==2.10.1"]
+    assert project["project"]["optional-dependencies"]["mcp"] == ["mcp==1.30.0", "pydantic==2.14.1", "pydantic-settings==2.10.1"]
     assert project["project"]["scripts"]["clawbridge-mcp"] == "clawbridge_mcp.server:main"
     assert project["project"]["readme"] == "REFERENCE.md"
     packages = {package["name"] for package in tomllib.loads((destination / "uv.lock").read_text())["package"]}

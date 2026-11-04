@@ -8,9 +8,8 @@ license = {text = "MIT"}
 dependencies = []
 
 [project.optional-dependencies]
-# The pinned SDK imports a private Pydantic helper removed in newer releases.
-# Retain the compatible versions already verified by the source project.
-mcp = ["mcp==1.11.0", "pydantic==2.9.2", "pydantic-settings==2.10.1"]
+# Keep the client SDK and its compatible Pydantic dependencies reproducible.
+mcp = ["mcp==1.30.0", "pydantic==2.14.1", "pydantic-settings==2.10.1"]
 
 [project.scripts]
 clawbridge-demo = "clawbridge.demo:main"

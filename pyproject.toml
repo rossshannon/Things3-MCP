@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.2.0",
+    "mcp[cli]>=1.30.0,<2",
     "things-py>=0.0.15",
 ]
 
