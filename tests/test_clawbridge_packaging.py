@@ -10,6 +10,27 @@ import pytest
 from clawbridge import packaging
 
 
+def test_execution_core_imports_without_the_optional_sdk():
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "import importlib.util,sys; import clawbridge.demo,clawbridge.packaging; "
+            "assert importlib.util.find_spec('mcp') is None; "
+            "assert not any(name.startswith(('mcp', 'clawbridge_mcp')) for name in sys.modules)",
+        ],
+        env={"PYTHONPATH": str(root / "src")},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):
     home = tmp_path / "mcp-test Home & Friends"

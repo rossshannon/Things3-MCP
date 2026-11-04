@@ -147,8 +147,9 @@ def _request(socket_path: Path, token_file: Path, method: str, path: str, body: 
                 if unknown
                 else "The local bridge or its private credential is unavailable or invalid."
             ),
-            **({"outcome": "outcome_unknown" if unknown else "not_started", "correlation_id": correlation} if mutation else {}),
         )
+        if mutation:
+            result.update(outcome="outcome_unknown" if unknown else "not_started", correlation_id=correlation)
         if unknown and envelope is not None and isinstance(envelope.get("operation_id"), str):
             result["operation_id"] = envelope["operation_id"]
         return result
@@ -217,7 +218,7 @@ def create_server(*, profile: str, socket_path: Path, token_file: Path) -> Serve
     if profile not in PROFILES:
         raise ValueError("Unknown ClawBridge profile")
     names = [f"{profile}_{action}" for action in PROFILES[profile][1]] + ["bridge_status", "get_operation", "list_operations"]
-    server = Server(f"ClawBridge {profile}", version="0.1.0")
+    server: Server = Server(f"ClawBridge {profile}", version="0.1.0")
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:

@@ -90,6 +90,9 @@ def test_counter_protocol_initialise_discover_and_call(demo):
 
 @pytest.mark.parametrize("profile,domain_tools", [("counter", {"read", "echo", "increment"}), ("music", {"state", "play", "pause"}), ("catalogue", {"items", "search"})])
 def test_discovery_is_passive_without_credentials_service_or_adapter_imports(tmp_path, monkeypatch, profile, domain_tools):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+
     def forbidden(*_args, **_kwargs):
         pytest.fail("Passive discovery attempted credential, transport or adapter access")
 
@@ -97,18 +100,21 @@ def test_discovery_is_passive_without_credentials_service_or_adapter_imports(tmp
     monkeypatch.setattr(interface, "_token", forbidden)
 
     async def protocol():
-        server = interface.create_server(profile=profile, socket_path=tmp_path / "missing.sock", token_file=tmp_path / "missing.token")
+        server = interface.create_server(profile=profile, socket_path=runtime / "missing.sock", token_file=runtime / "missing.token")
         async with create_connected_server_and_client_session(server) as client:
             tools = (await client.list_tools()).tools
             assert {tool.name for tool in tools} == {f"{profile}_{name}" for name in domain_tools} | {"bridge_status", "get_operation", "list_operations"}
             assert all(tool.annotations is not None and tool.annotations.readOnlyHint is (tool.name not in interface.MUTATIONS) for tool in tools)
 
     asyncio.run(protocol())
-    assert list(tmp_path.iterdir()) == []
+    assert list(runtime.iterdir()) == []
 
 
 @pytest.mark.parametrize("profile", ["counter", "music", "catalogue"])
 def test_raw_invalid_calls_never_reach_the_socket(tmp_path, monkeypatch, profile):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+
     def forbidden(*_args):
         pytest.fail("Invalid tool arguments reached the socket client")
 
@@ -133,7 +139,7 @@ def test_raw_invalid_calls_never_reach_the_socket(tmp_path, monkeypatch, profile
     cases += [("list_operations", {"correlation_id": "x" * 129}), ("get_operation", {"operation_id": "../private"}), ("get_operation", {})]
 
     async def protocol():
-        server = interface.create_server(profile=profile, socket_path=tmp_path / "missing.sock", token_file=tmp_path / "missing.token")
+        server = interface.create_server(profile=profile, socket_path=runtime / "missing.sock", token_file=runtime / "missing.token")
         async with create_connected_server_and_client_session(server) as client:
             for name, arguments in cases:
                 result = envelope(await client.call_tool(name, arguments), error=True)
@@ -141,24 +147,27 @@ def test_raw_invalid_calls_never_reach_the_socket(tmp_path, monkeypatch, profile
                 assert "private input" not in json.dumps(result)
 
     asyncio.run(protocol())
-    assert list(tmp_path.iterdir()) == []
+    assert list(runtime.iterdir()) == []
 
 
 def test_unavailable_calls_create_no_state_and_keep_recovery_labels(tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+
     async def protocol():
-        server = interface.create_server(profile="counter", socket_path=tmp_path / "missing.sock", token_file=tmp_path / "missing.token")
+        server = interface.create_server(profile="counter", socket_path=runtime / "missing.sock", token_file=runtime / "missing.token")
         async with create_connected_server_and_client_session(server) as client:
             result = envelope(await client.call_tool("counter_increment", {"amount": 1}), error=True)
             assert result["error_code"] == "bridge_unavailable" and result["outcome"] == "not_started"
             assert LABEL.fullmatch(result["correlation_id"]) and str(tmp_path) not in json.dumps(result)
-            token = tmp_path / "missing.token"
+            token = runtime / "missing.token"
             token.write_text("synthetic-credential")
             token.chmod(0o600)
             result = envelope(await client.call_tool("counter_increment", {"amount": 1, "correlation_id": "not-sent"}), error=True)
             assert result["outcome"] == "not_started" and result["correlation_id"] == "not-sent"
 
     asyncio.run(protocol())
-    assert [path.name for path in tmp_path.iterdir()] == ["missing.token"]
+    assert [path.name for path in runtime.iterdir()] == ["missing.token"]
 
 
 @pytest.mark.parametrize("unsafe", ["wrong-token", "permissions", "symlink", "parent-symlink"])
@@ -316,7 +325,14 @@ def test_music_protocol_uses_fixed_scripts_with_only_os_call_mocked(tmp_path_fac
 
     monkeypatch.setattr(music.subprocess, "run", run)
     bridge = music.create_server(runtime / "bridge.sock", runtime / "bridge.token")
-    bridge.worker = lambda name, params: ok_envelope(music.execute(name, params), **({"outcome": "succeeded"} if music.ACTIONS[name].mutation else {}))
+
+    def worker(name, params):
+        result = ok_envelope(music.execute(name, params))
+        if music.ACTIONS[name].mutation:
+            result["outcome"] = "succeeded"
+        return result
+
+    bridge.worker = worker
 
     async def protocol():
         async with create_connected_server_and_client_session(mcp_server(bridge, "music")) as client:

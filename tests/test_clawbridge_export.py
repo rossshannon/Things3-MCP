@@ -31,11 +31,14 @@ def test_export_records_exact_files_and_hashes(tmp_path):
     assert not any(str(ROOT) in json.dumps(value) for value in manifest.values())
     project = tomllib.loads((destination / "pyproject.toml").read_text())
     assert project["project"]["dependencies"] == []
+    assert project["project"]["optional-dependencies"]["mcp"] == ["mcp==1.11.0", "pydantic==2.9.2", "pydantic-settings==2.10.1"]
+    assert project["project"]["scripts"]["clawbridge-mcp"] == "clawbridge_mcp.server:main"
     assert project["project"]["readme"] == "REFERENCE.md"
     packages = {package["name"] for package in tomllib.loads((destination / "uv.lock").read_text())["package"]}
-    assert not any("things" in name or "mcp" in name for name in packages)
+    assert "mcp" in packages
+    assert not any("things" in name for name in packages)
     source_files = sorted(path.name for path in (destination / "src").iterdir())
-    assert source_files == ["clawbridge"]
+    assert source_files == ["clawbridge", "clawbridge_mcp"]
     for path in (destination / "src").rglob("*.py"):
         assert "things3_mcp" not in path.read_text()
     for path in (destination / "scripts").glob("*.sh"):
@@ -52,6 +55,10 @@ def test_export_records_exact_files_and_hashes(tmp_path):
         "docs/examples/catalogue.md",
         "tests/test_clawbridge_examples.py",
         "tests/test_clawbridge_safety.py",
+        "tests/test_clawbridge_mcp.py",
+        "tests/test_clawbridge_mcp_stdio.py",
+        "src/clawbridge_mcp/__init__.py",
+        "src/clawbridge_mcp/server.py",
     ):
         assert (destination / relative).is_file(), relative
 

@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 Things3-MCP-server = "things3_mcp.fast_server:run_things_mcp_server"
 Things3-MCP-bridge = "things3_mcp_bridge.server:main"
+clawbridge-mcp = "clawbridge_mcp.server:main"
 
 [project.urls]
 "Homepage" = "https://github.com/rossshannon/Things3-MCP"
@@ -41,13 +42,14 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/things3_mcp", "src/things3_mcp_bridge", "src/clawbridge"]
+packages = ["src/things3_mcp", "src/things3_mcp_bridge", "src/clawbridge", "src/clawbridge_mcp"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "src/things3_mcp",
     "src/things3_mcp_bridge",
     "src/clawbridge",
+    "src/clawbridge_mcp",
     "packaging/macos",
     "scripts",
     ".env.example",

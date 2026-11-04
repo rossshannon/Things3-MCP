@@ -22,12 +22,12 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - run: python -m pip install uv==0.13.6
-    - run: uv sync --locked --group dev
-    - run: uv run --locked pytest
-    - run: uv run --locked ruff check .
-    - run: uv run --locked ruff format --check .
-    - run: uv run --locked mypy src
-    - run: uv run --locked bandit -r src -c pyproject.toml
+    - run: uv sync --locked --group dev --extra mcp
+    - run: uv run --locked --extra mcp pytest
+    - run: uv run --locked --extra mcp ruff check .
+    - run: uv run --locked --extra mcp ruff format --check .
+    - run: uv run --locked --extra mcp mypy src
+    - run: uv run --locked --extra mcp bandit -r src -c pyproject.toml
     - run: uv build
 
   synthetic-macos-bundle:
@@ -39,10 +39,23 @@ jobs:
       with:
         python-version: "3.12" # Bootstrap uv; the build uses .python-version.
     - run: python -m pip install uv==0.13.6
-    - run: uv sync --locked --no-default-groups --group build
+    - run: uv sync --locked --no-default-groups --group build --python 3.12.16
+    - name: Prove the helper build has no optional SDK
+      run: .venv/bin/python -c 'import importlib.util; import clawbridge.demo; assert importlib.util.find_spec("mcp") is None; assert importlib.util.find_spec("anyio") is None'
     - run: scripts/build_bridge_app.sh --output build/ci-example
+    - name: Check frozen dependency boundary
+      run: |
+        .venv/bin/python - <<'PY'
+        import re
+        from pathlib import Path
+        reports = list(Path("build/ci-example").rglob("Analysis-00.toc"))
+        assert len(reports) == 1, "Expected the frozen import graph"
+        assert not re.search(r"['\"](?:mcp|clawbridge_mcp)(?:\.|['\"])", reports[0].read_text()), "MCP entered the protected helper"
+        PY
     - run: scripts/sign_bridge_app.sh --app 'build/ci-example/ClawBridge Example.app' --profile ad-hoc-test
-    - run: .venv/bin/python scripts/smoke_example_bridge.py --app 'build/ci-example/ClawBridge Example.app' --runtime /private/tmp/clawbridge-ci-check --result build/ci-example/smoke.json
+    - name: Install the optional client outside the dedicated helper build environment
+      run: uv sync --locked --no-default-groups --extra mcp --python 3.12.16
+    - run: .venv/bin/python scripts/smoke_example_bridge.py --app 'build/ci-example/ClawBridge Example.app' --runtime /private/tmp/clawbridge-ci-check --result build/ci-example/smoke.json --mcp
     - uses: actions/upload-artifact@v4
       with:
         name: synthetic-bridge-evidence

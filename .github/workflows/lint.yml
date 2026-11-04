@@ -68,10 +68,19 @@ jobs:
       run: uv sync --locked --no-default-groups --group build
     - name: Build synthetic adapter
       run: scripts/build_bridge_app.sh --config packaging/macos/example.toml --output build/ci-example
+    - name: Check frozen dependency boundary
+      run: |
+        .venv/bin/python - <<'PY'
+        import re
+        from pathlib import Path
+        reports = list(Path("build/ci-example").rglob("Analysis-00.toc"))
+        assert len(reports) == 1, "Expected the frozen import graph"
+        assert not re.search(r"['\"](?:mcp|clawbridge_mcp)(?:\.|['\"])", reports[0].read_text()), "MCP entered the protected helper"
+        PY
     - name: Sign synthetic adapter for testing
       run: scripts/sign_bridge_app.sh --config packaging/macos/example.toml --app 'build/ci-example/ClawBridge Example.app' --profile ad-hoc-test
-    - name: Verify frozen worker and Unix transport
-      run: .venv/bin/python scripts/smoke_example_bridge.py --app 'build/ci-example/ClawBridge Example.app' --runtime /private/tmp/clawbridge-ci-check --result build/ci-example/smoke.json
+    - name: Verify frozen worker, Unix transport and MCP stdio
+      run: .venv/bin/python scripts/smoke_example_bridge.py --app 'build/ci-example/ClawBridge Example.app' --runtime /private/tmp/clawbridge-ci-check --result build/ci-example/smoke.json --mcp
     - name: Retain synthetic build evidence
       uses: actions/upload-artifact@v4
       with:

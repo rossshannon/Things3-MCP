@@ -1,6 +1,7 @@
 """Exercise only the signed synthetic adapter using fresh private state."""
 
 import argparse
+import asyncio
 import hashlib
 import http.client
 import json
@@ -9,8 +10,58 @@ import plistlib
 import signal
 import socket
 import subprocess
+import sys
+import tempfile
 import time
 from pathlib import Path
+
+
+async def mcp_checks(endpoint, token_file, identity, canary):
+    """Call the same verified helper through the optional MCP stdio process."""
+    import anyio
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    protocol_errors = []
+
+    async def incoming(message):
+        if isinstance(message, Exception):
+            protocol_errors.append(message)
+
+    def envelope(result):
+        assert not result.isError
+        assert len(result.content) == 1 and result.content[0].type == "text"
+        assert json.loads(result.content[0].text) == result.structuredContent
+        return result.structuredContent
+
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "clawbridge_mcp.server", "--profile", "counter", "--socket", str(endpoint), "--token-file", str(token_file)],
+    )
+    with tempfile.TemporaryFile(mode="w+", dir=endpoint.parent) as stderr, anyio.fail_after(60):
+        async with stdio_client(parameters, errlog=stderr) as (read, write), ClientSession(read, write, message_handler=incoming) as client:
+            initialised = await client.initialize()
+            assert initialised.serverInfo.name == "ClawBridge counter"
+            tools = sorted(tool.name for tool in (await client.list_tools()).tools)
+            assert set(tools) == {"counter_read", "counter_echo", "counter_increment", "bridge_status", "get_operation", "list_operations"}
+            status = envelope(await client.call_tool("bridge_status", {}))["data"]
+            for key in ("pid", "executable", "identity", "instance_id"):
+                assert status[key] == identity[key]
+            baseline = envelope(await client.call_tool("counter_read", {}))["data"]["value"]
+            assert envelope(await client.call_tool("counter_echo", {"text": canary}))["data"] == {"text": canary}
+            mutation = envelope(await client.call_tool("counter_increment", {"amount": 1, "correlation_id": "synthetic-frozen-mcp-smoke"}))
+            assert mutation["outcome"] == "succeeded" and mutation["data"]["value"] == baseline + 1
+            assert envelope(await client.call_tool("counter_read", {}))["data"]["value"] == baseline + 1
+            operation = envelope(await client.call_tool("get_operation", {"operation_id": mutation["operation_id"]}))["data"]
+            assert operation["operation_id"] == mutation["operation_id"] and operation["outcome"] == "succeeded" and "payload" not in operation
+            assert operation["correlation_id"] == "synthetic-frozen-mcp-smoke"
+            assert envelope(await client.call_tool("list_operations", {"correlation_id": "synthetic-frozen-mcp-smoke", "limit": 1}))["data"] == [operation]
+        stderr.seek(0)
+        diagnostics = stderr.read()
+        assert "synthetic-private-payload-" not in diagnostics and token_file.read_text().strip() not in diagnostics, "Private data appeared in MCP diagnostics"
+        assert "Traceback" not in diagnostics, "MCP process reported an exception"
+    assert not protocol_errors, "MCP stdout contained an invalid protocol message"
+    return {"passed": True, "tools": tools, "baseline": baseline, "value": baseline + 1, "operation_id": mutation["operation_id"], "correlation_id": operation["correlation_id"]}
 
 
 def main():
@@ -19,6 +70,7 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--result", type=Path, required=True)
+    parser.add_argument("--mcp", action="store_true", help="Also exercise optional MCP stdio against the same signed helper")
     args = parser.parse_args()
     os.umask(0o077)
     app = args.app.resolve()
@@ -40,7 +92,8 @@ def main():
     child_env = {key: value for key, value in os.environ.items() if not key.startswith(("THINGS", "CLAWBRIDGE", "PYTHON"))}
     process = subprocess.Popen([str(executable), "--socket", str(endpoint), "--token-file", str(token_file)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env, start_new_session=True)
     observations = {"build_id": manifest["build_id"], "source_revision": manifest["source_revision"], "source_dirty": manifest["source_dirty"], "sandbox": manifest["sandbox"]}
-    token = ""
+    # Empty sentinel; the credential is read from its private file.
+    token = ""  # nosec B105
 
     def request(method, path, payload=None, credential=None):
         connection = http.client.HTTPConnection("localhost", timeout=40)
@@ -86,7 +139,9 @@ def main():
         assert operation["outcome"] == "succeeded" and "payload" not in operation
         records = request("GET", "/operations?correlation_id=synthetic-frozen-smoke")[1]["data"]
         assert len(records) == 1 and records[0]["operation_id"] == mutation["operation_id"]
-        for path in (endpoint, token_file, runtime / "demo-state.json", runtime / "operations" / f"{mutation['operation_id']}.json"):
+        if args.mcp:
+            observations["mcp"] = asyncio.run(mcp_checks(endpoint, token_file, identity, canary))
+        for path in (endpoint, token_file, runtime / "demo-state.json", *(runtime / "operations").glob("*.json")):
             assert path.stat().st_mode & 0o777 == 0o600
         observations.update(passed=True, operation_id=mutation["operation_id"], instance_id=identity["instance_id"], executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest())
     except BaseException as error:
