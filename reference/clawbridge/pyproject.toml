@@ -48,6 +48,7 @@ convention = "google"
 
 [tool.mypy]
 python_version = "3.12"
+platform = "darwin"
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_unreachable = true

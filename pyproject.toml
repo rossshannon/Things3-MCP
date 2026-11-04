@@ -172,6 +172,7 @@ exclude = [
 # MyPy Configuration
 [tool.mypy]
 python_version = "3.12"
+platform = "darwin"
 warn_return_any = false        # Relaxed: Allow Any returns
 warn_unused_configs = true
 disallow_untyped_defs = false  # Relaxed: Allow untyped function definitions

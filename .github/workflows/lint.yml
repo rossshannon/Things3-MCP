@@ -61,7 +61,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v6
       with:
-        python-version: "3.12.16"
+        python-version: "3.12" # Bootstrap uv; the build uses .python-version.
     - name: Install uv
       run: python -m pip install uv==0.13.6
     - name: Install locked build tools
