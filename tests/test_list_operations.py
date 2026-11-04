@@ -3,6 +3,8 @@
 Focuses on verifying API response format and structure without exposing actual data.
 """
 
+import pytest
+
 from things3_mcp.fast_server import (
     get_anytime,
     get_areas,
@@ -31,6 +33,8 @@ from .conftest import (
     create_test_tag,
     delete_test_tags,
 )
+
+pytestmark = pytest.mark.live_things
 
 
 def split_top_level_items(result: str) -> list[str]:

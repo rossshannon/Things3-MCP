@@ -26,25 +26,28 @@ jobs:
       run: pip install uv
 
     - name: Install dependencies
-      run: uv sync --dev
+      run: uv sync --locked --group dev
+
+    - name: Run hermetic tests
+      run: uv run --locked pytest
 
     - name: Check imports and syntax
-      run: uv run python -m py_compile src/**/*.py
+      run: uv run --locked python -m py_compile src/**/*.py
 
     - name: Run linting
-      run: uv run ruff check .
+      run: uv run --locked ruff check .
 
     - name: Check formatting
-      run: uv run ruff format --check .
+      run: uv run --locked ruff format --check .
 
     - name: Run type checking
-      run: uv run mypy src/
+      run: uv run --locked mypy src/
 
     - name: Security scan
-      run: uv run bandit -r src/
+      run: uv run --locked bandit -r src/
 
     - name: Check dependencies for vulnerabilities
-      run: uv run safety --stage cicd scan --output screen
+      run: uv run --locked safety --stage cicd scan --output screen
       env:
         SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
       # Note: Requires SAFETY_API_KEY secret to be set in GitHub repo settings

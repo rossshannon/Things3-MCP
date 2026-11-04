@@ -13,6 +13,8 @@ from unittest.mock import patch
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import pytest  # noqa: E402
+
 from things3_mcp.applescript_bridge import add_todo  # noqa: E402
 from things3_mcp.fast_server import add_task  # noqa: E402
 
@@ -52,6 +54,7 @@ def test_applescript_error_logging_detail():
         logger.removeHandler(handler)
 
 
+@pytest.mark.live_things
 def test_mcp_server_error_propagation():
     """Test that MCP server properly propagates and formats AppleScript errors."""
     title = f"Error Propagation Test {generate_random_string(5)}"
@@ -79,6 +82,7 @@ def test_mcp_server_error_propagation():
             pass  # Ignore cleanup failures
 
 
+@pytest.mark.live_things
 def test_error_message_format_consistency():
     """Test that all error messages follow consistent formatting."""
     title = f"Format Test {generate_random_string(5)}"
@@ -155,6 +159,7 @@ def test_applescript_temp_file_error_detection():
             assert result is False, f"Should return False for temp file error: {temp_error}"
 
 
+@pytest.mark.live_things
 def test_error_logging_includes_context():
     """Test that error logs include sufficient context for debugging."""
     # Capture log output
@@ -192,6 +197,7 @@ def test_error_logging_includes_context():
         logger.removeHandler(handler)
 
 
+@pytest.mark.live_things
 def test_success_logging_includes_location():
     """Successful add_task results include the destination list/area/project.
 
@@ -226,6 +232,7 @@ def test_success_logging_includes_location():
                 pass  # Ignore cleanup failures
 
 
+@pytest.mark.live_things
 def test_edge_case_parameter_logging():
     """Test that edge case parameters are properly logged for debugging."""
     # Capture log output

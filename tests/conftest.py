@@ -5,6 +5,8 @@ import os
 import random
 import string
 import sys
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -13,8 +15,117 @@ import pytest  # noqa: E402
 
 from things3_mcp.applescript_bridge import (  # noqa: E402
     ensure_things_ready,
-    run_applescript,
 )
+from things3_mcp.applescript_bridge import (
+    run_applescript as _run_applescript,
+)
+
+# Install the guard before test collection, including import-time app discovery.
+_live_cleanup_allowed = False
+
+
+def pytest_addoption(parser):
+    group = parser.getgroup("Things live tests")
+    group.addoption("--live-things", action="store_true", help="Run tests against a disposable Things library")
+    group.addoption("--allow-things-cleanup", action="store_true", help="Acknowledge creation and deletion of live test data")
+
+
+def pytest_configure(config):
+    global _live_cleanup_allowed
+    live = config.getoption("--live-things")
+    cleanup = config.getoption("--allow-things-cleanup")
+    if live != cleanup:
+        raise pytest.UsageError("Live Things tests require both --live-things and --allow-things-cleanup; use a disposable library.")
+    _live_cleanup_allowed = live and cleanup
+
+
+def pytest_sessionstart(session):
+    if _live_cleanup_allowed:
+        return
+
+    temporary_root = session.config._tmp_path_factory.getbasetemp().resolve()
+    environment = pytest.MonkeyPatch()
+    session.config.add_cleanup(environment.undo)
+    for name in tuple(os.environ):
+        if name == "THINGSDB" or name.startswith("THINGS3_MCP_"):
+            environment.delenv(name)
+    isolated_home = temporary_root / "home"
+    isolated_home.mkdir(exist_ok=True)
+    environment.setenv("HOME", str(isolated_home))
+
+    def fixture_path(value):
+        if not isinstance(value, str | bytes | os.PathLike):
+            return None
+        path = os.fsdecode(value)
+        if path.startswith("file:"):
+            path = unquote(urlsplit(path).path)
+        return Path(path).expanduser().resolve()
+
+    def is_temporary(value):
+        path = fixture_path(value)
+        return path is not None and path.is_relative_to(temporary_root)
+
+    def denied(operation):
+        # pytest.fail is not an Exception: production fallback handlers cannot
+        # swallow the guard and turn forbidden access into a passing test.
+        pytest.fail(f"Hermetic test blocked {operation}; mock the boundary or use a temporary fixture.", pytrace=False)
+
+    def audit(event, args):
+        if event == "sqlite3.connect":
+            database = os.fsdecode(args[0])
+            if database != ":memory:" and not is_temporary(database):
+                denied("database access outside pytest temporary files")
+        elif event in {"open", "os.listdir", "os.scandir"} and args:
+            path = fixture_path(args[0])
+            if path is not None and not path.is_relative_to(temporary_root):
+                if "/Library/Group Containers/" in str(path) or "/Library/Application Support/Things3-MCP" in str(path) or ".thingsdatabase" in str(path):
+                    denied("personal Things data access")
+        elif event in {"subprocess.Popen", "os.posix_spawn"}:
+            executable, argv = args[:2]
+            command = [os.fsdecode(executable), *(os.fsdecode(arg) for arg in argv)] if isinstance(argv, list | tuple) else [os.fsdecode(executable), os.fsdecode(argv)]
+            blocked = {"osascript", "tccutil", "sqlite3", "things-cli", "thingscli", "Things3-MCP-bridge"}
+            if any(Path(arg).name in blocked or "things3_mcp_bridge.db_reader" in arg for arg in command):
+                denied("AppleScript, live worker, or permission command")
+        elif event == "os.system":
+            denied("shell command")
+        elif event == "socket.connect" and isinstance(args[1], str | bytes):
+            if not is_temporary(args[1]):
+                denied("a socket outside pytest temporary files")
+
+    # Audit hooks remain installed for the process lifetime. Disable this one
+    # when pytest finishes, including pytest.main() users in other test suites.
+    active = True
+
+    def guard(event, args):
+        if active:
+            audit(event, args)
+
+    def deactivate():
+        nonlocal active
+        active = False
+
+    session.config.add_cleanup(deactivate)
+    sys.addaudithook(guard)
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--live-things"):
+        skip = pytest.mark.skip(reason="Live Things tests require --live-things --allow-things-cleanup and a disposable library")
+        for item in items:
+            if item.get_closest_marker("live_things"):
+                item.add_marker(skip)
+
+
+def _require_live_cleanup():
+    if not _live_cleanup_allowed:
+        pytest.fail("Things setup and cleanup require --live-things --allow-things-cleanup.", pytrace=False)
+
+
+def run_applescript(script, *args, **kwargs):
+    """Protect every shared live setup and cleanup helper, including direct calls."""
+    _require_live_cleanup()
+    return _run_applescript(script, *args, **kwargs)
+
 
 # Test namespace for tags and areas - centralized here for all tests
 TEST_NAMESPACE = "mcp-test"
@@ -464,6 +575,7 @@ class CleanupTracker:
 
     def cleanup(self: "CleanupTracker") -> None:
         """Clean up all test items, tags, and areas"""
+        _require_live_cleanup()
         # Clean up todos first
         for todo_id in self.test_todos:
             try:
@@ -487,11 +599,13 @@ class CleanupTracker:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _setup_test_environment():
+def _setup_test_environment(request):
     """Set up test environment and clean up after all tests."""
-    if os.environ.get("THINGS3_MCP_SKIP_THINGS_TEST_SETUP") == "1":
+    if not _live_cleanup_allowed or not any(item.get_closest_marker("live_things") for item in request.session.items):
         yield
         return
+
+    _require_live_cleanup()
 
     # Ensure Things is ready
     assert ensure_things_ready(), "Things app is not ready for testing"
@@ -516,6 +630,7 @@ def _setup_test_environment():
 @pytest.fixture()
 def cleanup_tracker():
     """Fixture to provide cleanup tracking"""
+    _require_live_cleanup()
     tracker = CleanupTracker()
     yield tracker
     tracker.cleanup()

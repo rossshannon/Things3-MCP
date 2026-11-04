@@ -10,6 +10,7 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import pytest  # noqa: E402
 import things  # noqa: E402
 
 from tests.conftest import (  # noqa: E402
@@ -23,6 +24,8 @@ from things3_mcp.applescript_bridge import (  # noqa: E402
     update_project,
     update_todo,
 )
+
+pytestmark = pytest.mark.live_things
 
 
 def get_item_safely(item_id: str, expected_status: str = None) -> dict:

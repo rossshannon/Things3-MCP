@@ -38,6 +38,8 @@ from .conftest import (  # noqa: E402
     rename_test_area,
 )
 
+pytestmark = pytest.mark.live_things
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _check_things_ready():
