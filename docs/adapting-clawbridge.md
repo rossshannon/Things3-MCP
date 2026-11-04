@@ -20,7 +20,7 @@ The manifest has a source revision and per-file source paths, hashes and modes. 
 
 ## Define an adapter
 
-Start from `src/clawbridge/demo.py`:
+Choose [the closest small example](examples/README.md): counter state, Music scripting or a read-only SQLite catalogue. Start from `src/clawbridge/demo.py` for the smallest adapter:
 
 | Part | Responsibility |
 | --- | --- |
@@ -46,7 +46,7 @@ Keep app-specific libraries out of `clawbridge`; add them only to your adapter's
 
 A code allowlist controls the operations exposed by this service. It does not confine compromised native or Python code. The default build is unsandboxed; Full Disk Access is broad. An explicit signed App Sandbox profile can restrict filesystem access even when Full Disk Access is also granted. Those are separate macOS checks. [Apple DTS explains their interaction](https://developer.apple.com/forums/thread/807142).
 
-Use `sandbox_read_only_home` for the smallest supported read-only app directory and `apple_event_targets` for specific applications. Apple Events target restrictions do not enforce create-only or read-only verbs inside that app; that policy remains in the adapter. Target-defined scripting access groups are usable only when the target actually declares them. See [Apple's entitlement reference](https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/AppSandboxTemporaryExceptionEntitlements.html).
+Use `sandbox_read_only_home` for the smallest supported read-only app directory. Where an app declares scripting access groups, use `scripting_targets` to name the required groups; the Music example uses only `com.apple.Music.playback`. Otherwise, `apple_event_targets` declares specific applications. Whole-target restrictions do not enforce create-only or read-only verbs inside that app; that policy remains in the adapter. Scripting groups constrain only the capabilities the target places in those groups, and Automation consent remains separate. See [Apple's entitlement reference](https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/AppSandboxTemporaryExceptionEntitlements.html).
 
 User-selected files and security-scoped bookmarks are an option to investigate, not an automatic bypass for another app's protected container. The reference does not implement a picker or bookmark lifecycle. Validate the actual target path, worker and restart behaviour before claiming that this avoids Full Disk Access. [Apple documents the separate file-access constraints](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox).
 

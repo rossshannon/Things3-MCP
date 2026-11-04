@@ -152,20 +152,30 @@ def test_accidental_command():
     assert not calls.exists()
 
 
-@pytest.mark.parametrize("module, arguments", [("db_reader", []), ("server", ["--worker-action", "add_task"])])
+@pytest.mark.parametrize(
+    "module, arguments",
+    [
+        ("things3_mcp_bridge.db_reader", []),
+        ("things3_mcp_bridge.server", ["--worker-action", "add_task"]),
+        ("clawbridge.examples.music", ["--worker-action", "play"]),
+        ("clawbridge.examples.catalogue", ["--worker-action", "list"]),
+    ],
+)
 def test_live_worker_launch_fails_before_execution(isolated_suite, module, arguments):
     project, _, run = isolated_suite
-    package = project / "things3_mcp_bridge"
-    package.mkdir()
-    (package / "__init__.py").write_text("")
+    package = project
+    for part in module.split(".")[:-1]:
+        package /= part
+        package.mkdir()
+        (package / "__init__.py").write_text("")
     sentinel = project / "worker-launched"
-    (package / f"{module}.py").write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n")
+    (package / f"{module.split('.')[-1]}.py").write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n")
     result = run(f"""
 import subprocess
 import sys
 
 def test_accidental_worker():
-    subprocess.run([sys.executable, "-m", "things3_mcp_bridge.{module}", *{arguments!r}], check=True)
+    subprocess.run([sys.executable, "-m", {module!r}, *{arguments!r}], check=True)
 """)
     assert result.returncode == 1
     assert "Hermetic test blocked" in result.stdout

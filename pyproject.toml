@@ -58,6 +58,7 @@ include = [
     ".python-version",
     "docs/bridge-build.md",
     "docs/adapting-clawbridge.md",
+    "docs/examples",
     "docs/security/local-bridge-security.md",
     "reference/clawbridge",
     "tests",

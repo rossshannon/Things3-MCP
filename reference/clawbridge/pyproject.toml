@@ -1,7 +1,7 @@
 [project]
 name = "clawbridge-reference"
 version = "0.1.0"
-description = "Synthetic local macOS app bridge reference"
+description = "Local macOS app bridge reference with small app adapters"
 readme = "REFERENCE.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}

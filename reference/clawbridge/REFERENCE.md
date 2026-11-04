@@ -1,6 +1,6 @@
 # ClawBridge reference
 
-This is a generated, standalone synthetic example of a local macOS application bridge. Its runtime uses only the Python standard library. It does not import Things, install an MCP server, or require any privacy grant. It echoes text and maintains one counter in its private runtime directory.
+This generated reference contains three small adapters around a local macOS application bridge. Its runtime uses only the Python standard library. It does not import Things or install an MCP server. Start with the counter and echo adapter below, which needs no privacy grant, then choose [Music scripting or read-only SQLite](docs/examples/README.md). Each has its own permission profile and build configuration.
 
 The source of truth is [Things3-MCP](https://github.com/rossshannon/Things3-MCP). `scripts/export_clawbridge.py` in that project copies an explicit file list into a fresh directory. `export-manifest.json` records the source revision, whether exported inputs were uncommitted, and the source name, SHA-256 and mode of each exported file. The manifest excludes itself. Retain it with build evidence; hashes establish content identity, not publisher trust. A separate repository's `README.md` is outside this export and remains separately maintained.
 

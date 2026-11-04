@@ -51,6 +51,7 @@ class BuildConfig:
     environment_patterns: dict[str, str] = field(default_factory=dict)
     sandbox_read_only_home: tuple[str, ...] = ()
     apple_event_targets: tuple[str, ...] = ()
+    scripting_targets: dict[str, tuple[str, ...]] = field(default_factory=dict)
     state_environment: dict[str, str] = field(default_factory=dict)
     local_signing_identity: str = ""
 
@@ -71,10 +72,13 @@ class BuildConfig:
         for module in self.collect_submodules:
             if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
                 raise PackagingError("Invalid collected module name")
-        for target in self.apple_event_targets:
+        for target in (*self.apple_event_targets, *self.scripting_targets):
             if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", target):
                 raise PackagingError("Invalid Apple Events target")
-        if self.apple_event_targets and not self.usage_description.strip():
+        for groups in self.scripting_targets.values():
+            if not isinstance(groups, tuple | list) or not groups or any(not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", group) for group in groups):
+                raise PackagingError("Scripting targets require non-empty lists of valid access groups")
+        if (self.apple_event_targets or self.scripting_targets) and not self.usage_description.strip():
             raise PackagingError("Apple Events targets require a usage description")
         for name in (*self.environment_patterns, *self.state_environment):
             if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
@@ -86,6 +90,11 @@ class BuildConfig:
 def load_config(path: Path) -> BuildConfig:
     """Reject misspelled or missing configuration fields before doing any work."""
     raw = tomllib.loads(path.read_text())
+    if "scripting_targets" in raw:
+        targets = raw["scripting_targets"]
+        if not isinstance(targets, dict) or any(not isinstance(key, str) or not isinstance(value, list) or not all(isinstance(group, str) for group in value) for key, value in targets.items()):
+            raise PackagingError("scripting_targets must map bundle identifiers to lists of access groups")
+        raw["scripting_targets"] = {key: tuple(value) for key, value in targets.items()}
     for key in ("collect_submodules", "sandbox_read_only_home", "apple_event_targets"):
         if key in raw:
             if not isinstance(raw[key], list) or not all(isinstance(value, str) for value in raw[key]):
@@ -125,7 +134,7 @@ def info_plist(config: BuildConfig, version: str) -> dict[str, Any]:
 def entitlements(config: BuildConfig, sandbox: bool) -> dict[str, Any]:
     """Return only the app's declared capabilities, without network permissions."""
     data: dict[str, Any] = {}
-    if config.apple_event_targets:
+    if config.apple_event_targets or config.scripting_targets:
         data["com.apple.security.automation.apple-events"] = True
     if sandbox:
         data["com.apple.security.app-sandbox"] = True
@@ -133,6 +142,8 @@ def entitlements(config: BuildConfig, sandbox: bool) -> dict[str, Any]:
             data["com.apple.security.temporary-exception.files.home-relative-path.read-only"] = [f"/{path.rstrip('/')}/" for path in config.sandbox_read_only_home]
         if config.apple_event_targets:
             data["com.apple.security.temporary-exception.apple-events"] = list(config.apple_event_targets)
+        if config.scripting_targets:
+            data["com.apple.security.scripting-targets"] = {target: list(groups) for target, groups in config.scripting_targets.items()}
     return data
 
 

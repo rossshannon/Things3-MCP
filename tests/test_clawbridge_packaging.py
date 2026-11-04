@@ -85,6 +85,46 @@ def old_install(config, home):
     return target, plist, state
 
 
+def test_scripting_group_entitlements_are_narrow_and_explicit(fixture):
+    config = replace(fixture[0], usage_description="Control Music playback", scripting_targets={"com.apple.Music": ("com.apple.Music.playback",)})
+    assert packaging.entitlements(config, sandbox=False) == {"com.apple.security.automation.apple-events": True}
+    assert packaging.entitlements(config, sandbox=True) == {
+        "com.apple.security.app-sandbox": True,
+        "com.apple.security.automation.apple-events": True,
+        "com.apple.security.scripting-targets": {"com.apple.Music": ["com.apple.Music.playback"]},
+    }
+
+
+@pytest.mark.parametrize("targets", [{"invalid target": ("group",)}, {"com.apple.Music": ()}, {"com.apple.Music": "all"}, {"com.apple.Music": ("invalid group",)}, {"com.apple.Music": (5,)}])
+def test_invalid_scripting_groups_are_rejected(fixture, targets):
+    with pytest.raises(packaging.PackagingError):
+        replace(fixture[0], usage_description="Control Music playback", scripting_targets=targets)
+
+
+def test_scripting_group_needs_usage_description(fixture):
+    with pytest.raises(packaging.PackagingError, match="usage description"):
+        replace(fixture[0], scripting_targets={"com.apple.Music": ("com.apple.Music.playback",)})
+
+
+def test_scripting_groups_load_from_toml(tmp_path):
+    path = tmp_path / "music.toml"
+    path.write_text("""name = "Music Example"
+bundle_id = "org.example.Music"
+entrypoint = "clawbridge.demo:main"
+usage_description = "Control Music playback"
+state_directory = "Library/Application Support/MusicExample"
+socket_name = "bridge.sock"
+token_name = "bridge.token"
+[scripting_targets]
+"com.apple.Music" = ["com.apple.Music.playback"]
+""")
+    config = packaging.load_config(path)
+    assert config.scripting_targets == {"com.apple.Music": ("com.apple.Music.playback",)}
+    path.write_text(path.read_text().replace('["com.apple.Music.playback"]', '"com.apple.Music.playback"'))
+    with pytest.raises(packaging.PackagingError, match="scripting_targets"):
+        packaging.load_config(path)
+
+
 def test_tampered_signature_is_rejected_before_stopping(fixture, monkeypatch):
     config, source, home, calls, _ = fixture
     target, plist, _ = old_install(config, home)

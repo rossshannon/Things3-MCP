@@ -1,0 +1,10 @@
+name = "ClawBridge Catalogue"
+bundle_id = "org.example.ClawBridgeCatalogue"
+entrypoint = "clawbridge.examples.catalogue:main"
+usage_description = ""
+state_directory = "Library/Application Support/ClawBridgeCatalogueBridge"
+socket_name = "bridge.sock"
+token_name = "bridge.token"
+collect_submodules = ["clawbridge"]
+apple_event_targets = []
+sandbox_read_only_home = ["Library/Application Support/ClawBridgeCatalogue"]

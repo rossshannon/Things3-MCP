@@ -41,6 +41,19 @@ def test_export_records_exact_files_and_hashes(tmp_path):
     for path in (destination / "scripts").glob("*.sh"):
         assert path.stat().st_mode & 0o111
     assert (destination / "scripts/smoke_example_bridge.py").read_bytes() == (ROOT / "scripts/smoke_example_bridge.py").read_bytes()
+    for relative in (
+        "src/clawbridge/examples/__init__.py",
+        "src/clawbridge/examples/music.py",
+        "src/clawbridge/examples/catalogue.py",
+        "packaging/macos/music.toml",
+        "packaging/macos/catalogue.toml",
+        "docs/examples/README.md",
+        "docs/examples/music.md",
+        "docs/examples/catalogue.md",
+        "tests/test_clawbridge_examples.py",
+        "tests/test_clawbridge_safety.py",
+    ):
+        assert (destination / relative).is_file(), relative
 
 
 @pytest.fixture

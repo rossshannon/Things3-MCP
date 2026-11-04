@@ -153,7 +153,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 
 ### Adapt the bridge
 
-[Adapting ClawBridge](docs/adapting-clawbridge.md) explains the fixed adapter interface, permission choices and verification boundaries. `scripts/export_clawbridge.py` generates a standalone synthetic starter with no Things runtime dependency, pinned tools and revision/hash provenance. The Things checkout remains the core's source of truth.
+[Adapting ClawBridge](docs/adapting-clawbridge.md) explains the fixed adapter interface, permission choices and verification boundaries. [Three small examples](docs/examples/README.md) cover private counter state, Music AppleScript and read-only SQLite. `scripts/export_clawbridge.py` generates a standalone reference with no Things runtime dependency, pinned tools and revision/hash provenance. The Things checkout remains the core's source of truth.
 
 ### Sample Usage with Claude Desktop
 * “What’s on my todo list today?”

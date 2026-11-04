@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the public synthetic reference from an explicit source allowlist."""
+"""Export the reusable reference and app examples from an explicit allowlist."""
 
 from __future__ import annotations
 
@@ -19,11 +19,14 @@ EXPORT_FILES = {
     "LICENSE": "LICENSE",
     ".python-version": ".python-version",
     **{f"src/clawbridge/{name}.py": f"src/clawbridge/{name}.py" for name in ("__init__", "actions", "protocol", "runtime", "worker", "journal", "server", "demo", "packaging")},
-    **{f"tests/test_clawbridge_{name}.py": f"tests/test_clawbridge_{name}.py" for name in ("transport", "journal", "worker", "packaging")},
+    **{f"src/clawbridge/examples/{name}.py": f"src/clawbridge/examples/{name}.py" for name in ("__init__", "music", "catalogue")},
+    **{f"tests/test_clawbridge_{name}.py": f"tests/test_clawbridge_{name}.py" for name in ("transport", "journal", "worker", "packaging", "examples", "safety")},
     **{f"scripts/{name}_bridge_{suffix}.sh": f"scripts/{name}_bridge_{suffix}.sh" for name, suffix in (("build", "app"), ("sign", "app"), ("install", "launchagent"), ("uninstall", "launchagent"))},
     "scripts/smoke_example_bridge.py": "scripts/smoke_example_bridge.py",
     "packaging/macos/bridge.toml": "packaging/macos/example.toml",
     "packaging/macos/example.toml": "packaging/macos/example.toml",
+    **{f"packaging/macos/{name}.toml": f"packaging/macos/{name}.toml" for name in ("music", "catalogue")},
+    **{f"docs/examples/{name}.md": f"docs/examples/{name}.md" for name in ("README", "music", "catalogue")},
     **{f"docs/{name}": f"docs/{name}" for name in ("bridge-build.md", "adapting-clawbridge.md", "security/local-bridge-security.md")},
     **{name: f"reference/clawbridge/{name}" for name in ("pyproject.toml", "uv.lock", "pytest.ini", "tests/conftest.py", ".gitignore", ".env.example", "REFERENCE.md", ".github/workflows/check.yml")},
 }

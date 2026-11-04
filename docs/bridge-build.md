@@ -11,6 +11,8 @@ scripts/build_bridge_app.sh --output build/local-candidate
 
 The default configuration is `packaging/macos/bridge.toml`. In this repository it preserves the existing Things app name, bundle identifier, local signing identity name and runtime paths. The standalone export maps the synthetic example configuration to the same default filename. The package version in `pyproject.toml` supplies both bundle version fields. The usage description explains reads and writes. Configurations declare a fixed entry module, collected packages, optional icon, app identity, relative runtime paths and permission targets. Plists are generated with Python's plist library; HOME paths containing spaces, ampersands or XML characters are not interpolated into XML text.
 
+The [small examples](examples/README.md) also supply `music.toml` and `catalogue.toml`. For sandboxed scripting, `scripting_targets` maps a target bundle identifier to its declared access groups; use `apple_event_targets` only when whole-target access is needed. Both require an accurate Apple Events usage description. The Music example declares its playback group and no whole-target exception. These build declarations do not grant Automation consent.
+
 Use a fresh output directory for each build. The command refuses to replace an app already in that directory. Build working files and its dedicated environment remain below that output directory for inspection. It does not remove other builds.
 
 The synthetic adapter uses its own identity and requires no Things installation:
