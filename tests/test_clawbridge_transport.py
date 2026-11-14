@@ -36,7 +36,7 @@ def demo(tmp_path_factory, monkeypatch):
     tmp_path = tmp_path_factory.mktemp("s")
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parents[1] / "src"))
     server = create_server(tmp_path / "bridge.sock", tmp_path / "bridge.token")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     yield server
     server.shutdown()
@@ -208,7 +208,7 @@ def test_worker_slots_are_bounded(demo):
 def test_close_retains_ownership_until_mutation_and_completion_are_persisted(tmp_path_factory, monkeypatch):
     directory = tmp_path_factory.mktemp("close")
     server = create_server(directory / "bridge.sock", directory / "bridge.token")
-    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     entered, release_worker = threading.Event(), threading.Event()
     persisting, release_completion, closed = threading.Event(), threading.Event(), threading.Event()
     result = []

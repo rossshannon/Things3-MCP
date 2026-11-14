@@ -27,7 +27,7 @@ def bridge(tmp_path_factory, monkeypatch):
     monkeypatch.setattr("clawbridge.server.REQUEST_TIMEOUT", 0.3)
     with server.UnixHTTPServer(directory / "b.sock", token_file=directory / "b.token") as running:
         running.calls = calls
-        thread = threading.Thread(target=running.serve_forever, daemon=True)
+        thread = threading.Thread(target=running.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         try:
             yield running

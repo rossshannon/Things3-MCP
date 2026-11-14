@@ -54,7 +54,7 @@ def bridge(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(server, "run_worker", worker)
     with server.UnixHTTPServer(directory / "b.sock", token_file=directory / "b.token") as running:
         running.calls, running.replies = calls, replies
-        thread = threading.Thread(target=running.serve_forever, daemon=True)
+        thread = threading.Thread(target=running.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         try:
             yield running

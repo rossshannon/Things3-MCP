@@ -131,7 +131,7 @@ def test_existing_things_routes_use_validated_actions_over_the_socket(tmp_path_f
     directory = tmp_path_factory.mktemp("t")
     monkeypatch.setattr(server, "run_worker", lambda action, params=None, **_kw: ok_envelope({"action": action, "params": params}, outcome="succeeded"))
     with server.UnixHTTPServer(directory / "b.sock", token_file=directory / "b.token") as bridge:
-        thread = threading.Thread(target=bridge.serve_forever, daemon=True)
+        thread = threading.Thread(target=bridge.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         try:
             for name in ("inbox", "today", "upcoming", "anytime", "someday", "projects", "areas", "tags", "trash"):
