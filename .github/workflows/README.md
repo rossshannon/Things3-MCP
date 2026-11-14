@@ -11,7 +11,7 @@ This repository includes GitHub Actions workflows for automated package building
 
 ### Current Workflows
 
-- **`lint.yml`** - Runs linting and code quality checks on PRs and pushes
+- **`lint.yml`** - Runs the hermetic tests, linting, type and security checks on every pull request and on pushes to `main`. A second job builds, ad-hoc signs and smoke-tests the synthetic bridge bundle on macOS. The dependency scan needs the `SAFETY_API_KEY` repository secret and is skipped where it is unavailable, such as pull requests from forks.
 - **`publish-trusted.yml`** - Automated PyPI publishing with trusted publishing
 
 ### Setting Up Automated Publishing
@@ -33,26 +33,7 @@ This repository includes GitHub Actions workflows for automated package building
 
 ### How It Works
 
-#### Current Manual Process:
-```bash
-# 1. Update versions manually
-# 2. Commit and tag
-git commit -m "Bump version to X.Y.Z"
-git tag vX.Y.Z
-git push origin main --tags
-
-# 3. Build manually
-python -m build
-
-# 4. Upload manually
-twine upload dist/*
-
-# 5. Create GitHub release manually
-gh release create vX.Y.Z --generate-notes
-gh release upload vX.Y.Z dist/*
-```
-
-#### With Automation:
+#### Releasing:
 ```bash
 # 1. Update versions and commit
 git commit -m "Bump version to X.Y.Z"
