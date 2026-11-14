@@ -97,7 +97,7 @@ Nothing refreshed `cache/latest.json` except a manual `--snapshot-once`. After a
 
 ## Commits
 
-26 code commits on `claude/project-thread-v8bb9o`, `284a248` to `a4d4dbe`, plus this note; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
+27 code commits on `claude/project-thread-v8bb9o`, `284a248` to `770270e`, plus this note; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
 
 ## Live verification
 
@@ -134,6 +134,14 @@ The live tests did not fit that rule. They checked the result of each write by r
 - `test_search_advanced_empty_results` no longer pins the `direct` provider. A refused filter now comes back through the bridge as a search error (see "A bad request is not an outage"), which is what the test asserts.
 
 Question from Ross, paraphrased: is the live run still possible with Automation only? Yes for the 69 AppleScript tests, which cover every write path changed in this work and the clean-up sweeps. The 47 bridge tests need a bridge built from this code with its own database access, which means the rebuilt signed app; a bridge started from a Claude session would hold no database access and should not be used for them.
+
+### Update - 2026-11-15 00:05 UTC
+
+**Summary**: the second run of the hermetic suite on the Mac found a timing-dependent failure in the transport, now fixed (`770270e`).
+
+`test_truncated_header_block_is_rejected_without_dispatch` got an empty reply on macOS when the client kept the connection open. The handler has two limits of the same length: a per-read socket timeout and an overall input deadline that shuts the read side. If the deadline fires first the read returns end-of-input and the request is answered 400; if the read timeout fires first, the standard library closes the connection without a reply. On Linux the deadline had always won by a fraction of a millisecond. A read timeout while headers arrive is now treated as end-of-input, and the test runs each cut-off on its own (disabling the other), which reproduces the failure on Linux against the old code.
+
+The AppleScript in `tests/live_reads.py` and the clean-up sweep compiles on the Mac with `osacompile` (nothing was run). The Automation prompt was still unanswered, so no live test has run.
 
 ## For review
 
@@ -190,6 +198,7 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 6. **Run the suite on every Python the project supports.** The container defaults to 3.13 (`UV_PYTHON=3.13`, because `.python-version` pins 3.12.16, which is not installed there), the Mac and the frozen app use 3.12, and `http.server` differs between them. `UV_PYTHON=3.12` with a separate `UV_PROJECT_ENVIRONMENT` reproduces the Mac's result in the container.
 7. **Things' AppleScript dictionary has `name`, not `title`.** `title of theTodo` compiles, fails at run time, and inside a `try` block fails silently.
 8. **A test that checks through a different door than the product needs permissions the product does not.** The writes needed only Automation; it was the tests' own verification reads that needed the database. Reading back through the interface under test removed the requirement.
+9. **Two timers of the same length are a race, and a test that passes on one platform only shows which one usually wins there.** Give each cut-off its own test by disabling the other.
 
 ## References
 
