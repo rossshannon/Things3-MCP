@@ -2,6 +2,7 @@
 
 import json
 import random
+import re
 from functools import cache, wraps
 
 from mcp.server.fastmcp import FastMCP
@@ -23,6 +24,17 @@ logger = get_logger(__name__)
 
 DEFAULT_TRASH_LIMIT = 50
 MAX_TRASH_LIMIT = 200
+PERIOD = re.compile(r"([0-9]{1,4})([dwmy])")
+PERIOD_ERROR = "Error: Invalid period format {period!r}. Expected a number followed by d, w, m or y, for example '3d', '1w', '2m' or '1y'"
+DAYS_PER_MONTH = 30
+DAYS_PER_YEAR = 365
+MAX_LOOKBACK_DAYS = 200 * DAYS_PER_YEAR
+
+
+def _parse_period(period: str) -> tuple[int, str] | None:
+    """Split a look-back period such as ``'2w'`` into its count and unit."""
+    match = PERIOD.fullmatch(period) if isinstance(period, str) else None
+    return (int(match[1]), match[2]) if match else None
 
 
 def _with_read_provenance(function):
@@ -352,7 +364,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
     Args:
     ----
-        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
+        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'. A month counts as 30 days.
         limit: Maximum number of entries to return. Defaults to 50.
     """
     import time
@@ -362,23 +374,13 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
     log_operation_start("get-logbook")
 
     try:
-        # Parse period (e.g., "1d", "7d", "2w", "1m", "1y")
-        if not period or period[-1] not in ["d", "w", "m", "y"]:
-            log_operation_end("get-logbook", False, time.time() - start_time, error=f"Invalid period format: {period}")
-            return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
-
-        number = int(period[:-1])
-        unit = period[-1]
-
-        # Calculate start date based on period
-        if unit == "d":
-            start_date = (datetime.now() - timedelta(days=number)).strftime("%Y-%m-%d")
-        elif unit == "w":
-            start_date = (datetime.now() - timedelta(weeks=number)).strftime("%Y-%m-%d")
-        elif unit == "m":
-            start_date = (datetime.now() - timedelta(days=number * 30)).strftime("%Y-%m-%d")
-        elif unit == "y":
-            start_date = (datetime.now() - timedelta(days=number * 365)).strftime("%Y-%m-%d")
+        parsed = _parse_period(period)
+        if parsed is None:
+            log_operation_end("get-logbook", False, time.time() - start_time, error="Invalid period format")
+            return PERIOD_ERROR.format(period=period)
+        number, unit = parsed
+        days = min(number * {"d": 1, "w": 7, "m": DAYS_PER_MONTH, "y": DAYS_PER_YEAR}[unit], MAX_LOOKBACK_DAYS)
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         logger.debug("Things get_logbook processing")
 
@@ -401,9 +403,6 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         log_operation_end("get-logbook", True, time.time() - start_time, count=len(todos))
         return _format_todo_items(todos, provider)
 
-    except ValueError as e:
-        log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
-        return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
     except Exception as e:
         log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
         raise
@@ -1052,10 +1051,15 @@ def get_recent(period: str) -> str:
 
     Args:
     ----
-        period: Time period (e.g., '3d', '1w', '2m', '1y')
+        period: Time period (e.g., '3d', '1w', '2m', '1y'). A month counts as 30 days.
     """
-    if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
-        return "Error: Period must be in format '3d', '1w', '2m', '1y'"
+    parsed = _parse_period(period)
+    if parsed is None:
+        return PERIOD_ERROR.format(period=period)
+    number, unit = parsed
+    # Things itself only understands days, weeks and years.
+    if unit == "m":
+        period = f"{number * DAYS_PER_MONTH}d"
 
     try:
         provider = get_provider()
