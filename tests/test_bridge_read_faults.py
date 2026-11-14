@@ -4,15 +4,18 @@ None of them may be mistaken for an unavailable database, an empty result or a
 write of unknown outcome. Nothing here starts a worker or touches Things.
 """
 
+import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from clawbridge.protocol import error_envelope
+from clawbridge.protocol import error_envelope, ok_envelope
 from tests.test_cache_fallback import SNAPSHOT_DATA, bridge, cache_file, write_cache  # noqa: F401 - fixtures
 from tests.test_clawbridge_transport import request
 from things3_mcp.providers.base import ProviderError
-from things3_mcp_bridge import db_reader
+from things3_mcp.providers.cache import CacheStore, CacheThingsProvider
+from things3_mcp_bridge import db_reader, server
 
 
 class RefusingDatabase:
@@ -68,3 +71,62 @@ def test_a_refused_read_is_not_answered_from_the_snapshot(bridge, cache_file, er
     status, envelope = request(bridge, "POST", "/things/todos", {"status": "incomplete"})
     assert status == 200 and envelope["ok"] is False
     assert envelope["error_code"] == error_code and "source" not in envelope
+
+
+def test_a_snapshot_of_unexpected_shape_keeps_the_live_error_visible(bridge, cache_file, monkeypatch):  # noqa: F811
+    write_cache(cache_file)
+    bridge.replies["*"] = error_envelope("things_db_timeout", "App action did not complete", outcome="failed")
+    monkeypatch.setattr(CacheThingsProvider, "inbox", lambda *_args, **_kwargs: 1 / 0)
+    status, envelope = request(bridge, "GET", "/things/inbox")
+    assert status == 200
+    assert envelope["error_code"] == "things_db_timeout"
+    assert envelope["cache_error"]["error_code"] == "cache_unreadable"
+
+
+def test_a_snapshot_timestamp_without_an_offset_is_read_as_utc(bridge, cache_file):  # noqa: F811
+    generated = (datetime.now(UTC) - timedelta(hours=3)).replace(tzinfo=None)
+    CacheStore(cache_file).write_snapshot({"version": 1, "source": "live", "generated_at": generated.isoformat(), "data": SNAPSHOT_DATA})
+    bridge.replies["*"] = error_envelope("things_db_timeout", "App action did not complete", outcome="failed")
+    for path in ("/cache/status", "/auth-status", "/status"):
+        assert request(bridge, "GET", path)[0] == 200
+    age = request(bridge, "GET", "/cache/status")[1]["data"]["age_seconds"]
+    assert 3 * 3600 - 60 <= age <= 3 * 3600 + 60
+    status, envelope = request(bridge, "GET", "/things/inbox")
+    assert status == 200 and envelope["source"] == "cache"
+    assert 3 * 3600 - 60 <= envelope["cache_age_seconds"] <= 3 * 3600 + 60
+
+
+def test_the_snapshot_says_what_it_cannot_answer_instead_of_returning_nothing(cache_file):  # noqa: F811
+    data = {**SNAPSHOT_DATA, "projects": [{"uuid": "project-1", "type": "project", "title": "Plan", "status": "incomplete"}]}
+    CacheStore(cache_file).write_snapshot({"version": 1, "source": "live", "generated_at": datetime.now().astimezone().isoformat(), "data": data})
+    provider = CacheThingsProvider()
+    assert [item["uuid"] for item in provider.tasks(type="project")] == ["project-1"]
+    for unanswerable in (lambda: provider.projects(status="completed"), lambda: provider.tasks(type="heading"), lambda: provider.todos(trashed=True), lambda: provider.tasks(type="project", status=None)):
+        with pytest.raises(ProviderError) as gap:
+            unanswerable()
+        assert gap.value.error_code == "cache_miss"
+    assert provider.todos(trashed=False) == []
+
+
+def snapshot_reply():
+    return ok_envelope(SNAPSHOT_DATA, outcome="succeeded")
+
+
+def test_a_snapshot_that_cannot_be_written_is_reported_as_a_cache_fault(bridge, cache_file, monkeypatch):  # noqa: F811
+    def unwritable(*_args, **_kwargs):
+        raise OSError("read-only file system")
+
+    bridge.replies["snapshot"] = snapshot_reply()
+    monkeypatch.setattr(server, "write_snapshot", unwritable)
+    status, envelope = request(bridge, "POST", "/snapshot")
+    assert status == 200 and envelope["ok"] is False
+    assert envelope["error_code"] == "cache_unwritable" and envelope["outcome"] == "failed"
+    assert not cache_file.exists()
+
+
+def test_snapshot_once_reports_an_unwritable_cache_without_a_traceback(cache_file, monkeypatch, capsys):  # noqa: F811
+    cache_file.parent.mkdir(mode=0o755)  # A cache directory other users can read is refused.
+    monkeypatch.setattr(server, "run_worker", lambda *_args, **_kwargs: snapshot_reply())
+    assert server.snapshot_once() == 1
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["ok"] is False and printed["error_code"] == "cache_unwritable"

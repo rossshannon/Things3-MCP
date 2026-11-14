@@ -33,9 +33,11 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Snapshots are written in UTC; one without an offset is read the same way.
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 class CacheStore:
@@ -94,8 +96,7 @@ class CacheStore:
             }
         )
         if generated:
-            now = datetime.now(generated.tzinfo or UTC)
-            status["age_seconds"] = max(0, int((now - generated).total_seconds()))
+            status["age_seconds"] = max(0, int((datetime.now(UTC) - generated).total_seconds()))
         return status
 
 
@@ -112,7 +113,7 @@ class CacheThingsProvider:
             raise ProviderError("live_read_required", "A cache cannot satisfy a live read")
         snapshot = self.store.read_snapshot()
         generated = _parse_datetime(snapshot.get("generated_at"))
-        age = max(0, int((datetime.now(generated.tzinfo or UTC) - generated).total_seconds())) if generated else None
+        age = max(0, int((datetime.now(UTC) - generated).total_seconds())) if generated else None
         snapshot_source = snapshot.get("source")
         record_read(
             {"source": "cache", "snapshot_source": snapshot_source if isinstance(snapshot_source, str) else "unknown", "generated_at": snapshot.get("generated_at") if generated else None, "cache_age_seconds": age}
@@ -134,12 +135,15 @@ class CacheThingsProvider:
         return items if include_items else [_strip_nested_items(item) for item in items]
 
     def _filter_list(self, key: str, **kwargs: Any) -> list[dict[str, Any]]:
-        if key == "todos" and kwargs.get("status", "incomplete") != "incomplete":
+        if key in {"todos", "projects"} and kwargs.get("status", "incomplete") != "incomplete":
             raise ProviderError(
                 "cache_miss",
                 "Cache snapshots cover incomplete tasks only; completed, canceled and all-status queries require live access.",
                 cache_status={"error_code": "cache_miss", "task_status_coverage": "incomplete"},
             )
+        if kwargs.get("trashed"):
+            # An empty answer here would read as "the Trash is empty".
+            raise ProviderError("cache_miss", "Cache snapshots do not include trashed items; this query requires live access.", cache_status={"error_code": "cache_miss"})
         include_items = kwargs.pop("include_items", None)
         count_only = kwargs.pop("count_only", False)
         snapshot = self._snapshot()
@@ -187,10 +191,15 @@ class CacheThingsProvider:
     def someday(self, include_items: bool = True) -> list[dict[str, Any]]:
         return self._view("someday", include_items)
 
-    def tasks(self, **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002
+    def tasks(self, **kwargs: Any) -> list[dict[str, Any]]:
+        kind = kwargs.get("type")
+        if kind == "project":
+            return self._filter_list("projects", **kwargs)
+        if kind == "heading":
+            raise ProviderError("cache_miss", "Cache snapshots do not include headings; this query requires live access.", cache_status={"error_code": "cache_miss"})
         return self._filter_list("todos", **kwargs)
 
-    def todos(self, **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002
+    def todos(self, **kwargs: Any) -> list[dict[str, Any]]:
         return self._filter_list("todos", **kwargs)
 
     def search(self, query: str, include_items: bool = True) -> list[dict[str, Any]]:

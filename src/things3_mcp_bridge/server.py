@@ -92,6 +92,19 @@ def _cache_envelope(action: str, params: dict[str, Any] | None = None) -> dict[s
             return ok_envelope(data, source="cache", generated_at=metadata.get("generated_at"), cache_age_seconds=metadata.get("cache_age_seconds"), snapshot_source=metadata.get("snapshot_source", "unknown"))
     except ProviderError as exc:
         return error_envelope(exc.error_code, exc.message, authorization_hint=exc.authorization_hint, cache_status=exc.cache_status or cache_status())
+    except Exception:  # noqa: BLE001 - a snapshot of unexpected shape is a cache fault, and must not hide the live error
+        return error_envelope("cache_unreadable", "The cache snapshot could not be used")
+
+
+def _store_snapshot(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Write a successful snapshot read to the cache, reporting a failed write as such."""
+    source = envelope.get("source", "unknown")
+    try:
+        snapshot = write_snapshot(envelope["data"], source=source)
+    except (OSError, ValueError, ProviderError):
+        # The read worked; only the cache file could not be replaced.
+        return error_envelope("cache_unwritable", "The snapshot was read but could not be written to the cache", outcome="failed", capabilities=envelope.get("capabilities", {}))
+    return ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))
 
 
 def live_or_cache(action: str, params: dict[str, Any] | None = None, *, require_live: bool = False) -> dict[str, Any]:
@@ -142,11 +155,7 @@ class UnixHTTPServer(CoreHTTPServer):
     def read_action(self, action: str, params: dict[str, Any], *, require_live: bool = False) -> dict[str, Any]:
         if action == "snapshot":
             envelope = self._worker(action, params)
-            if envelope.get("ok"):
-                source = envelope.get("source", "unknown")
-                snapshot = write_snapshot(envelope["data"], source=source)
-                return ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))
-            return envelope
+            return _store_snapshot(envelope) if envelope.get("ok") else envelope
         if action == "diagnose":
             return self._worker(action, params)
         result = live_or_cache(action, params, require_live=require_live)
@@ -254,13 +263,10 @@ def snapshot_once() -> int:
     import json
 
     envelope = run_worker("snapshot")
-    if not envelope.get("ok"):
-        print(json.dumps(envelope))
-        return 1
-    source = envelope.get("source", "unknown")
-    snapshot = write_snapshot(envelope["data"], source=source)
-    print(json.dumps(ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))))
-    return 0
+    if envelope.get("ok"):
+        envelope = _store_snapshot(envelope)
+    print(json.dumps(envelope))
+    return 0 if envelope.get("ok") else 1
 
 
 def print_health() -> int:
