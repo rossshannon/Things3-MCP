@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 
 DEFAULT_TRASH_LIMIT = 50
 MAX_TRASH_LIMIT = 200
+STALE_SNAPSHOT_SECONDS = 24 * 60 * 60
 PERIOD = re.compile(r"([0-9]{1,4})([dwmy])")
 PERIOD_ERROR = "Error: Invalid period format {period!r}. Expected a number followed by d, w, m or y, for example '3d', '1w', '2m' or '1y'"
 DAYS_PER_MONTH = 30
@@ -35,6 +36,17 @@ def _parse_period(period: str) -> tuple[int, str] | None:
     """Split a look-back period such as ``'2w'`` into its count and unit."""
     match = PERIOD.fullmatch(period) if isinstance(period, str) else None
     return (int(match[1]), match[2]) if match else None
+
+
+def _describe_age(seconds: float) -> str:
+    """Render a snapshot age in its two largest units, for example ``4 days 14 hours``."""
+    remaining = max(0, int(seconds))
+    parts = []
+    for name, size in (("day", 86400), ("hour", 3600), ("minute", 60), ("second", 1)):
+        count, remaining = divmod(remaining, size)
+        if count or (name == "second" and not parts):
+            parts.append(f"{count} {name}{'' if count == 1 else 's'}")
+    return " ".join(parts[:2])
 
 
 def _with_read_provenance(function):
@@ -52,7 +64,9 @@ def _with_read_provenance(function):
                 note = f"Read source: {source}." if source else ""
                 if source == "cache":
                     age = observation.get("cache_age_seconds")
-                    note += f" Snapshot age: {age} seconds." if age is not None else " Snapshot age: unknown."
+                    note += f" Snapshot age: {_describe_age(age)}." if age is not None else " Snapshot age: unknown."
+                    if age is not None and age >= STALE_SNAPSHOT_SECONDS:
+                        note += " This snapshot may be out of date; changes made in Things since then are missing."
                     snapshot_source = observation.get("snapshot_source", "unknown")
                     note += f" Snapshot backend: {snapshot_source}."
                     if snapshot_source == "apple_events":

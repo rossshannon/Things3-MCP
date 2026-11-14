@@ -123,7 +123,7 @@ uv run --locked python scripts/check_bridge.py
 uv run --locked python scripts/check_bridge.py --snapshot
 ```
 
-Inspect the returned backend. SQLite and the limited Apple Events fallback have different coverage. The default cache is `~/Library/Application Support/Things3-MCP/cache/latest.json`. New LaunchAgents discard stdout/stderr; authenticated status and operation records provide bounded diagnostics. Old log files are not removed.
+Inspect the returned backend. SQLite and the limited Apple Events fallback have different coverage. The default cache is `~/Library/Application Support/Things3-MCP/cache/latest.json`. After a successful database read the bridge renews that snapshot in the background once it is more than an hour old; set `THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH` to another number of seconds, or to `0` to renew it only with `--snapshot-once`. A snapshot is never renewed from the limited Apple Events fallback. New LaunchAgents discard stdout/stderr; authenticated status and operation records provide bounded diagnostics. Old log files are not removed.
 
 ### Provider modes and 2.5 migration
 
@@ -138,7 +138,7 @@ Inspect the returned backend. SQLite and the limited Apple Events fallback have 
 
 The MCP bridge call timeout defaults to 35 seconds; the worker deadline defaults to 30 seconds. Client timeout settings must exceed 30 seconds and should stay above the configured worker deadline. A lost response or client timeout still does not establish that a mutation failed. Never retry it automatically. Use its operation ID, or its correlation label if the response was lost, to inspect the result. A later intentional request is a new attempt.
 
-Read output identifies its source. Cached output includes snapshot age and original backend; an Apple Events snapshot retains its limited-coverage warning. Direct bridge callers can send `X-Require-Live: true` when a cached result is unacceptable.
+Read output identifies its source. Cached output includes snapshot age and original backend, and says so plainly once the snapshot is more than a day old; an Apple Events snapshot retains its limited-coverage warning. Direct bridge callers can send `X-Require-Live: true` when a cached result is unacceptable.
 
 ### Operation records
 
