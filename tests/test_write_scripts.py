@@ -9,6 +9,7 @@ from datetime import date, timedelta
 import pytest
 
 from things3_mcp import applescript_bridge as ab
+from things3_mcp import fast_server
 from things3_mcp.providers.base import ProviderError
 from things3_mcp.providers.direct import DirectThingsProvider
 
@@ -54,6 +55,22 @@ def test_text_reaches_things_unaltered(scripts):
     ab.add_todo(title="C++ a+b 100%20", notes="https://example.com/?q=a+b&x=1%20y")
     assert 'name:"C++ a+b 100%20"' in scripts[0]
     assert 'notes:"https://example.com/?q=a+b&x=1%20y"' in scripts[0]
+
+
+def test_tools_pass_text_to_the_provider_unaltered(monkeypatch):
+    seen = {}
+
+    class Provider:
+        def add_task(self, params):
+            seen.update(params)
+            return {"id": "new-id"}
+
+        def get(self, _uuid):
+            return None
+
+    monkeypatch.setattr(fast_server, "get_provider", Provider)
+    fast_server.add_task(title="R+D 100%20", notes="a+b")
+    assert seen == {"title": "R+D 100%20", "notes": "a+b"}
 
 
 @pytest.mark.parametrize("hostile", ['x"\ndo shell script "touch /tmp/pwned"\nset y to "', 'back\\slash"quote', "line\rbreak\ttab"])
@@ -160,3 +177,62 @@ def test_todos_and_projects_are_scheduled_the_same_way(scripts, when, expected):
     ab.update_project(id="i", when=when)
     for script, reference in zip(scripts, ("newTodo", "newProject", "theTodo", "theProject"), strict=True):
         assert schedule_lines(script, reference) == ([expected.format(ref=reference)] if expected else [])
+
+
+class RecordingProvider:
+    def __init__(self):
+        self.calls = []
+
+    def __getattr__(self, name):
+        def call(*args, **kwargs):
+            self.calls.append((name, args, kwargs))
+            if name == "get":
+                return {"uuid": "new-id", "title": "p", "start": "Anytime"}
+            return {"id": "new-id"} if name.startswith(("add_", "update_")) else []
+
+        return call
+
+
+@pytest.fixture
+def provider(monkeypatch):
+    recording = RecordingProvider()
+    monkeypatch.setattr(fast_server, "get_provider", lambda: recording)
+    return recording
+
+
+TOOLS = {
+    "add_todo": lambda **kw: fast_server.add_task(title="t", **kw),
+    "add_project": lambda **kw: fast_server.add_new_project(title="p", **kw),
+    "update_todo": lambda **kw: fast_server.update_task(id="i", **kw),
+    "update_project": lambda **kw: fast_server.update_existing_project(id="i", **kw),
+}
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+@pytest.mark.parametrize(
+    "values", [{"when": "evening"}, {"when": "next week"}, {"when": "2026-02-30"}, {"when": ""}, {"deadline": "2026-1-5"}, {"deadline": "2026-02-30"}, {"deadline": "tomorrow"}, {"deadline": "2026-01-05\n"}]
+)
+def test_unusable_schedule_values_are_refused_instead_of_silently_dropped(provider, tool, values):
+    result = TOOLS[tool](**values)
+    assert result.startswith("⚠️ Error: Unsupported")
+    assert "Nothing was changed" in result
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+@pytest.mark.parametrize(("given", "sent"), [("Today", "today"), (" SOMEDAY ", "someday"), ("tomorrow", "tomorrow"), ("2027-03-15", "2027-03-15")])
+def test_schedule_keywords_are_accepted_in_any_case(provider, tool, given, sent):
+    assert "✅" in TOOLS[tool](when=given, deadline="2027-03-20")
+    params = provider.calls[0][1][-1]
+    assert params["when"] == sent and params["deadline"] == "2027-03-20"
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_a_single_tag_string_reaches_the_provider_as_one_tag(provider, tool):
+    TOOLS[tool](tags="work")
+    assert provider.calls[0][1][-1]["tags"] == ["work"]
+
+
+def test_a_single_todo_string_reaches_the_provider_as_one_todo(provider):
+    fast_server.add_new_project(title="p", todos="Buy milk")
+    assert provider.calls[0][1][-1]["todos"] == ["Buy milk"]

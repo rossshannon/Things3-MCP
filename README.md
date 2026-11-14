@@ -243,7 +243,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 ### add_todo
 - `title` - Title of the todo
 - `notes` (optional) - Notes for the todo (supports Markdown formatting including checkboxes like `- [ ] Task`)
-- `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` (optional) - Title of project/area to add to (must exactly match existing name)
@@ -254,7 +254,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 - `id` - ID of the todo to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
@@ -275,7 +275,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 - `id` - ID of the project to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - When to schedule the project (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the project (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the project (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
