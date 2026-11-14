@@ -31,11 +31,6 @@ DEFAULT_THINGS_GROUP_CONTAINER = f"{CULTURED_CODE_TEAM_ID}.{DEFAULT_THINGS_BUNDL
 DATA_FOLDER_ENV = "THINGS3_MCP_DATA_FOLDER"
 THINGSCLI_DEFAULTS_TIMEOUT_SECONDS = float(os.environ.get("THINGS3_MCP_THINGSCLI_TIMEOUT", "3"))
 
-DB_PATTERNS = (
-    f"~/Library/Group Containers/{DEFAULT_THINGS_GROUP_CONTAINER}/ThingsData-*/Things Database.thingsdatabase/main.sqlite",
-    f"~/Library/Group Containers/{DEFAULT_THINGS_GROUP_CONTAINER}/Things Database.thingsdatabase/main.sqlite",
-)
-
 JXA_TIMEOUT_SECONDS = float(os.environ.get("THINGS3_MCP_JXA_TIMEOUT", "8"))
 
 _JXA_SIMPLE = r"""
@@ -458,9 +453,22 @@ def run_jxa_action(action: str, params: dict[str, Any] | None = None) -> Any:
 
 
 def run_sqlite_action(action: str, params: dict[str, Any] | None = None) -> Any:
-    """Run a read action against the direct Things SQLite provider."""
-    params = dict(params or {})
+    """Run a read action against the direct Things SQLite provider.
+
+    The database was reachable once the provider exists, so a ``ValueError`` from
+    the query itself is things-py refusing a filter value. That is the caller's
+    request being wrong, not a backend being unavailable, and no other backend
+    could answer it either.
+    """
     provider = direct_provider()
+    try:
+        return _sqlite_read(provider, action, dict(params or {}))
+    except ValueError as exc:
+        missing = str(exc).startswith("No such")
+        raise ProviderError("not_found" if missing else "invalid_request", "Things has no such item" if missing else "Things does not accept this filter value", outcome="failed") from exc
+
+
+def _sqlite_read(provider: Any, action: str, params: dict[str, Any]) -> Any:
     if action == "snapshot":
         return {
             "inbox": provider.inbox(include_items=True),
@@ -573,7 +581,8 @@ def run_action(action: str, params: dict[str, Any] | None = None) -> Any:
         try:
             result = run_write_action(action, params)
         except Exception as exc:
-            if getattr(exc, "error_code", None) != "app_not_running":
+            # A request refused before any script ran says nothing about Automation.
+            if not str(getattr(exc, "error_code", "")).startswith(("app_not_running", "invalid_")):
                 _observe("automation", exc)
             _trace("write-failed")
             raise
@@ -583,23 +592,38 @@ def run_action(action: str, params: dict[str, Any] | None = None) -> Any:
     _trace("sqlite-attempt", action)
     try:
         result = run_sqlite_action(action, params)
+    except ProviderError as request_error:
+        if request_error.error_code not in REQUEST_FAULTS:
+            return _read_without_database(action, params, request_error)
+        # The database answered; it was the request it would not accept.
+        _observe("database")
+        _trace("sqlite-rejected")
+        raise
     except Exception as sqlite_exc:  # noqa: BLE001 - retain separate backend observations
-        _observe("database", sqlite_exc)
-        _trace("sqlite-failed")
-        try:
-            data = run_jxa_action(action, params)
-        except Exception as jxa_exc:
-            if getattr(jxa_exc, "error_code", None) != "apple_events_unsupported":
-                _observe("automation", jxa_exc)
-            _trace("jxa-failed")
-            if isinstance(jxa_exc, ProviderError):
-                raise
-            raise ProviderError("things_read_unavailable", "The database and Apple Events read backends are unavailable") from jxa_exc
-        _observe("automation")
-        _trace("jxa-ok", action)
-        if isinstance(data, dict):
-            data.setdefault("_source", "apple_events")
-        return data
+        return _read_without_database(action, params, sqlite_exc)
     _observe("database")
     _trace("sqlite-ok", action)
     return result
+
+
+REQUEST_FAULTS = frozenset({"invalid_request", "not_found"})
+
+
+def _read_without_database(action: str, params: dict[str, Any], sqlite_exc: Exception) -> Any:
+    """Fall back to Apple Events, keeping what each backend showed separate."""
+    _observe("database", sqlite_exc)
+    _trace("sqlite-failed")
+    try:
+        data = run_jxa_action(action, params)
+    except Exception as jxa_exc:
+        if getattr(jxa_exc, "error_code", None) != "apple_events_unsupported":
+            _observe("automation", jxa_exc)
+        _trace("jxa-failed")
+        if isinstance(jxa_exc, ProviderError):
+            raise
+        raise ProviderError("things_read_unavailable", "The database and Apple Events read backends are unavailable") from jxa_exc
+    _observe("automation")
+    _trace("jxa-ok", action)
+    if isinstance(data, dict):
+        data.setdefault("_source", "apple_events")
+    return data

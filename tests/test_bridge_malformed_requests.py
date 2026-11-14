@@ -72,6 +72,7 @@ MALFORMED = {
     "JSON list sent to PATCH project": ("PATCH", "/things/project/some-id", framed(b"[1, 2]"), b"[1, 2]"),
     "JSON list sent to create todo": ("POST", "/things/todo", framed(b"[]"), b"[]"),
     "period that is not a duration": ("GET", "/things/last/banana", (), b""),
+    "last filter that is not a duration": ("POST", "/things/todos", framed(b'{"last": "banana"}'), b'{"last": "banana"}'),
     "period with an unsupported unit": ("GET", "/things/last/3h", (), b""),
     "empty period": ("GET", "/things/last/", (), b""),
     "include_items that is not a boolean": ("GET", "/things/inbox?include_items=maybe", (), b""),

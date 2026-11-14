@@ -97,7 +97,8 @@ def _cache_envelope(action: str, params: dict[str, Any] | None = None) -> dict[s
 def live_or_cache(action: str, params: dict[str, Any] | None = None, *, require_live: bool = False) -> dict[str, Any]:
     """Keep read shapes and provenance, permitting callers to require live data."""
     live = run_worker(action, params)
-    if live.get("ok") or require_live or live.get("error_code") == "invalid_request":
+    if live.get("ok") or require_live or live.get("error_code") in {"invalid_request", "not_found"}:
+        # A request the database refused would be refused by any other source too.
         return live
     cached = _cache_envelope(action, params)
     if cached.get("ok"):
