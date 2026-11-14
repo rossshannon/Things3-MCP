@@ -77,8 +77,7 @@ def escape_applescript_string(text: str) -> str:
     if not text:
         return '""'
 
-    # Replace any "+" with spaces (URL decoding)
-    text = text.replace("+", " ").replace("\\", "\\\\")
+    text = text.replace("\\", "\\\\")
 
     # Handle carriage returns and tabs that can break AppleScript syntax
     # Preserve newlines as they're valid in AppleScript strings
@@ -106,12 +105,41 @@ def escape_applescript_string(text: str) -> str:
         return f'"{text}"'
 
 
+def _invalid(error_code: str, message: str) -> AppleScriptError:
+    """Describe a request refused before any script ran, so it is safe to correct and resend."""
+    return AppleScriptError(error_code, message, outcome="failed")
+
+
+def _as_list(value: list[str] | str | None) -> list[str]:
+    """Accept one name or a list of names; a bare string is one name, not a sequence of letters."""
+    if value is None:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
+def _status_command(item_ref: str, completed: bool | None, canceled: bool | None) -> str | None:
+    """Return the single status change the two flags ask for, if any.
+
+    ``True`` wins over ``False``, and canceling wins over completing, so
+    ``completed=True, canceled=False`` completes the item instead of reopening it.
+    """
+    if canceled:
+        status = "canceled"
+    elif completed:
+        status = "completed"
+    elif completed is False or canceled is False:
+        status = "open"
+    else:
+        return None
+    return f"    set status of {item_ref} to {status}"
+
+
 def add_todo(  # noqa: PLR0913
     title: str,
     notes: str | None = None,
     when: str | None = None,
     deadline: str | None = None,
-    tags: list[str] | None = None,
+    tags: list[str] | str | None = None,
     list_id: str | None = None,
     list_title: str | None = None,
 ) -> str | bool:
@@ -131,12 +159,14 @@ def add_todo(  # noqa: PLR0913
 
     Returns:
     -------
-        ID of the created todo if successful, False otherwise
+        ID of the created todo, or False if Things did not return one
+
+    Raises:
+    ------
+        AppleScriptError: The request was refused before running, or Things did not confirm it
     """
-    # Validate input
     if not title or not title.strip():
-        logger.error("Title cannot be empty")
-        return False
+        raise _invalid("invalid_title", "A to-do needs a title")
 
     # Ensure Things is ready
     if not ensure_things_ready():
@@ -156,12 +186,9 @@ def add_todo(  # noqa: PLR0913
     # Handle scheduling using the standardized helper
     _handle_when_scheduling(script_parts, when, "newTodo")
 
-    # Add tags if provided
-    if tags and len(tags) > 0:
-        # Tags should be set as a comma-separated string according to Things documentation
-        tag_string = ", ".join(tags)
-        escaped_tag_string = escape_applescript_string(tag_string)
-        script_parts.append(f"set tag names of newTodo to {escaped_tag_string}")
+    # Tags are set as one comma-separated string, as the Things scripting guide describes.
+    if tag_names := _as_list(tags):
+        script_parts.append(f"set tag names of newTodo to {escape_applescript_string(', '.join(tag_names))}")
 
     # Handle deadline using the date converter
     if deadline:
@@ -232,85 +259,22 @@ def is_valid_date_format(date_string: str) -> bool:
 
 
 def _handle_when_scheduling(script_parts: list[str], when: str | None, item_ref: str) -> None:
-    """Handle when/scheduling for todos and projects with consistent approach."""
+    """Schedule a to-do or project; values other than the documented ones are ignored."""
     if not when:
         return
 
-    logger.info("AppleScript operation progress")
-
-    # Check if it's a valid date format first
-    is_date_format = is_valid_date_format(when)
-
-    if when == "today":
-        # Move to Today list
-        script_parts.append(f'    move {item_ref} to list "Today"')
+    if when in {"today", "anytime", "someday"}:
+        script_parts.append(f'    move {item_ref} to list "{when.capitalize()}"')
     elif when == "tomorrow":
-        # Schedule for tomorrow
         script_parts.append(f"    schedule {item_ref} for (current date) + 1 * days")
-    elif when == "anytime":
-        # Move to Anytime list
-        script_parts.append(f'    move {item_ref} to list "Anytime"')
-    elif when == "someday":
-        # Move to Someday list
-        script_parts.append(f'    move {item_ref} to list "Someday"')
-    elif is_date_format:
-        # Schedule for specific date
-        try:
-            target_date = datetime.strptime(when, "%Y-%m-%d").date()
-            current_date = datetime.now().date()
-            days_diff = (target_date - current_date).days
-            logger.debug("AppleScript operation progress")
-
-            if days_diff <= 0:
-                script_parts.append(f"    schedule {item_ref} for (current date)")
-            else:
-                script_parts.append(f"    schedule {item_ref} for (current date) + {days_diff} * days")
-        except ValueError:
-            logger.error("AppleScript operation failed")
-            logger.warning("AppleScript operation progress")
+    elif is_valid_date_format(when):
+        days_diff = (datetime.strptime(when, "%Y-%m-%d").date() - datetime.now().date()).days
+        if days_diff <= 0:
+            script_parts.append(f"    schedule {item_ref} for (current date)")
+        else:
+            script_parts.append(f"    schedule {item_ref} for (current date) + {days_diff} * days")
     else:
-        logger.warning("AppleScript operation progress")
-
-
-def _handle_project_when_scheduling(script_parts: list[str], when: str | None, project_ref: str) -> None:
-    """Handle when/scheduling specifically for projects."""
-    if not when:
-        return
-
-    logger.info("AppleScript operation progress")
-
-    # Check if it's a valid date format first
-    is_date_format = is_valid_date_format(when)
-
-    if when == "today":
-        # Move project to Today list
-        move_project_to_list(script_parts, "Today", project_ref)
-    elif when == "tomorrow":
-        # Schedule project for tomorrow
-        script_parts.append(f"    schedule {project_ref} for (current date) + 1 * days")
-    elif when == "anytime":
-        # Move project to Anytime list
-        move_project_to_list(script_parts, "Anytime", project_ref)
-    elif when == "someday":
-        # Move project to Someday list
-        move_project_to_list(script_parts, "Someday", project_ref)
-    elif is_date_format:
-        # Schedule project for specific date
-        try:
-            target_date = datetime.strptime(when, "%Y-%m-%d").date()
-            current_date = datetime.now().date()
-            days_diff = (target_date - current_date).days
-            logger.debug("AppleScript operation progress")
-
-            if days_diff <= 0:
-                script_parts.append(f"    schedule {project_ref} for (current date)")
-            else:
-                script_parts.append(f"    schedule {project_ref} for (current date) + {days_diff} * days")
-        except ValueError:
-            logger.error("AppleScript operation failed")
-            logger.warning("AppleScript operation progress")
-    else:
-        logger.warning("AppleScript operation progress")
+        logger.warning("Ignored an unsupported schedule value")
 
 
 def update_todo(
@@ -334,13 +298,13 @@ def update_todo(
     ----
         id: The ID of the todo to update
         title: New title for the todo
-        notes: New notes for the todo
+        notes: New notes for the todo; an empty string clears them
         when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
         deadline: New deadline for the todo (YYYY-MM-DD)
-        tags: New tags for the todo (replaces existing tags)
+        tags: New tags for the todo (replaces existing tags; an empty list clears them)
         add_tags: Tags to add to the todo (preserves existing tags)
-        completed: Mark as completed
-        canceled: Mark as canceled
+        completed: True marks the todo completed; False reopens it
+        canceled: True marks the todo canceled; False reopens it
         list_id: ID of project/area to move the todo to
         list_name: Name of built-in list, project, or area to move the todo to
 
@@ -357,11 +321,11 @@ def update_todo(
     script_parts.append("try")
     script_parts.append(f'    set theTodo to to do id {escape_applescript_string(id)}')
 
-    # Update properties one at a time (simplified)
     if title:
         script_parts.append(f"    set name of theTodo to {escape_applescript_string(title)}")
 
-    if notes:
+    # An empty string clears the notes; None leaves them alone.
+    if notes is not None:
         script_parts.append(f"    set notes of theTodo to {escape_applescript_string(notes)}")
 
     # Handle scheduling using the standardized helper
@@ -371,15 +335,19 @@ def update_todo(
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "theTodo")
 
-    # Handle tags (simplified)
+    # Replace the tags; an empty list clears them and None leaves them alone.
     if tags is not None:
-        if isinstance(tags, str):
-            tags = [tags]
-        if tags:
-            # Set all tags at once using comma-separated string
-            tag_string = ", ".join(tags)
-            escaped_tag_string = escape_applescript_string(tag_string)
-            script_parts.append(f"    set tag names of theTodo to {escaped_tag_string}")
+        script_parts.append(f"    set tag names of theTodo to {escape_applescript_string(', '.join(_as_list(tags)))}")
+
+    # Append to whatever tags the to-do has after any replacement above.
+    if extra_tags := _as_list(add_tags):
+        script_parts.append("    set existingTagNames to tag names of theTodo")
+        script_parts.append(f"    set addedTagNames to {escape_applescript_string(', '.join(extra_tags))}")
+        script_parts.append('    if existingTagNames is "" then')
+        script_parts.append("        set tag names of theTodo to addedTagNames")
+        script_parts.append("    else")
+        script_parts.append('        set tag names of theTodo to existingTagNames & ", " & addedTagNames')
+        script_parts.append("    end if")
 
     # Handle list assignment (built-in lists, projects, or areas)
     if list_name:
@@ -420,19 +388,8 @@ def update_todo(
         script_parts.append("        end try")
         script_parts.append("    end try")
 
-    # Handle completion status
-    if completed is not None:
-        if completed:
-            script_parts.append("    set status of theTodo to completed")
-        else:
-            script_parts.append("    set status of theTodo to open")
-
-    # Handle canceled status
-    if canceled is not None:
-        if canceled:
-            script_parts.append("    set status of theTodo to canceled")
-        else:
-            script_parts.append("    set status of theTodo to open")
+    if status_command := _status_command("theTodo", completed, canceled):
+        script_parts.append(status_command)
 
     # Return true on success
     script_parts.append("    return true")
@@ -453,12 +410,12 @@ def add_project(
     title: str,
     notes: str | None = None,
     when: str | None = None,
-    tags: list[str] | None = None,
+    tags: list[str] | str | None = None,
     area_title: str | None = None,
     area_id: str | None = None,
     deadline: str | None = None,
-    todos: list[str] | None = None,
-) -> str:
+    todos: list[str] | str | None = None,
+) -> str | bool:
     """Add a project to Things directly using AppleScript with improved reliability.
 
     This bypasses URL schemes entirely to avoid encoding issues.
@@ -476,12 +433,14 @@ def add_project(
 
     Returns:
     -------
-        ID of the created project if successful, False otherwise
+        ID of the created project, or False if Things did not return one
+
+    Raises:
+    ------
+        AppleScriptError: The request was refused before running, or Things did not confirm it
     """
-    # Validate input
     if not title or not title.strip():
-        logger.error("Title cannot be empty")
-        return False
+        raise _invalid("invalid_title", "A project needs a title")
 
     # Ensure Things is ready
     if not ensure_things_ready():
@@ -530,25 +489,17 @@ def add_project(
         # Create the project without area
         script_parts.append(f"set newProject to make new project with properties {{{', '.join(properties)}}}")
 
-    # Handle scheduling using the project-specific helper
-    _handle_project_when_scheduling(script_parts, when, "newProject")
+    _handle_when_scheduling(script_parts, when, "newProject")
 
-    # Add tags if provided
-    if tags and len(tags) > 0:
-        # Tags should be set as a comma-separated string according to Things documentation
-        tag_string = ", ".join(tags)
-        escaped_tag_string = escape_applescript_string(tag_string)
-        script_parts.append(f"set tag names of newProject to {escaped_tag_string}")
+    if tag_names := _as_list(tags):
+        script_parts.append(f"set tag names of newProject to {escape_applescript_string(', '.join(tag_names))}")
 
     # Handle deadline
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "newProject")
 
-    # Add initial todos if provided
-    if todos and len(todos) > 0:
-        for todo in todos:
-            todo_title = escape_applescript_string(todo)
-            script_parts.append(f"tell newProject to make new to do with properties {{name:{todo_title}}}")
+    for todo in _as_list(todos):
+        script_parts.append(f"tell newProject to make new to do with properties {{name:{escape_applescript_string(todo)}}}")
 
     # Get the ID of the created project
     script_parts.append("return id of newProject")
@@ -569,6 +520,9 @@ def add_project(
         return False
 
 
+PROJECT_LISTS = ("Today", "Anytime", "Someday", "Trash")
+
+
 def move_project_to_list(script_parts: list[str], list_name: str, project_ref: str) -> bool:
     """Handle moving a project to a specific built-in list.
 
@@ -587,9 +541,8 @@ def move_project_to_list(script_parts: list[str], list_name: str, project_ref: s
     -------
         bool: True if the list name is valid and the move command was added, False otherwise
     """
-    valid_lists = ["Today", "Anytime", "Someday", "Trash"]
-    if list_name not in valid_lists:
-        logger.warning("AppleScript operation progress")
+    if list_name not in PROJECT_LISTS:
+        logger.warning("Ignored an unsupported project list")
         return False
 
     # Move using the 'move' command instead of setting container
@@ -603,7 +556,7 @@ def update_project(
     notes: str | None = None,
     when: str | None = None,
     deadline: str | None = None,
-    tags: list[str] | None = None,
+    tags: list[str] | str | None = None,
     completed: bool | None = None,
     canceled: bool | None = None,
     list_name: str | None = None,
@@ -616,12 +569,12 @@ def update_project(
     ----
         id: ID of the project to update
         title: New title
-        notes: New notes
+        notes: New notes; an empty string clears them
         when: When to schedule the project (today, tomorrow, anytime, someday, or YYYY-MM-DD)
         deadline: New deadline for the project (YYYY-MM-DD)
-        tags: New tags for the project
-        completed: Mark as completed
-        canceled: Mark as canceled
+        tags: New tags for the project (replaces existing tags; an empty list clears them)
+        completed: True marks the project completed; False reopens it
+        canceled: True marks the project canceled; False reopens it
         list_name: Move project directly to a built-in list. Must be one of:
                   - "Today": Move to Today list
                   - "Anytime": Move to Anytime list
@@ -637,6 +590,12 @@ def update_project(
         "true" if successful, error message if failed
     """
     logger.info("Updating project via AppleScript")
+    # Refuse an impossible destination before anything runs, so the caller can correct it.
+    if list_name in ("Inbox", "Logbook"):
+        raise _invalid("invalid_destination", "Projects cannot be moved to Inbox or Logbook. To move a project to the Logbook, mark it as completed instead.")
+    if list_name and list_name not in PROJECT_LISTS:
+        raise _invalid("invalid_destination", f"Projects can only be moved to one of: {', '.join(PROJECT_LISTS)}")
+
     if not ensure_things_ready():
         raise AppleScriptError("app_not_running", "Things is not running; open Things before requesting a mutation", outcome="failed")
 
@@ -644,18 +603,11 @@ def update_project(
     script_parts.append("try")
     script_parts.append(f'    set theProject to project id {escape_applescript_string(id)}')
 
-    # Handle list moves first
+    # A list move takes precedence over a schedule.
     if list_name:
-        if list_name in ["Inbox", "Logbook"]:
-            error_msg = "Projects cannot be moved to Inbox or Logbook. To move to Logbook, mark the project as completed instead."
-            logger.error("Invalid project destination")
-            return f"Error: {error_msg}"
-        if not move_project_to_list(script_parts, list_name, "theProject"):
-            error_msg = f"Invalid list name: {list_name}"
-            logger.error("Invalid project destination")
-            return f"Error: {error_msg}"
+        move_project_to_list(script_parts, list_name, "theProject")
     elif when:
-        _handle_project_when_scheduling(script_parts, when, "theProject")
+        _handle_when_scheduling(script_parts, when, "theProject")
 
     # Handle area changes
     if area_id:
@@ -678,21 +630,14 @@ def update_project(
     # Handle other property updates
     if title:
         script_parts.append(f"    set name of theProject to {escape_applescript_string(title)}")
-    if notes:
+    if notes is not None:
         script_parts.append(f"    set notes of theProject to {escape_applescript_string(notes)}")
     if tags is not None:
-        if tags:
-            tag_string = ", ".join(tags)
-            escaped_tag_string = escape_applescript_string(tag_string)
-            script_parts.append(f"    set tag names of theProject to {escaped_tag_string}")
-        else:
-            script_parts.append('    set tag names of theProject to ""')
+        script_parts.append(f"    set tag names of theProject to {escape_applescript_string(', '.join(_as_list(tags)))}")
     if deadline:
         update_applescript_with_due_date(script_parts, deadline, "theProject")
-    if completed is not None:
-        script_parts.append("    set status of theProject to completed")
-    if canceled is not None:
-        script_parts.append("    set status of theProject to canceled")
+    if status_command := _status_command("theProject", completed, canceled):
+        script_parts.append(status_command)
 
     script_parts.append("    return true")
     script_parts.append("on error errMsg number errNum")
