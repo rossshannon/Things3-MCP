@@ -168,7 +168,7 @@ def _resolve_project_location(project_id: str) -> str:
             area = provider.get(project["area"])
             if area:
                 return f"Area: {area['title']}"
-        return "List: Inbox"
+        return f"List: {project.get('start') or 'Anytime'}"
     except Exception:  # noqa: BLE001 - same reasoning as _resolve_todo_location
         return "Unknown"
 
@@ -698,7 +698,7 @@ def search_advanced(
         deadline: Filter by deadline (YYYY-MM-DD)
         tag: Filter by tag
         area: Filter by area UUID
-        type: Filter by item type (to-do/project/heading)
+        type: Filter by item type (to-do/project/heading). Without it only to-dos are searched.
     """
     # Build filter parameters
     kwargs = {"include_items": True}
@@ -709,7 +709,7 @@ def search_advanced(
     if deadline:
         kwargs["deadline"] = deadline
     if start_date:
-        kwargs["start"] = start_date
+        kwargs["start_date"] = start_date
     if tag:
         kwargs["tag"] = tag
     if area:
@@ -724,7 +724,8 @@ def search_advanced(
     # with their original wording.
     try:
         provider = get_provider()
-        todos = provider.todos(**kwargs)
+        # Only the general task query accepts a type; the to-do query fixes it.
+        todos = provider.tasks(**kwargs) if type else provider.todos(**kwargs)
     except ProviderError as e:
         return f"Error in advanced search: {e.message}"
     except Exception as e:

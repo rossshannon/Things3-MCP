@@ -744,10 +744,10 @@ def test_success_message_location_information(test_namespace):
         if match:
             delete_project_by_id(match.group(1))
 
-        # Test 5: Project created without area should show inbox location
+        # Test 5: Project created without area should show its list (projects are never in the Inbox)
         result5 = add_new_project(title=f"{test_namespace}-Inbox Project {generate_random_string(5)}")
         assert "✅ Successfully created project:" in result5, "Should have success message"
-        assert "in List: Inbox" in result5, f"Should show inbox location: {result5}"
+        assert "in List: Anytime" in result5, f"A project without an area lives in Anytime: {result5}"
 
         # Extract project ID for cleanup
         match = re.search(r"ID: ([^)]+)\)", result5)

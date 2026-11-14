@@ -236,3 +236,16 @@ def test_a_single_tag_string_reaches_the_provider_as_one_tag(provider, tool):
 def test_a_single_todo_string_reaches_the_provider_as_one_todo(provider):
     fast_server.add_new_project(title="p", todos="Buy milk")
     assert provider.calls[0][1][-1]["todos"] == ["Buy milk"]
+
+
+def test_a_new_project_without_an_area_is_reported_in_its_list_not_the_inbox(provider):
+    result = fast_server.add_new_project(title="p")
+    assert "in List: Anytime" in result
+
+
+def test_advanced_search_filters_by_start_date_and_by_type(provider):
+    fast_server.search_advanced(start_date="2026-12-01")
+    fast_server.search_advanced(type="project", status="incomplete")
+    (first, _, first_filters), (second, _, second_filters) = provider.calls
+    assert first == "todos" and first_filters["start_date"] == "2026-12-01" and "start" not in first_filters
+    assert second == "tasks" and second_filters["type"] == "project"
