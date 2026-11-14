@@ -112,9 +112,9 @@ def test_add_project_with_todos(test_namespace):
     delete_project_by_id(result)
 
 
-def test_update_project_simple(test_project):
+def test_update_project_simple(test_project, test_namespace):
     """Test simple project update."""
-    result = update_project(id=test_project, title=f"Updated Project {generate_random_string(5)}", notes="Updated project notes")
+    result = update_project(id=test_project, title=f"{test_namespace} Updated Project {generate_random_string(5)}", notes="Updated project notes")
     assert "true" in str(result).lower(), "Failed to update project"
 
 
@@ -210,7 +210,9 @@ def test_area_move_with_other_updates(test_todo, test_namespace):
     for tag in test_tags:
         create_test_tag(tag)
 
-    result = update_todo(id=test_todo, list_name=f"{test_namespace}-area1", title=f"Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags])
+    result = update_todo(
+        id=test_todo, list_name=f"{test_namespace}-area1", title=f"{test_namespace} Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags]
+    )
     assert result, "Failed to move todo with other updates"
 
 

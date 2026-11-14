@@ -401,7 +401,7 @@ def test_scheduling_with_other_properties(test_namespace):
     """Test scheduling combined with other properties."""
     title = f"{test_namespace} Todo Scheduling Properties {generate_random_string(5)}"
     notes = "Test notes for scheduling"
-    tags = ["test-tag-1", "test-tag-2"]
+    tags = [f"{test_namespace}-tag-1", f"{test_namespace}-tag-2"]
 
     todo_id = add_todo(title=title, notes=notes, when="today", tags=tags)
     assert todo_id, "Failed to create todo with scheduling and other properties"

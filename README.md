@@ -381,7 +381,7 @@ The default suite is hermetic: it uses synthetic fixtures and skips tests marked
 Live tests can create and delete records. Run them only with a disposable Things library and explicit approval for that work:
 
 ```sh
-uv run --locked pytest --live-things --allow-things-cleanup
+uv run --locked pytest -m live_things --live-things --allow-things-cleanup
 ```
 
 Both flags are required. Cleanup is not a promise that a personal library is safe to use for testing. Keep source tests, frozen bundle verification, real Things results and locked-session results as separate evidence.

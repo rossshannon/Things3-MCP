@@ -5,6 +5,7 @@ import os
 import random
 import string
 import sys
+import warnings
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -173,36 +174,7 @@ def create_test_tag(tag_name: str) -> bool:
 
 def delete_test_tags():
     """Delete all test tags with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set tagList to {{}}
-            repeat with theTag in tags
-                if name of theTag starts with "{TEST_NAMESPACE}-" then
-                    set end of tagList to id of theTag
-                end if
-            end repeat
-
-            repeat with tagId in tagList
-                try
-                    set theTag to first tag whose id is tagId
-                    delete theTag
-                on error
-                    -- Tag might already be deleted, continue
-                end try
-            end repeat
-
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test tags")
-    else:
-        print(f"⚠️  Tag cleanup result: {result}")
+    return _sweep("tag")
 
 
 def create_test_area(area_name: str) -> str:
@@ -271,71 +243,86 @@ def delete_project_by_id(project_id: str) -> bool:
     return result and "error" not in result.lower()
 
 
-def verify_cleanup():
-    """Verify that all test items have been cleaned up."""
+SWEEP_TIMEOUT_SECONDS = 120
+# Areas and tags are only ever created as "mcp-test-<name>"; to-dos and projects also as "mcp-test <name>".
+SWEEP_PREFIXES = {"to do": TEST_NAMESPACE, "project": TEST_NAMESPACE, "area": f"{TEST_NAMESPACE}-", "tag": f"{TEST_NAMESPACE}-"}
+
+
+def live_test_items(kind: str) -> list[tuple[str, str]]:
+    """Return ``(id, name)`` of every item of one kind left by a live test, ignoring the Trash.
+
+    Things filters by name itself, so this is one round trip however large the
+    library is, and items already in the Trash are not swept again.
+    """
+    prefix = SWEEP_PREFIXES[kind]
     script = f"""
     tell application "Things3"
+        set trashedIds to {{}}
         try
-            set foundItems to {{}}
-
-            -- Check all todos
-            set allTodos to to dos
-            repeat with theTodo in allTodos
-                try
-                    if title of theTodo starts with "{TEST_NAMESPACE}" then
-                        set end of foundItems to "Todo: " & title of theTodo & " (ID: " & id of theTodo & ")"
-                    end if
-                end try
-            end repeat
-
-            -- Check all projects
-            set allProjects to projects
-            repeat with theProject in allProjects
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of foundItems to "Project: " & title of theProject & " (ID: " & id of theProject & ")"
-                    end if
-                end try
-            end repeat
-
-            -- Check all areas
-            set allAreas to areas
-            repeat with theArea in allAreas
-                try
-                    if name of theArea starts with "{TEST_NAMESPACE}-" then
-                        set end of foundItems to "Area: " & name of theArea & " (ID: " & id of theArea & ")"
-                    end if
-                end try
-            end repeat
-
-            -- Check all tags
-            set allTags to tags
-            repeat with theTag in allTags
-                try
-                    if name of theTag starts with "{TEST_NAMESPACE}-" then
-                        set end of foundItems to "Tag: " & name of theTag & " (ID: " & id of theTag & ")"
-                    end if
-                end try
-            end repeat
-
-            if (count of foundItems) > 0 then
-                set itemList to ""
-                repeat with item in foundItems
-                    set itemList to itemList & item & linefeed
-                end repeat
-                return "Found test items:" & linefeed & itemList
-            else
-                return "success"
-            end if
-        on error errMsg
-            return "Error: " & errMsg
+            set trashedIds to id of (every to do of list "Trash" whose name starts with "{prefix}")
         end try
+        set foundIds to id of (every {kind} whose name starts with "{prefix}")
+        set foundNames to name of (every {kind} whose name starts with "{prefix}")
+        set output to ""
+        repeat with position from 1 to count of foundIds
+            set itemId to (item position of foundIds) as text
+            if trashedIds does not contain itemId then
+                set output to output & itemId & tab & (item position of foundNames) & linefeed
+            end if
+        end repeat
+        return output
     end tell
     """
-    result = run_applescript(script)
-    if result != "success":
+    found = run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
+    # AppleScript compares text without regard to case; only the exact lower-case prefix is ours.
+    return [(item_id, name) for item_id, _, name in (line.partition("\t") for line in found.splitlines()) if item_id and name.startswith(prefix)]
+
+
+def _sweep(kind: str) -> int:
+    """Delete what live tests left behind of one kind and return how many items that was."""
+    removed = 0
+    for item_id, _name in live_test_items(kind):
+        script = f"""
+        tell application "Things3"
+            delete (first {kind} whose id is "{item_id}")
+        end tell
+        """
+        try:
+            run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
+            removed += 1
+        except (RuntimeError, ValueError, OSError) as error:
+            print(f"⚠️  Could not delete test {kind} {item_id}: {type(error).__name__}")
+    return removed
+
+
+def sweep_live_test_items() -> list[str]:
+    """Remove everything live tests created, then return a description of anything still present.
+
+    Each kind is swept on its own, so one failure cannot leave the others behind:
+    to-dos first, then projects, then the areas and tags they used.
+    """
+    problems = []
+    for kind in SWEEP_PREFIXES:
+        try:
+            _sweep(kind)
+        except (RuntimeError, ValueError, OSError) as error:
+            problems.append(f"sweep of {kind}s failed: {type(error).__name__}")
+    for kind in SWEEP_PREFIXES:
+        try:
+            problems.extend(f"{kind} left behind: {name} (ID: {item_id})" for item_id, name in live_test_items(kind))
+        except (RuntimeError, ValueError, OSError) as error:
+            problems.append(f"could not check for leftover {kind}s: {type(error).__name__}")
+    return problems
+
+
+def verify_cleanup():
+    """Verify that all test items have been cleaned up."""
+    leftovers = []
+    for kind in SWEEP_PREFIXES:
+        leftovers.extend(f"{kind}: {name} (ID: {item_id})" for item_id, name in live_test_items(kind))
+    if leftovers:
         print("⚠️  Cleanup verification failed:")
-        print(result)
+        print("\n".join(leftovers))
         return False
     print("✅ Verified: All test items cleaned up")
     return True
@@ -343,214 +330,17 @@ def verify_cleanup():
 
 def delete_test_areas():
     """Delete all test areas with the MCP namespace."""
-    script = f"""
-    tell application "Things3"
-        try
-            set areaList to {{}}
-            repeat with theArea in areas
-                if name of theArea starts with "{TEST_NAMESPACE}-" then
-                    set end of areaList to id of theArea
-                end if
-            end repeat
-
-            repeat with areaId in areaList
-                try
-                    set theArea to first area whose id is areaId
-                    delete theArea
-                on error
-                    -- Area might already be deleted, continue
-                end try
-            end repeat
-
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    result = run_applescript(script)
-    if result and "error" not in result.lower():
-        print("✅ Successfully cleaned up test areas")
-    else:
-        print(f"⚠️  Area cleanup result: {result}")
+    return _sweep("area")
 
 
 def delete_test_todos():
-    """Delete all test todos with the MCP namespace from all lists."""
-    # First try the AppleScript approach
-    script = f"""
-    tell application "Things3"
-        try
-            set todoList to {{}}
-
-            -- Get all todos from everywhere
-            set allTodos to every to do
-            repeat with theTodo in allTodos
-                try
-                    if title of theTodo starts with "{TEST_NAMESPACE}" then
-                        set end of todoList to id of theTodo
-                        log "Found test todo: " & title of theTodo
-                    end if
-                on error errMsg
-                    log "Error checking todo: " & errMsg
-                end try
-            end repeat
-
-            -- Also check todos in projects
-            set allProjects to every project
-            repeat with theProject in allProjects
-                try
-                    set projectTodos to to dos of theProject
-                    repeat with theTodo in projectTodos
-                        try
-                            if title of theTodo starts with "{TEST_NAMESPACE}" then
-                                set end of todoList to id of theTodo
-                                log "Found test todo in project: " & title of theTodo
-                            end if
-                        on error errMsg
-                            log "Error checking project todo: " & errMsg
-                        end try
-                    end repeat
-                on error errMsg
-                    log "Error accessing project: " & errMsg
-                end try
-            end repeat
-
-            -- And check todos in areas
-            set allAreas to every area
-            repeat with theArea in allAreas
-                try
-                    set areaTodos to to dos of theArea
-                    repeat with theTodo in areaTodos
-                        try
-                            if title of theTodo starts with "{TEST_NAMESPACE}" then
-                                set end of todoList to id of theTodo
-                                log "Found test todo in area: " & title of theTodo
-                            end if
-                        on error errMsg
-                            log "Error checking area todo: " & errMsg
-                        end try
-                    end repeat
-                on error errMsg
-                    log "Error accessing area: " & errMsg
-                end try
-            end repeat
-
-            -- Delete collected todos
-            repeat with todoId in todoList
-                try
-                    set theTodo to first to do whose id is todoId
-                    log "Deleting todo: " & title of theTodo
-                    -- Check if todo is completed
-                    if status of theTodo is "completed" then
-                        -- For completed todos, we need to uncomplete them first
-                        set status of theTodo to "open"
-                    end if
-                    delete theTodo
-                on error errMsg
-                    log "Error deleting todo: " & errMsg
-                end try
-            end repeat
-
-            return "Successfully cleaned up " & (count of todoList) & " test todos"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    result = run_applescript(script)
-
-    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
-    if not result or "error" in result.lower() or "0" in result:
-        try:
-            import things
-
-            all_todos = things.todos()
-            test_todos = [t for t in all_todos if t.get("title", "").startswith(TEST_NAMESPACE)]
-
-            if test_todos:
-                print(f"⚠️  AppleScript cleanup found 0 todos, but Python found {len(test_todos)}. Using Python cleanup...")
-                for todo in test_todos:
-                    try:
-                        delete_todo_by_id(todo["uuid"])
-                    except Exception as e:
-                        print(f"⚠️  Failed to delete todo {todo.get('title', 'unknown')}: {e}")
-                print(f"✅ Python cleanup completed for {len(test_todos)} todos")
-            else:
-                print("✅ No test todos found via Python")
-        except Exception as e:
-            print(f"⚠️  Python cleanup failed: {e}")
-    else:
-        print("✅ Successfully cleaned up test todos via AppleScript")
+    """Delete all test todos with the MCP namespace."""
+    return _sweep("to do")
 
 
 def delete_test_projects():
     """Delete all test projects with the MCP namespace."""
-    # First try the AppleScript approach
-    script = f"""
-    tell application "Things3"
-        try
-            set projectList to {{}}
-
-            -- Get all projects from everywhere
-            set allProjects to every project
-            repeat with theProject in allProjects
-                try
-                    if title of theProject starts with "{TEST_NAMESPACE}" then
-                        set end of projectList to id of theProject
-                        log "Found test project: " & title of theProject
-                    end if
-                on error errMsg
-                    log "Error checking project: " & errMsg
-                end try
-            end repeat
-
-            -- Delete collected projects
-            repeat with projectId in projectList
-                try
-                    set theProject to first project whose id is projectId
-                    log "Deleting project: " & title of theProject
-                    -- Check if project is completed
-                    if status of theProject is "completed" then
-                        -- For completed projects, we need to uncomplete them first
-                        set status of theProject to "open"
-                    end if
-                    delete theProject
-                on error errMsg
-                    log "Error deleting project: " & errMsg
-                end try
-            end repeat
-
-            return "Successfully cleaned up " & (count of projectList) & " test projects"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    result = run_applescript(script)
-
-    # If AppleScript cleanup didn't work, try Python-based cleanup as fallback
-    if not result or "error" in result.lower() or "0" in result:
-        try:
-            import things
-
-            all_projects = things.projects()
-            test_projects = [p for p in all_projects if p.get("title", "").startswith(TEST_NAMESPACE)]
-
-            if test_projects:
-                print(f"⚠️  AppleScript cleanup found 0 projects, but Python found {len(test_projects)}. Using Python cleanup...")
-                for project in test_projects:
-                    try:
-                        delete_project_by_id(project["uuid"])
-                    except Exception as e:
-                        print(f"⚠️  Failed to delete project {project.get('title', 'unknown')}: {e}")
-                print(f"✅ Python cleanup completed for {len(test_projects)} projects")
-            else:
-                print("✅ No test projects found via Python")
-        except Exception as e:
-            print(f"⚠️  Python cleanup failed: {e}")
-    else:
-        print("✅ Successfully cleaned up test projects via AppleScript")
+    return _sweep("project")
 
 
 class CleanupTracker:
@@ -599,12 +389,10 @@ class CleanupTracker:
             except (RuntimeError, ValueError, OSError) as e:
                 print(f"Failed to clean up project {project_id}: {e}")
 
-        # Clean up all test tags and areas (these are cleaned up globally)
-        delete_test_todos()  # Catch any remaining todos
-        delete_test_projects()  # Catch any remaining projects
-        delete_test_areas()  # Clean up areas after todos/projects
-        delete_test_tags()  # Clean up tags last
-        verify_cleanup()  # Verify everything was cleaned up
+        # Anything a test created without tracking it is still found by name.
+        self.problems = sweep_live_test_items()
+        for problem in self.problems:
+            print(f"⚠️  {problem}")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -619,21 +407,16 @@ def _setup_test_environment(request):
     # Ensure Things is ready
     assert ensure_things_ready(), "Things app is not ready for testing"
 
-    # Clean up any existing test data before starting
-    delete_test_todos()  # Clean up todos first
-    delete_test_projects()  # Then projects
-    delete_test_areas()  # Then areas
-    delete_test_tags()  # Then tags
-    verify_cleanup()  # Verify initial cleanup
+    # Start from a library with no test data in it.
+    leftovers = sweep_live_test_items()
+    assert not leftovers, f"Things still holds test data from an earlier run: {leftovers}"
 
     yield
 
-    # Clean up all test data after all tests complete
-    delete_test_todos()  # Clean up todos first
-    delete_test_projects()  # Then projects
-    delete_test_areas()  # Then areas
-    delete_test_tags()  # Then tags
-    verify_cleanup()  # Verify final cleanup
+    leftovers = sweep_live_test_items()
+    if leftovers:
+        # Shown in the summary even without -s, so leftovers in a real library are not missed.
+        warnings.warn(pytest.PytestWarning("Live test data was left in Things:\n" + "\n".join(leftovers)), stacklevel=1)
 
 
 @pytest.fixture()
@@ -643,7 +426,6 @@ def cleanup_tracker():
     tracker = CleanupTracker()
     yield tracker
     tracker.cleanup()
-    verify_cleanup()  # Verify cleanup after each test
 
 
 def extract_tag_names(tags_data):
