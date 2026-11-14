@@ -248,7 +248,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` (optional) - Title of project/area to add to (must exactly match existing name)
 - `list_id` (optional) - ID of project/area to add to (takes priority over list_title if both provided)
-- **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](docs/images/Things3-subtasks-markdown-checklist.png)
+- **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](https://raw.githubusercontent.com/rossshannon/Things3-MCP/main/docs/images/Things3-subtasks-markdown-checklist.png)
 
 ### update_todo
 - `id` - ID of the todo to update
