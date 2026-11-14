@@ -347,3 +347,122 @@ raise SystemExit(demo.main())
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate(timeout=5)
+
+
+def raw_reply(server, payload, *, half_close=False):
+    """Send bytes exactly as given and return everything the bridge answers."""
+    with socket.socket(socket.AF_UNIX) as client:
+        client.settimeout(3)
+        client.connect(server.server_address)
+        client.sendall(payload)
+        if half_close:
+            client.shutdown(socket.SHUT_WR)
+        received = b""
+        while chunk := client.recv(65536):
+            received += chunk
+    return received
+
+
+def test_result_that_cannot_be_encoded_is_never_reported_as_not_started(demo):
+    demo.worker = lambda _name, _params: ok_envelope({"id": "object-1", "value": float("nan")}, outcome="succeeded")
+    status, result = request(demo, "POST", "/demo/increment", {"amount": 1}, headers={"X-Correlation-ID": "nan-result"})
+    assert status == 500
+    assert result["error_code"] == "bridge_invalid_response" and result["outcome"] == "outcome_unknown"
+    assert result["correlation_id"] == "nan-result"
+    record = request(demo, "GET", f"/operations/{result['operation_id']}")[1]["data"]
+    assert record["outcome"] == "succeeded" and record["result_id"] == "object-1"
+
+
+@pytest.mark.parametrize("reply", [{"ok": True, "data": {}}, {"ok": True, "data": {}, "outcome": "finished"}, None, "done"])
+def test_mutation_reply_without_a_valid_outcome_is_unknown_and_its_record_is_closed(demo, reply):
+    demo.worker = lambda _name, _params: reply
+    status, result = request(demo, "POST", "/demo/increment", {"amount": 1})
+    assert status == 200
+    assert result["error_code"] == "worker_invalid_response" and result["outcome"] == "outcome_unknown"
+    assert demo.journal.lookup(result["operation_id"])["outcome"] == "outcome_unknown"
+    assert not demo.journal.active
+    assert request(demo, "POST", "/demo/increment", {"amount": 1})[1]["operation_id"] != result["operation_id"]
+
+
+def test_read_fault_gets_a_reply_and_leaves_the_bridge_serving(demo, monkeypatch, capfd):
+    def broken(_name, _params):
+        raise KeyError("private-read-detail")
+
+    monkeypatch.setattr(demo, "worker", broken)
+    status, result = request(demo, "GET", "/demo/read")
+    assert status == 500
+    assert result["error_code"] == "bridge_failed" and result["outcome"] == "failed"
+    monkeypatch.undo()
+    assert request(demo, "GET", "/demo/read")[0] == 200
+    assert "private-read-detail" not in "".join(capfd.readouterr())
+
+
+def test_fault_while_routing_gets_a_reply_and_dispatches_nothing(demo, monkeypatch):
+    def broken(*_args):
+        raise KeyError("adapter bug")
+
+    monkeypatch.setattr(demo.RequestHandlerClass, "special", broken)
+    status, result = request(demo, "POST", "/demo/increment", {"amount": 1})
+    assert status == 500
+    assert result["error_code"] == "bridge_failed" and result["outcome"] == "not_started"
+    assert demo.journal.recent() == []
+
+
+def test_storage_fault_is_unavailable_rather_than_a_bad_request(demo, monkeypatch):
+    from clawbridge.journal import JournalError
+
+    def broken(**_kwargs):
+        raise JournalError("Recovery storage is full")
+
+    monkeypatch.setattr(demo.journal, "recent", broken)
+    status, result = request(demo, "GET", "/operations")
+    assert status == 503 and result["error_code"] == "bridge_unavailable"
+
+
+@pytest.mark.parametrize("half_close", [True, False])
+def test_truncated_header_block_is_rejected_without_dispatch(demo, monkeypatch, half_close):
+    """Whether the client stops sending or the input deadline cuts it off, lost headers must not be guessed."""
+    monkeypatch.setattr("clawbridge.server.REQUEST_TIMEOUT", 0.2)
+    called = []
+    demo.worker = lambda name, _params: called.append(name) or ok_envelope({}, outcome="succeeded")
+    truncated = b"GET /demo/read HTTP/1.0\r\nAuthorization: Bearer " + demo.token.encode() + b"\r\nX-Require-Li"
+    reply = raw_reply(demo, truncated, half_close=half_close)
+    assert reply.split(b"\r\n")[0].split()[1] == b"400"
+    assert json.loads(reply.partition(b"\r\n\r\n")[2])["outcome"] == "not_started"
+    assert called == []
+
+
+def test_request_without_a_protocol_version_gets_an_error_body(demo):
+    reply = json.loads(raw_reply(demo, b"GET /health\r\n"))
+    assert reply["ok"] is False and reply["error_code"] == "invalid_request"
+    assert request(demo, "GET", "/health", token="")[0] == 200
+
+
+def test_client_that_leaves_before_the_reply_is_not_logged_as_a_failure(demo, capfd):
+    entered, release = threading.Event(), threading.Event()
+
+    def slow(_name, _params):
+        entered.set()
+        release.wait(3)
+        return ok_envelope({}, outcome="succeeded")
+
+    demo.worker = slow
+    with socket.socket(socket.AF_UNIX) as client:
+        client.connect(demo.server_address)
+        client.sendall(b"GET /demo/read HTTP/1.0\r\nAuthorization: Bearer " + demo.token.encode() + b"\r\n\r\n")
+        assert entered.wait(3)
+    release.set()
+    deadline = time.monotonic() + 3
+    while demo.connections._value != 16 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert demo.connections._value == 16
+    assert "Bridge request failed" not in capfd.readouterr().err
+
+
+def test_operation_lookups_accept_only_plain_limits_and_whole_identifiers(demo):
+    done = request(demo, "POST", "/demo/increment", {"amount": 1})[1]
+    assert request(demo, "GET", f"/operations/{done['operation_id']}")[0] == 200
+    assert request(demo, "GET", f"/operations/elsewhere/{done['operation_id']}")[0] == 404
+    assert request(demo, "GET", "/operations?limit=%D9%A3")[0] == 400
+    assert request(demo, "GET", "/operations?limit=-1")[0] == 400
+    assert request(demo, "GET", "/operations?limit=3")[0] == 200

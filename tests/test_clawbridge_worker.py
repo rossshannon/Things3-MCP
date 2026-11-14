@@ -31,6 +31,8 @@ elif name == "legacy":
     print(json.dumps({"ok": True, "data": {"id": "one"}}))
 elif name == "malformed":
     print(json.dumps({"ok": "yes", "protocol_version": 1, "data": {}}))
+elif name == "not_finite":
+    print('{"ok": true, "protocol_version": 1, "data": {"value": NaN}, "outcome": "succeeded"}')
 elif name == "overflow":
     print("x" * 100000)
 else:
@@ -44,7 +46,7 @@ else:
     return tmp_path
 
 
-@pytest.mark.parametrize("name", ["bad_json", "legacy", "malformed", "bad_exit"])
+@pytest.mark.parametrize("name", ["bad_json", "legacy", "malformed", "bad_exit", "not_finite"])
 def test_invalid_mutation_response_is_unknown(worker_fixture, name, capfd):
     result = run_worker("synthetic_worker", Action(name, True), {})
     assert result["ok"] is False
