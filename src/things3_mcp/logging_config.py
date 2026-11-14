@@ -11,9 +11,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Create logs directory if it doesn't exist
 LOGS_DIR = Path.home() / ".things-mcp" / "logs"
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -132,32 +130,41 @@ def setup_logging(
     console_handler.addFilter(operation_filter)
     root_logger.addHandler(console_handler)
 
-    # File handlers with rotation
-    if structured_logs:
-        # Structured JSON logs for analysis
-        json_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_structured.json", maxBytes=max_bytes, backupCount=backup_count)
-        json_file_handler.setLevel(getattr(logging, file_level.upper()))
-        json_file_handler.setFormatter(StructuredFormatter())
-        json_file_handler.addFilter(operation_filter)
-        root_logger.addHandler(json_file_handler)
-
-    # Human-readable file logs
-    text_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp.log", maxBytes=max_bytes, backupCount=backup_count)
-    text_file_handler.setLevel(getattr(logging, file_level.upper()))
+    # File handlers with rotation. The server must still start where the home
+    # directory cannot be written, so log files are optional and the console is not.
+    logger = logging.getLogger(__name__)
+    file_handlers: list[logging.Handler] = []
     text_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    text_file_handler.setFormatter(text_format)
-    text_file_handler.addFilter(operation_filter)
-    root_logger.addHandler(text_file_handler)
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        if structured_logs:
+            # Structured JSON logs for analysis
+            json_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_structured.json", maxBytes=max_bytes, backupCount=backup_count)
+            json_file_handler.setLevel(getattr(logging, file_level.upper()))
+            json_file_handler.setFormatter(StructuredFormatter())
+            file_handlers.append(json_file_handler)
 
-    # Error-only file handler
-    error_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_errors.log", maxBytes=max_bytes, backupCount=backup_count)
-    error_file_handler.setLevel(logging.ERROR)
-    error_file_handler.setFormatter(text_format)
-    error_file_handler.addFilter(operation_filter)
-    root_logger.addHandler(error_file_handler)
+        # Human-readable file logs
+        text_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp.log", maxBytes=max_bytes, backupCount=backup_count)
+        text_file_handler.setLevel(getattr(logging, file_level.upper()))
+        text_file_handler.setFormatter(text_format)
+        file_handlers.append(text_file_handler)
+
+        # Error-only file handler
+        error_file_handler = logging.handlers.RotatingFileHandler(LOGS_DIR / "things3_mcp_errors.log", maxBytes=max_bytes, backupCount=backup_count)
+        error_file_handler.setLevel(logging.ERROR)
+        error_file_handler.setFormatter(text_format)
+        file_handlers.append(error_file_handler)
+    except OSError as error:
+        for handler in file_handlers:
+            handler.close()
+        logger.warning("Log files are unavailable (%s); logging to the console only", type(error).__name__)
+        return
+    for handler in file_handlers:
+        handler.addFilter(operation_filter)
+        root_logger.addHandler(handler)
 
     # Log the logging configuration
-    logger = logging.getLogger(__name__)
     logger.info(f"Logging configured - Console: {console_level}, File: {file_level}, Structured: {structured_logs}")
     logger.info(f"Log files location: {LOGS_DIR}")
 
