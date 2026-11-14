@@ -180,6 +180,21 @@ def test_files_the_journal_did_not_write_do_not_stop_a_restart(tmp_path):
     assert [record["operation_id"] for record in restarted.recent()] == [key]
 
 
+def test_interrupted_token_creation_leaves_no_token_behind(tmp_path, monkeypatch):
+    def interrupted(_path, _data):
+        raise OSError("power lost")
+
+    path = tmp_path / "bridge.token"
+    monkeypatch.setattr("clawbridge.runtime.atomic_write", interrupted)
+    with pytest.raises(OSError, match="power lost"):
+        ensure_token(path)
+    assert not path.exists()
+    monkeypatch.undo()
+    token = ensure_token(path)
+    assert token and ensure_token(path) == token
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["bridge.token", "bridge.token.lock"]
+
+
 def test_completion_without_a_recognised_outcome_is_recorded_as_unknown(tmp_path):
     journal = Journal(tmp_path / "operations")
     key = journal.start("increment", {"amount": 1}, None)

@@ -72,17 +72,17 @@ def ensure_token(token_file: Path) -> str:
         try:
             fd = private_open(token_file, os.O_RDONLY)
         except FileNotFoundError:
+            # Written whole or not at all, so an interrupted first start cannot
+            # leave an empty token file that every later start would refuse.
             token = secrets.token_urlsafe(32)
-            fd = private_open(token_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-            with os.fdopen(fd, "wb") as output:
-                output.write(token.encode("ascii"))
-                output.flush()
-                os.fsync(output.fileno())
-            sync_directory(token_file.parent)
+            atomic_write(token_file, token.encode("ascii"))
             return token
         with os.fdopen(fd, "rb") as source:
             raw = source.read(4097)
-        token = raw.decode("ascii").strip()
+        try:
+            token = raw.decode("ascii").strip()
+        except UnicodeDecodeError as exc:
+            raise RuntimeSafetyError("Invalid bridge token file") from exc
         if len(raw) > 4096 or not token or any(c.isspace() for c in token):
             raise RuntimeSafetyError("Invalid bridge token file")
         return token
