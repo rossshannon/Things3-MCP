@@ -70,6 +70,7 @@ Nothing refreshed `cache/latest.json` except a manual `--snapshot-once`. After a
 - `tests/test_bridge_read_faults.py` - refused filters, cache gaps, naive timestamps, unwritable snapshots, refused connections
 - `tests/test_live_cleanup_helpers.py` - the live-test sweep, against a scripted stand-in for Things
 - `tests/test_logging_setup.py` - logging with and without a writable log directory
+- `tests/live_reads.py`, `tests/test_live_reads.py` - AppleScript read-back for live tests, and the rules that keep live tests off the database
 
 ### Modified files
 
@@ -96,7 +97,7 @@ Nothing refreshed `cache/latest.json` except a manual `--snapshot-once`. After a
 
 ## Commits
 
-25 code commits on `claude/project-thread-v8bb9o`, `284a248` to `c0f5ad2`, plus this note; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
+26 code commits on `claude/project-thread-v8bb9o`, `284a248` to `a4d4dbe`, plus this note; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
 
 ## Live verification
 
@@ -111,15 +112,28 @@ Not yet verified against the real app, and covered only by tests of the generate
 - `add_tags`, and clearing notes or tags with an empty value
 - the rewritten clean-up sweeps in `tests/conftest.py`
 - the `in List: Anytime` expectation in `tests/test_list_assignment_operations.py`
+- the AppleScript read-back in `tests/live_reads.py` (property names and list membership)
 
-To run it, once Automation (Claude Code to Things) and data access are granted:
+The live tests are split by what they need (see "Update - 2026-11-14 23:50 UTC" below):
 
-1. Check that nothing in Things already starts with `mcp-test`; the sweep would delete it.
-2. Start a bridge from this code on a private runtime directory, so the tools do not talk to the installed build and the real cache is not touched:
-   `python -m things3_mcp_bridge.server --socket "$RT/bridge.sock" --token-file "$RT/bridge.token"`, with `THINGS3_MCP_BRIDGE_SOCKET`, `THINGS3_MCP_BRIDGE_TOKEN_FILE`, `THINGS3_MCP_CACHE_FILE` pointing into `$RT` and `THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH=0`, for both the bridge and pytest.
-3. `uv run --locked pytest -m live_things --live-things --allow-things-cleanup -x tests/test_integration.py`, check for leftovers, then the same without the file.
+1. **Automation only.** `uv run --locked pytest -m "live_things and not things_bridge" --live-things --allow-things-cleanup` (69 tests). The test process writes through AppleScript and reads back through AppleScript (`tests/live_reads.py`). It needs macOS Automation consent for the process that runs it (Claude Code to Things, or a terminal) and nothing else. No bridge is involved and the database is not opened. First check that nothing in Things already starts with `mcp-test`; the sweep would delete it. Run `tests/test_integration.py` on its own first and check for leftovers.
+2. **Through the bridge.** `uv run --locked pytest -m things_bridge --live-things --allow-things-cleanup` (47 tests). These call the MCP tools, which go through the bridge, and most of their reads need the database. They need the signed bridge app rebuilt and installed from this line, using that app's own grants. They are not expected to pass against the October build.
 
 Test items end up in the Things Trash; that is expected.
+
+### Update - 2026-11-14 23:50 UTC
+
+**Summary**: live tests no longer open the Things database, so the part that drives Things directly runs with the Automation permission alone.
+
+Project rule: test processes and coding agents are not given Full Disk Access or any other access to the Things database, and it is not to be suggested as a fix. That access belongs to the signed bridge app only.
+
+The live tests did not fit that rule. They checked the result of each write by reading the item with the `things` package, which opens the database from the test process (55 call sites in six files), and one test pinned the provider to `direct`. Changes:
+
+- `tests/live_reads.py` reads a to-do or project back through AppleScript (`get`, `in_list`), returning the same field names the assertions already used. The six files use it in place of `things.get`, `things.today` and the rest. Completed and cancelled items resolve by id, so the status-search workaround in `test_completion_operations.py` went away, as did the `things.today()` sorting workaround in `test_scheduling_operations.py`.
+- A `things_bridge` marker separates the 47 live tests that call an MCP tool (all of `test_list_operations.py` and eight others) from the 69 that only use AppleScript. An autouse fixture makes an unmarked live test fail if it reaches `fast_server.get_provider`, and `tests/test_live_reads.py` checks the marking statically.
+- `test_search_advanced_empty_results` no longer pins the `direct` provider. A refused filter now comes back through the bridge as a search error (see "A bad request is not an outage"), which is what the test asserts.
+
+Question from Ross, paraphrased: is the live run still possible with Automation only? Yes for the 69 AppleScript tests, which cover every write path changed in this work and the clean-up sweeps. The 47 bridge tests need a bridge built from this code with its own database access, which means the rebuilt signed app; a bridge started from a Claude session would hold no database access and should not be used for them.
 
 ## For review
 
@@ -127,7 +141,7 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 
 ### Needs you at the Mac
 
-1. **The installed bridge is still the October build.** `~/Applications/Things3 MCP Bridge.app` (0.1.0 build 1) comes from `.worktrees/signed-local-bridge`. Rebuild, sign and install from this line once merged (`scripts/build_bridge_app.sh`, `sign_bridge_app.sh`, `install_bridge_launchagent.sh`), then re-approve Automation and data access if macOS asks.
+1. **The installed bridge is still the October build.** `~/Applications/Things3 MCP Bridge.app` (0.1.0 build 1) comes from `.worktrees/signed-local-bridge`. Rebuild, sign and install from this line once merged (`scripts/build_bridge_app.sh`, `sign_bridge_app.sh`, `install_bridge_launchagent.sh`), then re-approve the bridge app's own permissions if macOS asks (they belong to the app, not to any client).
 2. **Cache permissions before the first start of the new build.** The old build created `cache/` as 0755 and `latest.json` as 0644; the new code refuses both as unsafe (`cache_unreadable`). Either `chmod 700 ~/Library/Application\ Support/Things3-MCP/cache && chmod 600 .../cache/latest.json`, or delete the file and let it be renewed. The installer only fixes the parent directory.
 3. **MCP clients run the old code too.** Claude desktop, Cursor and `~/.claude.json` start `~/.venvs/things3-mcp-env/bin/Things3-MCP-server`, an editable install of that same worktree.
 4. **Pull requests.** PR 4 is superseded by PR 13. PR 12's fix is already on this line.
@@ -175,6 +189,7 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 5. **`serve_forever()` polls every 0.5 s.** Passing `poll_interval=0.01` in test fixtures cut the suite by 50 s.
 6. **Run the suite on every Python the project supports.** The container defaults to 3.13 (`UV_PYTHON=3.13`, because `.python-version` pins 3.12.16, which is not installed there), the Mac and the frozen app use 3.12, and `http.server` differs between them. `UV_PYTHON=3.12` with a separate `UV_PROJECT_ENVIRONMENT` reproduces the Mac's result in the container.
 7. **Things' AppleScript dictionary has `name`, not `title`.** `title of theTodo` compiles, fails at run time, and inside a `try` block fails silently.
+8. **A test that checks through a different door than the product needs permissions the product does not.** The writes needed only Automation; it was the tests' own verification reads that needed the database. Reading back through the interface under test removed the requirement.
 
 ## References
 
@@ -184,7 +199,8 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 
 ## Next Steps
 
-- [ ] Grant Automation and data access to Claude Code on the Mac, then do the live run described above
+- [ ] Allow Automation (Claude Code to Things) on the Mac, then run the Automation-only live tests
+- [ ] After the bridge is rebuilt from this line, run the `things_bridge` live tests against it
 - [ ] Review and merge PR 13 and this branch; close PR 4
 - [ ] Rebuild, sign and install the bridge; fix cache permissions first
 - [ ] Repoint the MCP client virtual environment at the merged code
