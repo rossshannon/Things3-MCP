@@ -146,6 +146,22 @@ token_name = "bridge.token"
         packaging.load_config(path)
 
 
+@pytest.mark.parametrize("patterns", ['[environment_patterns]\nEXAMPLE_SETTING = "[0-9"', 'environment_patterns = "EXAMPLE_SETTING"', "environment_patterns = 3"])
+def test_malformed_environment_patterns_are_reported_as_configuration_errors(tmp_path, patterns):
+    path = tmp_path / "example.toml"
+    path.write_text(f"""name = "Example"
+bundle_id = "org.example.Bridge"
+entrypoint = "clawbridge.demo:main"
+usage_description = ""
+state_directory = "Library/Application Support/Example"
+socket_name = "bridge.sock"
+token_name = "bridge.token"
+{patterns}
+""")
+    with pytest.raises(packaging.PackagingError):
+        packaging.load_config(path)
+
+
 def test_tampered_signature_is_rejected_before_stopping(fixture, monkeypatch):
     config, source, home, calls, _ = fixture
     target, plist, _ = old_install(config, home)

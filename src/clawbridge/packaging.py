@@ -103,7 +103,7 @@ def load_config(path: Path) -> BuildConfig:
     raw.setdefault("icon", None)
     try:
         return BuildConfig(**raw)
-    except (TypeError, ValueError) as error:
+    except (TypeError, ValueError, AttributeError, re.error) as error:
         raise PackagingError(f"Invalid build configuration: {error}") from error
 
 
