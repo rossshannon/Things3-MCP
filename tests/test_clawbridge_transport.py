@@ -432,9 +432,12 @@ def test_truncated_header_block_is_rejected_without_dispatch(demo, monkeypatch, 
     assert called == []
 
 
-def test_request_without_a_protocol_version_gets_an_error_body(demo):
+def test_request_without_a_protocol_version_is_refused_at_once(demo):
+    """Answered from the request line alone: there are no headers to wait for."""
+    started = time.monotonic()
     reply = json.loads(raw_reply(demo, b"GET /health\r\n"))
     assert reply["ok"] is False and reply["error_code"] == "invalid_request"
+    assert time.monotonic() - started < 2
     assert request(demo, "GET", "/health", token="")[0] == 200
 
 

@@ -230,6 +230,21 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         self.input_deadline.cancel()
         super().finish()
 
+    def parse_request(self) -> bool:
+        """Refuse a request line without a protocol version before waiting for its headers.
+
+        The standard library treats one as HTTP/0.9 and, depending on the Python
+        version, either waits for headers that never come or skips them entirely.
+        """
+        if len(self.raw_requestline.split()) == 2:
+            self.command = None
+            self.request_version = self.default_request_version
+            self.requestline = ""
+            self.close_connection = True
+            self.send_error(400)
+            return False
+        return super().parse_request()
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Suppress BaseHTTPRequestHandler's payload-bearing request log."""
 
@@ -283,7 +298,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
     def _route(self) -> tuple[dict[str, Any], int] | tuple[str, dict[str, Any], bool]:
         """Authenticate and validate a request, answering it directly unless an action must run."""
         if self.request_input.last_line not in {b"\r\n", b"\n"}:
-            # Covers HTTP/0.9 and a header block cut short by the client or the input deadline.
+            # The header block was cut short by the client or by the input deadline.
             # Acting on it would drop whatever headers were lost, such as the body length.
             raise InvalidRequestError("Incomplete request headers")
         parsed = urlsplit(self.path)
