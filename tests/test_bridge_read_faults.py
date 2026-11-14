@@ -5,6 +5,7 @@ write of unknown outcome. Nothing here starts a worker or touches Things.
 """
 
 import json
+import socket
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -14,6 +15,7 @@ from clawbridge.protocol import error_envelope, ok_envelope
 from tests.test_cache_fallback import SNAPSHOT_DATA, bridge, cache_file, write_cache  # noqa: F401 - fixtures
 from tests.test_clawbridge_transport import request
 from things3_mcp.providers.base import ProviderError
+from things3_mcp.providers.bridge import BridgeThingsProvider
 from things3_mcp.providers.cache import CacheStore, CacheThingsProvider
 from things3_mcp_bridge import db_reader, server
 
@@ -130,3 +132,27 @@ def test_snapshot_once_reports_an_unwritable_cache_without_a_traceback(cache_fil
     assert server.snapshot_once() == 1
     printed = json.loads(capsys.readouterr().out)
     assert printed["ok"] is False and printed["error_code"] == "cache_unwritable"
+
+
+def test_a_write_to_a_bridge_that_is_not_listening_is_known_not_to_have_happened(tmp_path_factory):
+    directory = tmp_path_factory.mktemp("b")
+    path = directory / "b.sock"
+    with socket.socket(socket.AF_UNIX) as stale:
+        stale.bind(str(path))  # Bound but never listening: connections are refused.
+        (directory / "b.token").write_text("synthetic-token")
+        provider = BridgeThingsProvider(socket_path=path, token_file=directory / "b.token")
+        with pytest.raises(ProviderError) as refused:
+            provider.add_task({"title": "never sent"})
+        assert refused.value.error_code == "bridge_unavailable"
+        assert refused.value.outcome == "failed"
+        assert refused.value.correlation_id
+        with pytest.raises(ProviderError) as read:
+            provider.inbox()
+        assert read.value.error_code == "bridge_unavailable"
+
+
+def test_a_non_numeric_client_timeout_is_a_configuration_error(monkeypatch):
+    monkeypatch.setenv("THINGS3_MCP_BRIDGE_TIMEOUT", "soon")
+    with pytest.raises(ProviderError) as invalid:
+        BridgeThingsProvider()
+    assert invalid.value.error_code == "bridge_timeout_invalid"

@@ -35,7 +35,10 @@ class BridgeThingsProvider:
     ) -> None:
         self.socket_path = socket_path or Path(os.environ.get("THINGS3_MCP_BRIDGE_SOCKET", DEFAULT_SOCKET)).expanduser()
         self.token_file = token_file or Path(os.environ.get("THINGS3_MCP_BRIDGE_TOKEN_FILE", DEFAULT_TOKEN_FILE)).expanduser()
-        self.timeout = timeout if timeout is not None else float(os.environ.get("THINGS3_MCP_BRIDGE_TIMEOUT", DEFAULT_TIMEOUT_SECONDS))
+        try:
+            self.timeout = timeout if timeout is not None else float(os.environ.get("THINGS3_MCP_BRIDGE_TIMEOUT", DEFAULT_TIMEOUT_SECONDS))
+        except ValueError as exc:
+            raise ProviderError("bridge_timeout_invalid", "THINGS3_MCP_BRIDGE_TIMEOUT must be a number of seconds", outcome="failed") from exc
         self.base_url = base_url or os.environ.get("THINGS3_MCP_BRIDGE_URL") or LOCAL_BASE_URL
         if self.base_url != LOCAL_BASE_URL:
             raise ProviderError("bridge_url_invalid", "The bridge requires its local Unix socket; HTTP bridge URLs are unsupported", outcome="failed")
@@ -81,6 +84,9 @@ class BridgeThingsProvider:
                 else:
                     exc.outcome = "failed"
             raise
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            # No connection was made, so nothing was sent: a write is known not to have happened.
+            raise ProviderError("bridge_unavailable", "The local bridge is not accepting connections", outcome="failed" if mutation else None, correlation_id=correlation_id) from exc
         except Exception as exc:  # noqa: BLE001 - transport/decoding failure must preserve uncertainty
             unknown = mutation and dispatched
             raise ProviderError(
