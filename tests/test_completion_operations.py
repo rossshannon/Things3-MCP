@@ -11,8 +11,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
-import things  # noqa: E402
 
+from tests import live_reads  # noqa: E402
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
@@ -29,36 +29,8 @@ pytestmark = pytest.mark.live_things
 
 
 def get_item_safely(item_id: str, expected_status: str = None) -> dict:
-    """Safely retrieve an item by ID, handling completed/canceled items that might not be found by things.get().
-
-    Args:
-        item_id: The ID of the item to retrieve
-        expected_status: Expected status of the item (e.g., 'completed', 'canceled')
-
-    Returns:
-        The item dict if found, None otherwise
-    """
-    # First try the direct approach
-    item = things.get(item_id)
-    if item:
-        return item
-
-    # If not found and we have an expected status, try searching by status
-    if expected_status:
-        if expected_status in ["completed", "canceled"]:
-            # Search in todos with the specific status
-            items = things.todos(status=expected_status)
-            for found_item in items:
-                if found_item.get("uuid") == item_id:
-                    return found_item
-
-            # Also try projects if it might be a project
-            projects = things.projects()
-            for found_project in projects:
-                if found_project.get("uuid") == item_id:
-                    return found_project
-
-    return None
+    """Return an item by ID whatever its status; Things resolves completed and cancelled items by ID too."""
+    return live_reads.get(item_id)
 
 
 def test_mark_todo_as_completed(test_namespace):

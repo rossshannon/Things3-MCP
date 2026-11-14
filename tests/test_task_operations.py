@@ -14,8 +14,8 @@ from collections.abc import Generator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
-import things  # noqa: E402
 
+from tests import live_reads  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
@@ -161,7 +161,7 @@ def test_very_long_content(cleanup_tracker, test_namespace):
     # We don't assert success here as Things may have limits
     # But if it succeeds, verify the content
     if todo_id:
-        todo = things.get(todo_id)
+        todo = live_reads.get(todo_id)
         assert len(todo["title"]) > 500, "Long title should be preserved"
 
 
@@ -266,7 +266,7 @@ def test_create_project_in_area(test_namespace):
     assert project_id, "Failed to create project in area"
 
     # Verify the project was created in the correct area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
 
     # Clean up
@@ -290,7 +290,7 @@ def test_move_project_to_area(test_namespace):
     assert project_id, "Failed to create test project"
 
     # Verify project starts without area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert not project.get("area"), "Project should start without area"
 
     # Move project to area
@@ -298,13 +298,14 @@ def test_move_project_to_area(test_namespace):
     assert result, "Failed to move project to area"
 
     # Verify project is now in the area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
 
     # Clean up
     delete_project_by_id(project_id)
 
 
+@pytest.mark.things_bridge
 def test_create_tag_independently(test_namespace):
     """Test creating tags independently using namespace and proper cleanup."""
     # Test creating a simple tag
@@ -365,7 +366,7 @@ def test_add_todo_to_area_via_list_title(test_namespace):
     assert todo_id, "Failed to create todo in area using list_title"
 
     # Verify the todo was created in the correct area
-    todo = things.get(todo_id)
+    todo = live_reads.get(todo_id)
     assert todo["area"] == area_id, f"Todo should be in area {area_id}, but is in {todo.get('area')}"
 
     # Clean up

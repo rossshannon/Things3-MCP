@@ -59,6 +59,7 @@ def test_applescript_error_logging_detail():
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_mcp_server_error_propagation():
     """Test that MCP server properly propagates and formats AppleScript errors."""
     title = f"{TEST_NAMESPACE} Error Propagation Test {generate_random_string(5)}"
@@ -87,6 +88,7 @@ def test_mcp_server_error_propagation():
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_error_message_format_consistency():
     """Test that all error messages follow consistent formatting."""
     title = f"{TEST_NAMESPACE} Format Test {generate_random_string(5)}"
@@ -182,6 +184,7 @@ def test_error_logging_includes_context(monkeypatch, caplog):
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_success_logging_includes_location():
     """Successful add_task results include the destination list/area/project.
 

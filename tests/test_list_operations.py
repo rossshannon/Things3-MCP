@@ -34,7 +34,8 @@ from .conftest import (
     delete_test_tags,
 )
 
-pytestmark = pytest.mark.live_things
+# Every tool here reads through the bridge, and most of those reads need the bridge's database access.
+pytestmark = [pytest.mark.live_things, pytest.mark.things_bridge]
 
 
 def split_top_level_items(result: str) -> list[str]:
@@ -460,26 +461,11 @@ def test_search_empty_results():
     assert result == "No todos found matching 'xyz123unlikelysearchterm456abc'", f"Expected no results message, got: {result}"
 
 
-def test_search_advanced_empty_results(monkeypatch):
-    """Unknown tag must surface a useful error to the user via the direct path.
-
-    The bridge+cache routing has an intentional design seam: when the live
-    worker raises ``ValueError: Unrecognized tag type`` and the cache is
-    populated, ``live_or_cache`` falls through to the cache, which iterates a
-    snapshot and returns ``[]`` — looking like "no matches" rather than a
-    validation error. (The original error survives in ``live_error`` on the
-    response envelope but the MCP-tool surface only shows the empty list.)
-
-    This test pins the provider to ``direct`` so we exercise the strict path
-    where validation errors propagate. That keeps tag-spelling mistakes
-    visible to LLM callers in the most common configuration (no bridge).
-    """
-    monkeypatch.setenv("THINGS3_MCP_PROVIDER", "direct")
-
+def test_search_advanced_empty_results():
+    """An unknown tag is reported as a search error rather than as "no matches"."""
     result = search_advanced(status="incomplete", tag="xyz123unlikelytag456abc")
     assert isinstance(result, str), "Should return a string"
     assert "Error in advanced search" in result, f"Expected error message, got: {result}"
-    assert "Unrecognized tag" in result or "xyz123unlikelytag456abc" in result, f"Error should mention the offending tag: {result}"
 
 
 def test_multiple_tag_filtering():

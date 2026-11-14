@@ -381,8 +381,11 @@ The default suite is hermetic: it uses synthetic fixtures and skips tests marked
 Live tests can create and delete records. Run them only with a disposable Things library and explicit approval for that work:
 
 ```sh
-uv run --locked pytest -m live_things --live-things --allow-things-cleanup
+uv run --locked pytest -m "live_things and not things_bridge" --live-things --allow-things-cleanup
+uv run --locked pytest -m things_bridge --live-things --allow-things-cleanup
 ```
+
+The first command drives Things through AppleScript from the test process and reads results back the same way. It needs Automation consent for the process that runs it and no database access. The second goes through the MCP tools and therefore the bridge; it needs a running bridge built from the code under test, and its database-backed reads rely on that bridge's own grants. Live tests never open the Things database themselves.
 
 Both flags are required. Cleanup is not a promise that a personal library is safe to use for testing. Keep source tests, frozen bundle verification, real Things results and locked-session results as separate evidence.
 

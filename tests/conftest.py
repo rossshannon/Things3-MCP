@@ -118,6 +118,23 @@ def _no_background_snapshot_refresh(monkeypatch):
     monkeypatch.setenv("THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH", "0")
 
 
+@pytest.fixture(autouse=True)
+def _bridge_only_where_marked(request, monkeypatch):
+    """Keep a live test that is not marked ``things_bridge`` away from the bridge.
+
+    Such a test runs with the Automation permission alone. The MCP tools go
+    through the bridge, which is where database access lives, so a test that
+    calls one has to say so with the marker.
+    """
+    if request.node.get_closest_marker("live_things") and not request.node.get_closest_marker("things_bridge"):
+        from things3_mcp import fast_server
+
+        def refuse():
+            pytest.fail("This live test calls an MCP tool, which goes through the bridge; mark it things_bridge.", pytrace=False)
+
+        monkeypatch.setattr(fast_server, "get_provider", refuse)
+
+
 def pytest_collection_modifyitems(config, items):
     if not config.getoption("--live-things"):
         skip = pytest.mark.skip(reason="Live Things tests require --live-things --allow-things-cleanup and a disposable library")
