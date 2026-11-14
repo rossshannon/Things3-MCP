@@ -128,6 +128,11 @@ class CacheThingsProvider:
             raise ProviderError("cache_unreadable", f"Cache key {key!r} is not a list", cache_status=self.store.status())
         return value
 
+    def _view(self, key: str, include_items: bool) -> list[dict[str, Any]]:
+        """Return one snapshot list, without nested collections unless they were requested."""
+        items = self._list(key)
+        return items if include_items else [_strip_nested_items(item) for item in items]
+
     def _filter_list(self, key: str, **kwargs: Any) -> list[dict[str, Any]]:
         if key == "todos" and kwargs.get("status", "incomplete") != "incomplete":
             raise ProviderError(
@@ -167,20 +172,20 @@ class CacheThingsProvider:
             return len(result)
         return result
 
-    def inbox(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        return self._list("inbox")
+    def inbox(self, include_items: bool = True) -> list[dict[str, Any]]:
+        return self._view("inbox", include_items)
 
-    def today(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        return self._list("today")
+    def today(self, include_items: bool = True) -> list[dict[str, Any]]:
+        return self._view("today", include_items)
 
-    def upcoming(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        return self._list("upcoming")
+    def upcoming(self, include_items: bool = True) -> list[dict[str, Any]]:
+        return self._view("upcoming", include_items)
 
-    def anytime(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        return self._list("anytime")
+    def anytime(self, include_items: bool = True) -> list[dict[str, Any]]:
+        return self._view("anytime", include_items)
 
-    def someday(self, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
-        return self._list("someday")
+    def someday(self, include_items: bool = True) -> list[dict[str, Any]]:
+        return self._view("someday", include_items)
 
     def tasks(self, **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002
         return self._filter_list("todos", **kwargs)
@@ -188,10 +193,11 @@ class CacheThingsProvider:
     def todos(self, **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002
         return self._filter_list("todos", **kwargs)
 
-    def search(self, query: str, include_items: bool = True) -> list[dict[str, Any]]:  # noqa: ARG002
+    def search(self, query: str, include_items: bool = True) -> list[dict[str, Any]]:
         needle = query.casefold()
         candidates = self._list("todos") or [*self._list("inbox"), *self._list("today"), *self._list("upcoming"), *self._list("anytime"), *self._list("someday")]
-        return [item for item in candidates if needle in str(item.get("title", "")).casefold() or needle in str(item.get("notes", "")).casefold()]
+        matches = [item for item in candidates if needle in str(item.get("title", "")).casefold() or needle in str(item.get("notes", "")).casefold()]
+        return matches if include_items else [_strip_nested_items(item) for item in matches]
 
     def get(self, uuid: str) -> dict[str, Any] | None:
         data = self._data()
