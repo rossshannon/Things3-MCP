@@ -236,8 +236,9 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         The standard library treats one as HTTP/0.9 and, depending on the Python
         version, either waits for headers that never come or skips them entirely.
         """
-        if len(self.raw_requestline.split()) == 2:
-            self.command = None
+        request_line: bytes = getattr(self, "raw_requestline", b"")
+        if len(request_line.split()) == 2:
+            self.command = ""
             self.request_version = self.default_request_version
             self.requestline = ""
             self.close_connection = True
