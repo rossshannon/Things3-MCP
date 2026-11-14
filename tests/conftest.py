@@ -111,6 +111,12 @@ def pytest_sessionstart(session):
     sys.addaudithook(guard)
 
 
+@pytest.fixture(autouse=True)
+def _no_background_snapshot_refresh(monkeypatch):
+    """Keep bridge servers under test from renewing a cache snapshot unless a test opts in."""
+    monkeypatch.setenv("THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH", "0")
+
+
 def pytest_collection_modifyitems(config, items):
     if not config.getoption("--live-things"):
         skip = pytest.mark.skip(reason="Live Things tests require --live-things --allow-things-cleanup and a disposable library")

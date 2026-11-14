@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -20,13 +22,34 @@ from clawbridge.worker import worker_main
 from things3_mcp import __version__
 from things3_mcp.providers.base import ProviderError, read_context, read_observations
 from things3_mcp.providers.bridge import DEFAULT_SOCKET, DEFAULT_TOKEN_FILE
-from things3_mcp.providers.cache import CacheThingsProvider
+from things3_mcp.providers.cache import CacheThingsProvider, cache_file_from_env
 
 from .actions import ACTIONS
 from .auth_status import build_auth_status
 from .cache import cache_status, write_snapshot
 
 DEFAULT_WORKER_TIMEOUT = float(os.environ.get("THINGS3_MCP_BRIDGE_WORKER_TIMEOUT", "30"))
+SNAPSHOT_REFRESH_ENV = "THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH"
+DEFAULT_SNAPSHOT_REFRESH_SECONDS = 3600.0
+SNAPSHOT_CHECK_SECONDS = 60.0
+SNAPSHOT_RETRY_SECONDS = 300.0
+
+
+def snapshot_refresh_seconds() -> float:
+    """Return how old the fallback snapshot may grow before a live read renews it; 0 disables renewal."""
+    try:
+        seconds = float(os.environ.get(SNAPSHOT_REFRESH_ENV, DEFAULT_SNAPSHOT_REFRESH_SECONDS))
+    except ValueError:
+        return DEFAULT_SNAPSHOT_REFRESH_SECONDS
+    return seconds if seconds > 0 and seconds != float("inf") else 0.0
+
+
+def snapshot_file_age() -> float:
+    """Return seconds since the snapshot was written, without reading it; infinite when absent."""
+    try:
+        return max(0.0, time.time() - cache_file_from_env().stat().st_mtime)
+    except OSError:
+        return float("inf")
 
 
 def ensure_token(token_file: Path = DEFAULT_TOKEN_FILE) -> str:
@@ -92,6 +115,9 @@ class UnixHTTPServer(CoreHTTPServer):
     def __init__(self, socket_path: Path = DEFAULT_SOCKET, *, token_file: Path = DEFAULT_TOKEN_FILE) -> None:
         self.observations: dict[str, Any] = {}
         self.observation_lock = threading.Lock()
+        self.snapshot_refresh = threading.Lock()
+        self.snapshot_refresh_thread: threading.Thread | None = None
+        self.snapshot_check_after = 0.0
         super().__init__(
             socket_path,
             BridgeRequestHandler,
@@ -125,7 +151,51 @@ class UnixHTTPServer(CoreHTTPServer):
         result = live_or_cache(action, params, require_live=require_live)
         with self.observation_lock:
             self.observations.update(result.get("capabilities", {}))
+        if result.get("ok") and result.get("source") == "live":
+            self.refresh_stale_snapshot()
         return result
+
+    def refresh_stale_snapshot(self) -> bool:
+        """Renew an old fallback snapshot in the background once the database is known to be readable.
+
+        Without this the snapshot is only as recent as the last manual
+        ``--snapshot-once``, so a later fallback could serve data that is days old.
+        A database-backed read has just succeeded, which is the cheapest evidence
+        that a full read will too. Returns whether a refresh was started.
+        """
+        interval = snapshot_refresh_seconds()
+        if not interval or not self.snapshot_refresh.acquire(blocking=False):
+            return False
+        started = False
+        try:
+            now = time.monotonic()
+            if now < self.snapshot_check_after:
+                return False
+            self.snapshot_check_after = now + min(SNAPSHOT_CHECK_SECONDS, interval)
+            if snapshot_file_age() < interval or not self.workers.acquire(blocking=False):
+                return False
+            self.snapshot_refresh_thread = threading.Thread(target=self._refresh_snapshot, name="snapshot-refresh", daemon=True)
+            self.snapshot_refresh_thread.start()
+            started = True
+            return True
+        finally:
+            if not started:
+                self.snapshot_refresh.release()
+
+    def _refresh_snapshot(self) -> None:
+        try:
+            envelope = self._worker("snapshot", {})
+            # An Apple Events snapshot carries fewer fields; never let it replace a database one here.
+            if envelope.get("ok") and envelope.get("source") == "live":
+                write_snapshot(envelope["data"], source="live")
+            else:
+                self.snapshot_check_after = time.monotonic() + SNAPSHOT_RETRY_SECONDS
+        except Exception:  # noqa: BLE001 - a failed renewal must never affect the read that triggered it
+            self.snapshot_check_after = time.monotonic() + SNAPSHOT_RETRY_SECONDS
+            print("Snapshot refresh failed", file=sys.stderr)
+        finally:
+            self.workers.release()
+            self.snapshot_refresh.release()
 
 
 class BridgeRequestHandler(CoreRequestHandler):
