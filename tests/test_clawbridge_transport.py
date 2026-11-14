@@ -419,14 +419,29 @@ def test_storage_fault_is_unavailable_rather_than_a_bad_request(demo, monkeypatc
     assert status == 503 and result["error_code"] == "bridge_unavailable"
 
 
-@pytest.mark.parametrize("half_close", [True, False])
-def test_truncated_header_block_is_rejected_without_dispatch(demo, monkeypatch, half_close):
-    """Whether the client stops sending or the input deadline cuts it off, lost headers must not be guessed."""
+@pytest.mark.parametrize("cut_off_by", ["client", "read timeout", "input deadline"])
+def test_truncated_header_block_is_rejected_without_dispatch(demo, monkeypatch, cut_off_by):
+    """However the input ends, lost headers must not be guessed and the client still gets an answer.
+
+    The read timeout and the input deadline have the same length, so either can
+    fire first; each is exercised on its own here.
+    """
     monkeypatch.setattr("clawbridge.server.REQUEST_TIMEOUT", 0.2)
+    handler = demo.RequestHandlerClass
+    if cut_off_by == "read timeout":
+        monkeypatch.setattr(handler, "_end_input", lambda self: None)
+    if cut_off_by == "input deadline":
+        setup = handler.setup
+
+        def setup_with_patient_reads(self):
+            setup(self)
+            self.connection.settimeout(5)
+
+        monkeypatch.setattr(handler, "setup", setup_with_patient_reads)
     called = []
     demo.worker = lambda name, _params: called.append(name) or ok_envelope({}, outcome="succeeded")
     truncated = b"GET /demo/read HTTP/1.0\r\nAuthorization: Bearer " + demo.token.encode() + b"\r\nX-Require-Li"
-    reply = raw_reply(demo, truncated, half_close=half_close)
+    reply = raw_reply(demo, truncated, half_close=cut_off_by == "client")
     assert reply.split(b"\r\n")[0].split()[1] == b"400"
     assert json.loads(reply.partition(b"\r\n\r\n")[2])["outcome"] == "not_started"
     assert called == []

@@ -192,7 +192,12 @@ class _RequestInput:
         self.last_line = b""
 
     def readline(self, size: int = -1) -> bytes:
-        self.last_line = self.raw.readline(size)
+        try:
+            self.last_line = self.raw.readline(size)
+        except TimeoutError:
+            # A read that times out ends the input like the deadline does, so an
+            # unfinished header block is answered rather than dropped.
+            self.last_line = b""
         return self.last_line
 
     def read(self, size: int = -1) -> bytes:
