@@ -15,7 +15,7 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import FrameType
-from typing import Any, BinaryIO, cast
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from .actions import MAX_BODY_BYTES, Action, InvalidRequestError, correlation_id, json_object
@@ -187,7 +187,7 @@ def serve_until_stopped(server: UnixHTTPServer) -> None:
 class _RequestInput:
     """Request stream that remembers the last line read, to tell complete headers from truncated ones."""
 
-    def __init__(self, raw: BinaryIO) -> None:
+    def __init__(self, raw: Any) -> None:
         self.raw = raw
         self.last_line = b""
 
@@ -213,7 +213,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         """Bound both idle reads and total request input time."""
         super().setup()
         self.request_input = _RequestInput(self.rfile)
-        self.rfile = cast(BinaryIO, self.request_input)
+        self.rfile = cast(Any, self.request_input)
         self.connection.settimeout(REQUEST_TIMEOUT)
         self.input_deadline = threading.Timer(REQUEST_TIMEOUT, self._end_input)
         self.input_deadline.daemon = True
@@ -363,7 +363,7 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
             self._send(error_envelope("bridge_failed", "Bridge could not establish the outcome", outcome=unknown), 500)
             return
         try:
-            self._send(response, {"bridge_busy": 503, "journal_unavailable": 503, "bridge_failed": 500}.get(response.get("error_code"), 200))
+            self._send(response, {"bridge_busy": 503, "journal_unavailable": 503, "bridge_failed": 500}.get(str(response.get("error_code")), 200))
         except (ValueError, TypeError, RecursionError):
             # The action ran but its result cannot be encoded; say so without implying it never started.
             failure = error_envelope("bridge_invalid_response", "Bridge could not encode the result", outcome=unknown)

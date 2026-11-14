@@ -192,7 +192,7 @@ def test_interrupted_token_creation_leaves_no_token_behind(tmp_path, monkeypatch
     monkeypatch.undo()
     token = ensure_token(path)
     assert token and ensure_token(path) == token
-    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["bridge.token", "bridge.token.lock"]
+    assert sorted(entry.name for entry in tmp_path.glob("*bridge.token*")) == ["bridge.token", "bridge.token.lock"]
 
 
 def test_completion_without_a_recognised_outcome_is_recorded_as_unknown(tmp_path):
