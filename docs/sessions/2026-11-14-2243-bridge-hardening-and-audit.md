@@ -97,7 +97,7 @@ Nothing refreshed `cache/latest.json` except a manual `--snapshot-once`. After a
 
 ## Commits
 
-36 commits on `claude/project-thread-v8bb9o`, `284a248` to the head, including this note and its updates; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
+37 commits on `claude/project-thread-v8bb9o`, `284a248` to `e736c05`, including this note and its updates; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
 
 ## Live verification
 
