@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -18,6 +19,7 @@ RETENTION_SECONDS = 7 * 24 * 60 * 60
 MAX_RECORDS = 1000
 MAX_BYTES = 10 * 1024 * 1024
 COMPLETION_RESERVE = 1024
+RECORD_NAME = re.compile(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\.json")
 
 
 class JournalError(ValueError):
@@ -45,8 +47,12 @@ class Journal:
                 os.close(fd)
                 path.unlink()
                 continue
+            if not RECORD_NAME.fullmatch(path.name):
+                # Files the journal never wrote, such as .DS_Store, are not records and
+                # must not stop the bridge from starting. They are left untouched.
+                continue
             try:
-                if path.suffix != ".json" or str(uuid.UUID(path.stem)) != path.stem:
+                if str(uuid.UUID(path.stem)) != path.stem:
                     raise JournalError("Unexpected journal entry")
                 fd = private_open(path, os.O_RDONLY)
                 with os.fdopen(fd, "rb") as source:
@@ -114,7 +120,8 @@ class Journal:
         """Record only the outcome, static error code and a bounded object ID."""
         with self.lock:
             record = dict(self.records[key])
-            record.update(outcome=response["outcome"], updated_at=now_iso())
+            outcome = response.get("outcome")
+            record.update(outcome=outcome if outcome in OUTCOMES else "outcome_unknown", updated_at=now_iso())
             if not response.get("ok"):
                 record["error_code"] = response.get("error_code", "worker_failed")[:96]
             data = response.get("data")

@@ -14,9 +14,10 @@ from collections.abc import Generator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
-import things  # noqa: E402
 
+from tests import live_reads  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
+    AppleScriptError,
     add_project,
     add_todo,
     ensure_things_ready,
@@ -112,9 +113,9 @@ def test_add_project_with_todos(test_namespace):
     delete_project_by_id(result)
 
 
-def test_update_project_simple(test_project):
+def test_update_project_simple(test_project, test_namespace):
     """Test simple project update."""
-    result = update_project(id=test_project, title=f"Updated Project {generate_random_string(5)}", notes="Updated project notes")
+    result = update_project(id=test_project, title=f"{test_namespace} Updated Project {generate_random_string(5)}", notes="Updated project notes")
     assert "true" in str(result).lower(), "Failed to update project"
 
 
@@ -136,17 +137,16 @@ def test_concurrent_operations(test_namespace):
 
 def test_invalid_todo_id_update():
     """Test updating non-existent todo."""
-    fake_id = "NonExistentTodoID12345"
-    success = update_todo(id=fake_id, title="Should Fail")
-    assert success.startswith("Error:"), "Updating non-existent todo should fail"
+    with pytest.raises(AppleScriptError):
+        update_todo(id="NonExistentTodoID12345", title="Should Fail")
 
 
 def test_empty_title_todo():
     """Test todo creation with empty title."""
-    # This should fail gracefully
-    todo_id = add_todo(title="")
-    # We expect this to return False for empty title
-    assert todo_id is False, "Empty title should be rejected"
+    # Refused before any script runs, so nothing can have been created.
+    with pytest.raises(AppleScriptError) as refused:
+        add_todo(title="")
+    assert refused.value.error_code == "invalid_title" and refused.value.outcome == "failed"
 
 
 def test_very_long_content(cleanup_tracker, test_namespace):
@@ -161,7 +161,7 @@ def test_very_long_content(cleanup_tracker, test_namespace):
     # We don't assert success here as Things may have limits
     # But if it succeeds, verify the content
     if todo_id:
-        todo = things.get(todo_id)
+        todo = live_reads.get(todo_id)
         assert len(todo["title"]) > 500, "Long title should be preserved"
 
 
@@ -196,8 +196,9 @@ def test_move_todo_between_areas(test_todo, test_namespace):
 
 def test_move_todo_to_nonexistent_area(test_todo):
     """Test moving a todo to a nonexistent area."""
-    result = update_todo(id=test_todo, list_name="NonexistentArea123")
-    assert "area not found" in str(result).lower(), "Should return appropriate error message"
+    with pytest.raises(AppleScriptError):
+        update_todo(id=test_todo, list_name="NonexistentArea123")
+    assert live_reads.get(test_todo)["area"] is None, "The todo should not have moved"
 
 
 def test_area_move_with_other_updates(test_todo, test_namespace):
@@ -210,7 +211,9 @@ def test_area_move_with_other_updates(test_todo, test_namespace):
     for tag in test_tags:
         create_test_tag(tag)
 
-    result = update_todo(id=test_todo, list_name=f"{test_namespace}-area1", title=f"Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags])
+    result = update_todo(
+        id=test_todo, list_name=f"{test_namespace}-area1", title=f"{test_namespace} Updated Title {generate_random_string(5)}", notes="Updated notes", tags=[f"{test_namespace}-{tag}" for tag in test_tags]
+    )
     assert result, "Failed to move todo with other updates"
 
 
@@ -264,7 +267,7 @@ def test_create_project_in_area(test_namespace):
     assert project_id, "Failed to create project in area"
 
     # Verify the project was created in the correct area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
 
     # Clean up
@@ -288,7 +291,7 @@ def test_move_project_to_area(test_namespace):
     assert project_id, "Failed to create test project"
 
     # Verify project starts without area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert not project.get("area"), "Project should start without area"
 
     # Move project to area
@@ -296,13 +299,14 @@ def test_move_project_to_area(test_namespace):
     assert result, "Failed to move project to area"
 
     # Verify project is now in the area
-    project = things.get(project_id)
+    project = live_reads.get(project_id)
     assert project["area"] == area_id, f"Project should be in area {area_id}, but is in {project['area']}"
 
     # Clean up
     delete_project_by_id(project_id)
 
 
+@pytest.mark.things_bridge
 def test_create_tag_independently(test_namespace):
     """Test creating tags independently using namespace and proper cleanup."""
     # Test creating a simple tag
@@ -363,7 +367,7 @@ def test_add_todo_to_area_via_list_title(test_namespace):
     assert todo_id, "Failed to create todo in area using list_title"
 
     # Verify the todo was created in the correct area
-    todo = things.get(todo_id)
+    todo = live_reads.get(todo_id)
     assert todo["area"] == area_id, f"Todo should be in area {area_id}, but is in {todo.get('area')}"
 
     # Clean up

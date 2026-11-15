@@ -97,9 +97,7 @@ def run_worker(entry_module: str, action: Action, params: dict[str, Any], *, tim
     except OSError:
         return error_envelope("worker_failed", "App worker outcome could not be established", outcome=unknown)
     try:
-        if len(stdout) > MAX_RESPONSE_BYTES:
-            raise ValueError("Oversized worker response")
-        payload = json.loads(stdout)
+        payload = json.loads(stdout, parse_constant=_reject_constant)
         if not isinstance(payload, dict) or type(payload.get("ok")) is not bool or type(payload.get("protocol_version")) is not int or payload.get("protocol_version") != PROTOCOL_VERSION:
             raise ValueError("Invalid envelope")
         if payload["ok"]:
@@ -115,6 +113,11 @@ def run_worker(entry_module: str, action: Action, params: dict[str, Any], *, tim
         return error_envelope(code, "App action did not complete", outcome=outcome, authorization_hint=hint, capabilities=_capabilities(payload.get("capabilities", {})))
     except (ValueError, TypeError, RecursionError):
         return error_envelope("worker_invalid_response", "App worker returned an invalid response", outcome=unknown)
+
+
+def _reject_constant(_value: str) -> None:
+    """Refuse NaN and Infinity, which the HTTP response could not carry."""
+    raise ValueError("Non-finite JSON number")
 
 
 def _capabilities(value: Any) -> dict[str, Any]:

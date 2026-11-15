@@ -11,14 +11,15 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
-import things  # noqa: E402
 
+from tests import live_reads  # noqa: E402
 from tests.conftest import (  # noqa: E402
     delete_project_by_id,
     delete_todo_by_id,
     generate_random_string,
 )
 from things3_mcp.applescript_bridge import (  # noqa: E402
+    AppleScriptError,
     add_project,
     add_todo,
     update_project,
@@ -29,36 +30,8 @@ pytestmark = pytest.mark.live_things
 
 
 def get_item_safely(item_id: str, expected_status: str = None) -> dict:
-    """Safely retrieve an item by ID, handling completed/canceled items that might not be found by things.get().
-
-    Args:
-        item_id: The ID of the item to retrieve
-        expected_status: Expected status of the item (e.g., 'completed', 'canceled')
-
-    Returns:
-        The item dict if found, None otherwise
-    """
-    # First try the direct approach
-    item = things.get(item_id)
-    if item:
-        return item
-
-    # If not found and we have an expected status, try searching by status
-    if expected_status:
-        if expected_status in ["completed", "canceled"]:
-            # Search in todos with the specific status
-            items = things.todos(status=expected_status)
-            for found_item in items:
-                if found_item.get("uuid") == item_id:
-                    return found_item
-
-            # Also try projects if it might be a project
-            projects = things.projects()
-            for found_project in projects:
-                if found_project.get("uuid") == item_id:
-                    return found_project
-
-    return None
+    """Return an item by ID whatever its status; Things resolves completed and cancelled items by ID too."""
+    return live_reads.get(item_id)
 
 
 def test_mark_todo_as_completed(test_namespace):
@@ -234,11 +207,10 @@ def test_completion_status_verification(test_namespace):
 def test_invalid_completion_operations(test_namespace):
     """Test handling of invalid completion operations."""
     # Test completing a non-existent todo
-    fake_id = "fake-todo-id-12345"
-    result = update_todo(id=fake_id, completed=True)
-    assert "error" in str(result).lower(), "Completing non-existent todo should return error"
+    # Writes raise a sanitised AppleScriptError; the MCP tools turn it into a message.
+    with pytest.raises(AppleScriptError):
+        update_todo(id="fake-todo-id-12345", completed=True)
 
     # Test completing a non-existent project
-    fake_project_id = "fake-project-id-12345"
-    result = update_project(id=fake_project_id, completed=True)
-    assert "error" in str(result).lower(), "Completing non-existent project should return error"
+    with pytest.raises(AppleScriptError):
+        update_project(id="fake-project-id-12345", completed=True)

@@ -19,6 +19,7 @@ from things3_mcp.applescript_bridge import add_todo  # noqa: E402
 from things3_mcp.fast_server import add_task  # noqa: E402
 
 from .conftest import (  # noqa: E402
+    TEST_NAMESPACE,
     delete_todo_by_id,
     generate_random_string,
 )
@@ -58,9 +59,10 @@ def test_applescript_error_logging_detail():
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_mcp_server_error_propagation():
     """Test that MCP server properly propagates and formats AppleScript errors."""
-    title = f"Error Propagation Test {generate_random_string(5)}"
+    title = f"{TEST_NAMESPACE} Error Propagation Test {generate_random_string(5)}"
 
     # Test with a scenario that should cause an error - use a malformed list_id
     result = add_task(title=title, list_id="definitely-invalid-uuid-format")
@@ -86,9 +88,10 @@ def test_mcp_server_error_propagation():
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_error_message_format_consistency():
     """Test that all error messages follow consistent formatting."""
-    title = f"Format Test {generate_random_string(5)}"
+    title = f"{TEST_NAMESPACE} Format Test {generate_random_string(5)}"
     created_todos = []
 
     # Test with various scenarios that might cause different types of responses
@@ -181,6 +184,7 @@ def test_error_logging_includes_context(monkeypatch, caplog):
 
 
 @pytest.mark.live_things
+@pytest.mark.things_bridge
 def test_success_logging_includes_location():
     """Successful add_task results include the destination list/area/project.
 
@@ -192,7 +196,7 @@ def test_success_logging_includes_location():
     created_todos = []
 
     try:
-        title = f"Success Logging Test {generate_random_string(5)}"
+        title = f"{TEST_NAMESPACE} Success Logging Test {generate_random_string(5)}"
 
         result = add_task(title=title)
 

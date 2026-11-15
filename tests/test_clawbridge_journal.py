@@ -166,3 +166,38 @@ def test_post_rename_admission_failure_stays_within_record_limit(tmp_path, monke
     assert len(list(journal.directory.glob("*.json"))) == 1
     assert len(journal.recent()) == 1
     assert journal.recent()[0]["outcome"] == "not_started"
+
+
+def test_files_the_journal_did_not_write_do_not_stop_a_restart(tmp_path):
+    first = Journal(tmp_path / "operations")
+    key = first.start("increment", {"amount": 1}, None)
+    stray = first.directory / ".DS_Store"
+    stray.write_bytes(b"\x00Bud1")
+    (first.directory / "notes.txt").write_text("left by hand")
+    restarted = Journal(tmp_path / "operations")
+    assert restarted.lookup(key)["outcome"] == "outcome_unknown"
+    assert stray.read_bytes() == b"\x00Bud1"
+    assert [record["operation_id"] for record in restarted.recent()] == [key]
+
+
+def test_interrupted_token_creation_leaves_no_token_behind(tmp_path, monkeypatch):
+    def interrupted(_path, _data):
+        raise OSError("power lost")
+
+    path = tmp_path / "bridge.token"
+    monkeypatch.setattr("clawbridge.runtime.atomic_write", interrupted)
+    with pytest.raises(OSError, match="power lost"):
+        ensure_token(path)
+    assert not path.exists()
+    monkeypatch.undo()
+    token = ensure_token(path)
+    assert token and ensure_token(path) == token
+    assert sorted(entry.name for entry in tmp_path.glob("*bridge.token*")) == ["bridge.token", "bridge.token.lock"]
+
+
+def test_completion_without_a_recognised_outcome_is_recorded_as_unknown(tmp_path):
+    journal = Journal(tmp_path / "operations")
+    key = journal.start("increment", {"amount": 1}, None)
+    journal.finish(key, {"ok": True, "data": {"id": "object-1"}})
+    assert journal.lookup(key)["outcome"] == "outcome_unknown"
+    assert not journal.active

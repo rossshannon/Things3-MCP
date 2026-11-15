@@ -43,19 +43,6 @@ registry:
     package: "Things3-MCP-server"
     command: "Things3-MCP-server"
 
-  # Configuration requirements
-  configuration:
-    required:
-      - name: "THINGS_AUTH_TOKEN"
-        description: "Authentication token from Things 3 Preferences → General"
-        type: "string"
-        secret: true
-    optional:
-      - name: "THINGS_MCP_LOG_LEVEL"
-        description: "Logging level (DEBUG, INFO, WARNING, ERROR)"
-        type: "string"
-        default: "INFO"
-
 # Build configuration
 build:
   type: "python"
@@ -67,19 +54,12 @@ build:
   # Dependencies from pyproject.toml
   dependencies:
     - "httpx>=0.28.1"
-    - "mcp[cli]>=1.2.0"
+    - "mcp[cli]>=1.30.0,<2"
     - "things-py>=0.0.15"
 
 # Deployment settings
 deployment:
   type: "local"  # This runs locally, not on Smithery's servers
-
-# Health checks
-health:
-  startup_timeout: 30
-  readiness_probe:
-    path: "/health"
-    timeout: 5
 
 # Features/Tools provided by this MCP
 tools:
@@ -142,3 +122,11 @@ tools:
     description: "Update an existing project"
   - name: "show_item"
     description: "Show a specific item or list in Things"
+
+  # Bridge Diagnostics
+  - name: "get_bridge_status"
+    description: "Inspect bridge identity, cache state and observed capabilities"
+  - name: "get_bridge_operation"
+    description: "Look up one write outcome by its operation ID"
+  - name: "list_bridge_operations"
+    description: "List recent write records"

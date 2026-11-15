@@ -1,7 +1,11 @@
 """Fixed Things action schemas, excluding caller-selected databases or scripts."""
 
+import re
+
 from clawbridge.actions import Action
 
+# The durations things.py accepts for "created within the last ...": days, weeks or years.
+PERIOD = re.compile(r"[0-9]{1,4}[dwy]")
 TEXT = (str, type(None))
 FILTER = (str, bool, type(None))
 BOOL = (bool, type(None))
@@ -16,11 +20,11 @@ ACTIONS = {name: Action(name, fields={"include_items": bool}) for name in ("inbo
 ACTIONS.update(
     {
         "get": Action("get", fields={"uuid": str}, required=frozenset({"uuid"}), nonempty=frozenset({"uuid"})),
-        "last": Action("last", fields={"period": str, "include_items": bool}, required=frozenset({"period"}), nonempty=frozenset({"period"})),
+        "last": Action("last", fields={"period": str, "include_items": bool}, required=frozenset({"period"}), nonempty=frozenset({"period"}), patterns={"period": PERIOD}),
         "search": Action("search", fields={"query": str, "include_items": bool}, required=frozenset({"query"})),
-        "tasks": Action("tasks", fields=TASK_FILTERS),
-        "todos": Action("todos", fields={key: value for key, value in TASK_FILTERS.items() if key != "type"}),
-        "projects": Action("projects", fields={key: value for key, value in TASK_FILTERS.items() if key != "type"}),
+        "tasks": Action("tasks", fields=TASK_FILTERS, patterns={"last": PERIOD}),
+        "todos": Action("todos", fields={key: value for key, value in TASK_FILTERS.items() if key != "type"}, patterns={"last": PERIOD}),
+        "projects": Action("projects", fields={key: value for key, value in TASK_FILTERS.items() if key != "type"}, patterns={"last": PERIOD}),
         "areas": Action("areas", fields={"uuid": TEXT, "tag": FILTER, "include_items": bool, "count_only": bool}),
         "tags": Action("tags", fields={"title": TEXT, "area": TEXT, "task": TEXT, "include_items": bool, "titles_only": bool}),
         "snapshot": Action("snapshot"),

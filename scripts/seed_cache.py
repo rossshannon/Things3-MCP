@@ -29,7 +29,9 @@ def main() -> int:
     """Run a JXA snapshot and write it to the cache."""
     print("Reading Things via Apple Events (this may prompt for Automation if first run)...", file=sys.stderr)
     data = run_jxa_action("snapshot")
-    snapshot = write_snapshot(data, source="seed")
+    # Label the snapshot by where its data came from: readers use this to know that an
+    # Apple Events snapshot carries fewer fields than a database one.
+    snapshot = write_snapshot(data, source="apple_events")
     counts = {k: len(v) if isinstance(v, list) else 0 for k, v in data.items() if not k.startswith("_")}
     print(f"Wrote cache snapshot at {snapshot['generated_at']}")
     for key in ("inbox", "today", "upcoming", "anytime", "someday", "todos", "projects", "areas", "tags"):

@@ -9,8 +9,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest  # noqa: E402
-import things  # noqa: E402
 
+from tests import live_reads  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
     add_project,
     add_todo,
@@ -68,8 +68,8 @@ def test_integration_workflow(cleanup_tracker, test_namespace):
     assert todo_success == "true", "Todo update should succeed"
 
     # 4. Verify final state
-    project = things.get(project_id)
-    todo = things.get(todo_id)
+    project = live_reads.get(project_id)
+    todo = live_reads.get(todo_id)
 
     # Extract tag names from response
     def extract_tag_names(tags_data):

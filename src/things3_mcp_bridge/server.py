@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -20,13 +22,34 @@ from clawbridge.worker import worker_main
 from things3_mcp import __version__
 from things3_mcp.providers.base import ProviderError, read_context, read_observations
 from things3_mcp.providers.bridge import DEFAULT_SOCKET, DEFAULT_TOKEN_FILE
-from things3_mcp.providers.cache import CacheThingsProvider
+from things3_mcp.providers.cache import CacheThingsProvider, cache_file_from_env
 
 from .actions import ACTIONS
 from .auth_status import build_auth_status
 from .cache import cache_status, write_snapshot
 
 DEFAULT_WORKER_TIMEOUT = float(os.environ.get("THINGS3_MCP_BRIDGE_WORKER_TIMEOUT", "30"))
+SNAPSHOT_REFRESH_ENV = "THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH"
+DEFAULT_SNAPSHOT_REFRESH_SECONDS = 3600.0
+SNAPSHOT_CHECK_SECONDS = 60.0
+SNAPSHOT_RETRY_SECONDS = 300.0
+
+
+def snapshot_refresh_seconds() -> float:
+    """Return how old the fallback snapshot may grow before a live read renews it; 0 disables renewal."""
+    try:
+        seconds = float(os.environ.get(SNAPSHOT_REFRESH_ENV, DEFAULT_SNAPSHOT_REFRESH_SECONDS))
+    except ValueError:
+        return DEFAULT_SNAPSHOT_REFRESH_SECONDS
+    return seconds if seconds > 0 and seconds != float("inf") else 0.0
+
+
+def snapshot_file_age() -> float:
+    """Return seconds since the snapshot was written, without reading it; infinite when absent."""
+    try:
+        return max(0.0, time.time() - cache_file_from_env().stat().st_mtime)
+    except OSError:
+        return float("inf")
 
 
 def ensure_token(token_file: Path = DEFAULT_TOKEN_FILE) -> str:
@@ -69,12 +92,26 @@ def _cache_envelope(action: str, params: dict[str, Any] | None = None) -> dict[s
             return ok_envelope(data, source="cache", generated_at=metadata.get("generated_at"), cache_age_seconds=metadata.get("cache_age_seconds"), snapshot_source=metadata.get("snapshot_source", "unknown"))
     except ProviderError as exc:
         return error_envelope(exc.error_code, exc.message, authorization_hint=exc.authorization_hint, cache_status=exc.cache_status or cache_status())
+    except Exception:  # noqa: BLE001 - a snapshot of unexpected shape is a cache fault, and must not hide the live error
+        return error_envelope("cache_unreadable", "The cache snapshot could not be used")
+
+
+def _store_snapshot(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Write a successful snapshot read to the cache, reporting a failed write as such."""
+    source = envelope.get("source", "unknown")
+    try:
+        snapshot = write_snapshot(envelope["data"], source=source)
+    except (OSError, ValueError, ProviderError):
+        # The read worked; only the cache file could not be replaced.
+        return error_envelope("cache_unwritable", "The snapshot was read but could not be written to the cache", outcome="failed", capabilities=envelope.get("capabilities", {}))
+    return ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))
 
 
 def live_or_cache(action: str, params: dict[str, Any] | None = None, *, require_live: bool = False) -> dict[str, Any]:
     """Keep read shapes and provenance, permitting callers to require live data."""
     live = run_worker(action, params)
-    if live.get("ok") or require_live or live.get("error_code") == "invalid_request":
+    if live.get("ok") or require_live or live.get("error_code") in {"invalid_request", "not_found"}:
+        # A request the database refused would be refused by any other source too.
         return live
     cached = _cache_envelope(action, params)
     if cached.get("ok"):
@@ -92,6 +129,9 @@ class UnixHTTPServer(CoreHTTPServer):
     def __init__(self, socket_path: Path = DEFAULT_SOCKET, *, token_file: Path = DEFAULT_TOKEN_FILE) -> None:
         self.observations: dict[str, Any] = {}
         self.observation_lock = threading.Lock()
+        self.snapshot_refresh = threading.Lock()
+        self.snapshot_refresh_thread: threading.Thread | None = None
+        self.snapshot_check_after = 0.0
         super().__init__(
             socket_path,
             BridgeRequestHandler,
@@ -115,17 +155,57 @@ class UnixHTTPServer(CoreHTTPServer):
     def read_action(self, action: str, params: dict[str, Any], *, require_live: bool = False) -> dict[str, Any]:
         if action == "snapshot":
             envelope = self._worker(action, params)
-            if envelope.get("ok"):
-                source = envelope.get("source", "unknown")
-                snapshot = write_snapshot(envelope["data"], source=source)
-                return ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))
-            return envelope
+            return _store_snapshot(envelope) if envelope.get("ok") else envelope
         if action == "diagnose":
             return self._worker(action, params)
         result = live_or_cache(action, params, require_live=require_live)
         with self.observation_lock:
             self.observations.update(result.get("capabilities", {}))
+        if result.get("ok") and result.get("source") == "live":
+            self.refresh_stale_snapshot()
         return result
+
+    def refresh_stale_snapshot(self) -> bool:
+        """Renew an old fallback snapshot in the background once the database is known to be readable.
+
+        Without this the snapshot is only as recent as the last manual
+        ``--snapshot-once``, so a later fallback could serve data that is days old.
+        A database-backed read has just succeeded, which is the cheapest evidence
+        that a full read will too. Returns whether a refresh was started.
+        """
+        interval = snapshot_refresh_seconds()
+        if not interval or not self.snapshot_refresh.acquire(blocking=False):
+            return False
+        started = False
+        try:
+            now = time.monotonic()
+            if now < self.snapshot_check_after:
+                return False
+            self.snapshot_check_after = now + min(SNAPSHOT_CHECK_SECONDS, interval)
+            if snapshot_file_age() < interval or not self.workers.acquire(blocking=False):
+                return False
+            self.snapshot_refresh_thread = threading.Thread(target=self._refresh_snapshot, name="snapshot-refresh", daemon=True)
+            self.snapshot_refresh_thread.start()
+            started = True
+            return True
+        finally:
+            if not started:
+                self.snapshot_refresh.release()
+
+    def _refresh_snapshot(self) -> None:
+        try:
+            envelope = self._worker("snapshot", {})
+            # An Apple Events snapshot carries fewer fields; never let it replace a database one here.
+            if envelope.get("ok") and envelope.get("source") == "live":
+                write_snapshot(envelope["data"], source="live")
+            else:
+                self.snapshot_check_after = time.monotonic() + SNAPSHOT_RETRY_SECONDS
+        except Exception:  # noqa: BLE001 - a failed renewal must never affect the read that triggered it
+            self.snapshot_check_after = time.monotonic() + SNAPSHOT_RETRY_SECONDS
+            print("Snapshot refresh failed", file=sys.stderr)
+        finally:
+            self.workers.release()
+            self.snapshot_refresh.release()
 
 
 class BridgeRequestHandler(CoreRequestHandler):
@@ -183,13 +263,10 @@ def snapshot_once() -> int:
     import json
 
     envelope = run_worker("snapshot")
-    if not envelope.get("ok"):
-        print(json.dumps(envelope))
-        return 1
-    source = envelope.get("source", "unknown")
-    snapshot = write_snapshot(envelope["data"], source=source)
-    print(json.dumps(ok_envelope({"cache_status": cache_status(), "generated_at": snapshot["generated_at"]}, source=source, capabilities=envelope.get("capabilities", {}))))
-    return 0
+    if envelope.get("ok"):
+        envelope = _store_snapshot(envelope)
+    print(json.dumps(envelope))
+    return 0 if envelope.get("ok") else 1
 
 
 def print_health() -> int:

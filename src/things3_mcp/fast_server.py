@@ -2,6 +2,8 @@
 
 import json
 import random
+import re
+from datetime import date
 from functools import cache, wraps
 
 from mcp.server.fastmcp import FastMCP
@@ -23,6 +25,61 @@ logger = get_logger(__name__)
 
 DEFAULT_TRASH_LIMIT = 50
 MAX_TRASH_LIMIT = 200
+STALE_SNAPSHOT_SECONDS = 24 * 60 * 60
+PERIOD = re.compile(r"([0-9]{1,4})([dwmy])")
+PERIOD_ERROR = "Error: Invalid period format {period!r}. Expected a number followed by d, w, m or y, for example '3d', '1w', '2m' or '1y'"
+DAYS_PER_MONTH = 30
+DAYS_PER_YEAR = 365
+MAX_LOOKBACK_DAYS = 200 * DAYS_PER_YEAR
+
+
+SCHEDULE_KEYWORDS = ("today", "tomorrow", "anytime", "someday")
+
+
+def _is_iso_date(value: str) -> bool:
+    """Accept only a real calendar date written exactly as YYYY-MM-DD."""
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except (TypeError, ValueError):
+        return False
+
+
+def _check_schedule(when: str | None, deadline: str | None) -> tuple[str | None, str | None]:
+    """Validate ``when`` and ``deadline`` before a write, returning ``(when, error)``.
+
+    Things would quietly skip a value it cannot use, and the tool would still
+    report success. Refusing first lets the caller correct the request, and
+    nothing has been changed at that point.
+    """
+    if isinstance(when, str) and when.strip().lower() in SCHEDULE_KEYWORDS:
+        when = when.strip().lower()
+    if when is not None and when not in SCHEDULE_KEYWORDS and not _is_iso_date(when):
+        return when, f"⚠️ Error: Unsupported 'when' value {when!r}. Use today, tomorrow, anytime, someday or a date as YYYY-MM-DD. Nothing was changed."
+    if deadline is not None and not _is_iso_date(deadline):
+        return when, f"⚠️ Error: Unsupported 'deadline' value {deadline!r}. Use a date as YYYY-MM-DD. Nothing was changed."
+    return when, None
+
+
+def _name_list(value: list[str] | str | None) -> list[str] | None:
+    """Treat a bare string as one name rather than a sequence of characters."""
+    return [value] if isinstance(value, str) else value
+
+
+def _parse_period(period: str) -> tuple[int, str] | None:
+    """Split a look-back period such as ``'2w'`` into its count and unit."""
+    match = PERIOD.fullmatch(period) if isinstance(period, str) else None
+    return (int(match[1]), match[2]) if match else None
+
+
+def _describe_age(seconds: float) -> str:
+    """Render a snapshot age in its two largest units, for example ``4 days 14 hours``."""
+    remaining = max(0, int(seconds))
+    parts = []
+    for name, size in (("day", 86400), ("hour", 3600), ("minute", 60), ("second", 1)):
+        count, remaining = divmod(remaining, size)
+        if count or (name == "second" and not parts):
+            parts.append(f"{count} {name}{'' if count == 1 else 's'}")
+    return " ".join(parts[:2])
 
 
 def _with_read_provenance(function):
@@ -40,7 +97,9 @@ def _with_read_provenance(function):
                 note = f"Read source: {source}." if source else ""
                 if source == "cache":
                     age = observation.get("cache_age_seconds")
-                    note += f" Snapshot age: {age} seconds." if age is not None else " Snapshot age: unknown."
+                    note += f" Snapshot age: {_describe_age(age)}." if age is not None else " Snapshot age: unknown."
+                    if age is not None and age >= STALE_SNAPSHOT_SECONDS:
+                        note += " This snapshot may be out of date; changes made in Things since then are missing."
                     snapshot_source = observation.get("snapshot_source", "unknown")
                     note += f" Snapshot backend: {snapshot_source}."
                     if snapshot_source == "apple_events":
@@ -109,7 +168,7 @@ def _resolve_project_location(project_id: str) -> str:
             area = provider.get(project["area"])
             if area:
                 return f"Area: {area['title']}"
-        return "List: Inbox"
+        return f"List: {project.get('start') or 'Anytime'}"
     except Exception:  # noqa: BLE001 - same reasoning as _resolve_todo_location
         return "Unknown"
 
@@ -352,7 +411,7 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
 
     Args:
     ----
-        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'.
+        period: Time period to look back (e.g., '3d', '1w', '2m', '1y'). Defaults to '7d'. A month counts as 30 days.
         limit: Maximum number of entries to return. Defaults to 50.
     """
     import time
@@ -362,23 +421,13 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
     log_operation_start("get-logbook")
 
     try:
-        # Parse period (e.g., "1d", "7d", "2w", "1m", "1y")
-        if not period or period[-1] not in ["d", "w", "m", "y"]:
-            log_operation_end("get-logbook", False, time.time() - start_time, error=f"Invalid period format: {period}")
-            return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
-
-        number = int(period[:-1])
-        unit = period[-1]
-
-        # Calculate start date based on period
-        if unit == "d":
-            start_date = (datetime.now() - timedelta(days=number)).strftime("%Y-%m-%d")
-        elif unit == "w":
-            start_date = (datetime.now() - timedelta(weeks=number)).strftime("%Y-%m-%d")
-        elif unit == "m":
-            start_date = (datetime.now() - timedelta(days=number * 30)).strftime("%Y-%m-%d")
-        elif unit == "y":
-            start_date = (datetime.now() - timedelta(days=number * 365)).strftime("%Y-%m-%d")
+        parsed = _parse_period(period)
+        if parsed is None:
+            log_operation_end("get-logbook", False, time.time() - start_time, error="Invalid period format")
+            return PERIOD_ERROR.format(period=period)
+        number, unit = parsed
+        days = min(number * {"d": 1, "w": 7, "m": DAYS_PER_MONTH, "y": DAYS_PER_YEAR}[unit], MAX_LOOKBACK_DAYS)
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         logger.debug("Things get_logbook processing")
 
@@ -401,9 +450,6 @@ def get_logbook(period: str = "7d", limit: int = 50) -> str:
         log_operation_end("get-logbook", True, time.time() - start_time, count=len(todos))
         return _format_todo_items(todos, provider)
 
-    except ValueError as e:
-        log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
-        return f"Error: Invalid period format '{period}'. Expected format: '3d', '1w', '2m', '1y'"
     except Exception as e:
         log_operation_end("get-logbook", False, time.time() - start_time, error=str(e))
         raise
@@ -652,7 +698,7 @@ def search_advanced(
         deadline: Filter by deadline (YYYY-MM-DD)
         tag: Filter by tag
         area: Filter by area UUID
-        type: Filter by item type (to-do/project/heading)
+        type: Filter by item type (to-do/project/heading). Without it only to-dos are searched.
     """
     # Build filter parameters
     kwargs = {"include_items": True}
@@ -663,7 +709,7 @@ def search_advanced(
     if deadline:
         kwargs["deadline"] = deadline
     if start_date:
-        kwargs["start"] = start_date
+        kwargs["start_date"] = start_date
     if tag:
         kwargs["tag"] = tag
     if area:
@@ -678,7 +724,8 @@ def search_advanced(
     # with their original wording.
     try:
         provider = get_provider()
-        todos = provider.todos(**kwargs)
+        # Only the general task query accepts a type; the to-do query fixes it.
+        todos = provider.tasks(**kwargs) if type else provider.todos(**kwargs)
     except ProviderError as e:
         return f"Error in advanced search: {e.message}"
     except Exception as e:
@@ -709,11 +756,9 @@ def add_task(
     ----
         title: Title of the todo
         notes: Notes for the todo
-        when: When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+        when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
         deadline: Deadline for the todo (YYYY-MM-DD)
-        tags: Tags to apply to the todo. IMPORTANT: Always pass as an array of
-            strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
-            Passing as a string will treat each character as a separate tag.
+        tags: Tags to apply to the todo, as an array of strings (e.g., ["tag1", "tag2"]).
         list_id: ID of project/area to add to (takes priority over list_title if both provided)
         list_title: Title of project/area to add to (must exactly match an existing area or project title — look them up with get_areas or get_projects).
             If both list_id and list_title are provided, list_id takes priority.
@@ -723,15 +768,10 @@ def add_task(
 
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
-        tags = params["tags"]
-        logger.debug("Things add_task processing")
-
-        # Clean up title and notes to handle URL encoding
-        if isinstance(title, str):
-            title = title.replace("+", " ").replace("%20", " ")
-
-        if isinstance(notes, str):
-            notes = notes.replace("+", " ").replace("%20", " ")
+        tags = _name_list(params["tags"])
+        when, problem = _check_schedule(when, deadline)
+        if problem:
+            return problem
 
         logger.info("Things add_task processing")
 
@@ -776,11 +816,9 @@ def add_new_project(
     ----
         title: Title of the project
         notes: Notes for the project
-        when: When to schedule the project
-        deadline: Deadline for the project
-        tags: Tags to apply to the project. IMPORTANT: Always pass as an array of
-            strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string.
-            Passing as a string will treat each character as a separate tag.
+        when: When to schedule the project (today, tomorrow, anytime, someday, or YYYY-MM-DD)
+        deadline: Deadline for the project (YYYY-MM-DD)
+        tags: Tags to apply to the project, as an array of strings (e.g., ["tag1", "tag2"]).
         area_id: ID of area to add to
         area_title: Title of area to add to (must exactly match an existing area title — look them up with get_areas)
         todos: Initial todos to create in the project
@@ -788,15 +826,11 @@ def add_new_project(
     try:
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags, todos=todos)
-        tags = params["tags"]
-        todos = params["todos"]
-
-        # Clean up title and notes to handle URL encoding
-        if isinstance(title, str):
-            title = title.replace("+", " ").replace("%20", " ")
-
-        if isinstance(notes, str):
-            notes = notes.replace("+", " ").replace("%20", " ")
+        tags = _name_list(params["tags"])
+        todos = _name_list(params["todos"])
+        when, problem = _check_schedule(when, deadline)
+        if problem:
+            return problem
 
         logger.info("Things add_new_project processing")
 
@@ -840,12 +874,12 @@ def update_task(
     ----
         id: ID of the todo to update.
         title: New title.
-        notes: New notes.
+        notes: New notes. An empty string clears them.
         when: When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD).
         deadline: New deadline (YYYY-MM-DD).
-        tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
-        completed: Mark as completed.
-        canceled: Mark as canceled.
+        tags: New tags, as an array of strings (e.g., ["tag1", "tag2"]). Replaces the existing tags; an empty array clears them.
+        completed: true marks the todo completed; false reopens it.
+        canceled: true marks the todo canceled; false reopens it.
         list_id: ID of project/area to move the todo to (takes priority over list_name if both provided).
         list_name: Name of built-in list, project, or area to move the todo to. For built-in lists use: "Inbox", "Today", "Anytime", "Someday". For projects or areas, use the exact name.
             If both list_id and list_name are provided, list_id takes priority.
@@ -853,15 +887,10 @@ def update_task(
     try:
         # Preprocess parameters to handle MCP array serialization issues
         params = preprocess_array_params(tags=tags)
-        tags = params["tags"]
-
-        # Clean up string parameters to handle URL encoding
-        if isinstance(title, str):
-            title = title.replace("+", " ").replace("%20", " ")
-        if isinstance(notes, str):
-            notes = notes.replace("+", " ").replace("%20", " ")
-        if isinstance(list_name, str):
-            list_name = list_name.replace("+", " ").replace("%20", " ")
+        tags = _name_list(params["tags"])
+        when, problem = _check_schedule(when, deadline)
+        if problem:
+            return problem
 
         logger.info("Things update_task processing")
 
@@ -909,12 +938,12 @@ def update_existing_project(
     ----
         id: ID of the project to update
         title: New title
-        notes: New notes
+        notes: New notes. An empty string clears them.
         when: New schedule (today, tomorrow, anytime, someday, or YYYY-MM-DD)
         deadline: New deadline (YYYY-MM-DD)
-        tags: New tags. IMPORTANT: Always pass as an array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated string. Passing as a string will treat each character as a separate tag.
-        completed: Mark as completed
-        canceled: Mark as canceled
+        tags: New tags, as an array of strings (e.g., ["tag1", "tag2"]). Replaces the existing tags; an empty array clears them.
+        completed: true marks the project completed; false reopens it
+        canceled: true marks the project canceled; false reopens it
         list_name: Move project directly to a built-in list. Must be one of:
                   - "Today": Move to Today list
                   - "Anytime": Move to Anytime list
@@ -930,16 +959,10 @@ def update_existing_project(
 
         # Preprocess only the tags parameter
         params = preprocess_array_params(tags=tags)
-        tags = params["tags"]
-
-        # Clean up string parameters to handle URL encoding
-        if isinstance(title, str):
-            title = title.replace("+", " ").replace("%20", " ")
-        if isinstance(notes, str):
-            notes = notes.replace("+", " ").replace("%20", " ")
-        if isinstance(area_title, str):
-            area_title = area_title.replace("+", " ").replace("%20", " ")
-            logger.info("Things update_existing_project processing")
+        tags = _name_list(params["tags"])
+        when, problem = _check_schedule(when, deadline)
+        if problem:
+            return problem
 
         logger.info("Things update_existing_project processing")
 
@@ -975,11 +998,9 @@ def show_item(id: str, query: str | None = None, filter_tags: list[str] | None =
 
     Args:
     ----
-        id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook
-        query: Optional query to filter by
-        filter_tags: Optional tags to filter by. IMPORTANT: Always pass as an
-        array of strings (e.g., ["tag1", "tag2"]) NOT as a comma-separated
-        string. Passing as a string will treat each character as a separate tag.
+        id: ID of item to show, or one of: inbox, today, upcoming, anytime, someday, logbook, trash
+        query: Accepted for compatibility and ignored; use search_todos to filter by text
+        filter_tags: Accepted for compatibility and ignored; use get_tagged_items to filter by tag
     """
     try:
         # For built-in lists, return the appropriate data
@@ -1052,10 +1073,15 @@ def get_recent(period: str) -> str:
 
     Args:
     ----
-        period: Time period (e.g., '3d', '1w', '2m', '1y')
+        period: Time period (e.g., '3d', '1w', '2m', '1y'). A month counts as 30 days.
     """
-    if not period or not any(period.endswith(unit) for unit in ["d", "w", "m", "y"]):
-        return "Error: Period must be in format '3d', '1w', '2m', '1y'"
+    parsed = _parse_period(period)
+    if parsed is None:
+        return PERIOD_ERROR.format(period=period)
+    number, unit = parsed
+    # Things itself only understands days, weeks and years.
+    if unit == "m":
+        period = f"{number * DAYS_PER_MONTH}d"
 
     try:
         provider = get_provider()

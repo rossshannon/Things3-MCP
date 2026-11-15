@@ -973,5 +973,6 @@ def test_worker_run_action_dispatches_trash_and_last(monkeypatch):
 
 def test_worker_last_action_requires_period(monkeypatch):
     monkeypatch.setattr(db_reader, "direct_provider", lambda: object())
-    with pytest.raises(ValueError, match="period"):
+    with pytest.raises(ProviderError) as refused:
         db_reader.run_sqlite_action("last", {})
+    assert refused.value.error_code == "invalid_request" and refused.value.outcome == "failed"

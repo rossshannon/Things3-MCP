@@ -123,7 +123,7 @@ uv run --locked python scripts/check_bridge.py
 uv run --locked python scripts/check_bridge.py --snapshot
 ```
 
-Inspect the returned backend. SQLite and the limited Apple Events fallback have different coverage. The default cache is `~/Library/Application Support/Things3-MCP/cache/latest.json`. New LaunchAgents discard stdout/stderr; authenticated status and operation records provide bounded diagnostics. Old log files are not removed.
+Inspect the returned backend. SQLite and the limited Apple Events fallback have different coverage. The default cache is `~/Library/Application Support/Things3-MCP/cache/latest.json`. After a successful database read the bridge renews that snapshot in the background once it is more than an hour old; set `THINGS3_MCP_BRIDGE_SNAPSHOT_REFRESH` to another number of seconds, or to `0` to renew it only with `--snapshot-once`. A snapshot is never renewed from the limited Apple Events fallback. New LaunchAgents discard stdout/stderr; authenticated status and operation records provide bounded diagnostics. Old log files are not removed.
 
 ### Provider modes and 2.5 migration
 
@@ -138,7 +138,7 @@ Inspect the returned backend. SQLite and the limited Apple Events fallback have 
 
 The MCP bridge call timeout defaults to 35 seconds; the worker deadline defaults to 30 seconds. Client timeout settings must exceed 30 seconds and should stay above the configured worker deadline. A lost response or client timeout still does not establish that a mutation failed. Never retry it automatically. Use its operation ID, or its correlation label if the response was lost, to inspect the result. A later intentional request is a new attempt.
 
-Read output identifies its source. Cached output includes snapshot age and original backend; an Apple Events snapshot retains its limited-coverage warning. Direct bridge callers can send `X-Require-Live: true` when a cached result is unacceptable.
+Read output identifies its source. Cached output includes snapshot age and original backend, and says so plainly once the snapshot is more than a day old; an Apple Events snapshot retains its limited-coverage warning. Direct bridge callers can send `X-Require-Live: true` when a cached result is unacceptable.
 
 ### Operation records
 
@@ -243,18 +243,18 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 ### add_todo
 - `title` - Title of the todo
 - `notes` (optional) - Notes for the todo (supports Markdown formatting including checkboxes like `- [ ] Task`)
-- `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - Tags to apply to the todo
 - `list_title` (optional) - Title of project/area to add to (must exactly match existing name)
 - `list_id` (optional) - ID of project/area to add to (takes priority over list_title if both provided)
-- **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](docs/images/Things3-subtasks-markdown-checklist.png)
+- **Note**: While Things’ native checklist feature (i.e., subtasks) cannot be created via AppleScript, you and your LLMs can use Markdown checkboxes in the notes field to achieve similar functionality. ![Things3 - Subtasks - Markdown Checklist](https://raw.githubusercontent.com/rossshannon/Things3-MCP/main/docs/images/Things3-subtasks-markdown-checklist.png)
 
 ### update_todo
 - `id` - ID of the todo to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - When to schedule the todo (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the todo (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the todo (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
@@ -275,7 +275,7 @@ Set the value to `0` on a later install to disable new payload capture; that doe
 - `id` - ID of the project to update
 - `title` (optional) - New title
 - `notes` (optional) - New notes
-- `when` (optional) - When to schedule the project (today, tomorrow, evening, anytime, someday, or YYYY-MM-DD)
+- `when` (optional) - When to schedule the project (today, tomorrow, anytime, someday, or YYYY-MM-DD)
 - `deadline` (optional) - Deadline for the project (YYYY-MM-DD)
 - `tags` (optional) - New tags
 - `completed` (optional) - Mark as completed
@@ -381,8 +381,11 @@ The default suite is hermetic: it uses synthetic fixtures and skips tests marked
 Live tests can create and delete records. Run them only with a disposable Things library and explicit approval for that work:
 
 ```sh
-uv run --locked pytest --live-things --allow-things-cleanup
+uv run --locked pytest -m "live_things and not things_bridge" --live-things --allow-things-cleanup
+uv run --locked pytest -m things_bridge --live-things --allow-things-cleanup
 ```
+
+The first command drives Things through AppleScript from the test process and reads results back the same way. It needs Automation consent for the process that runs it and no database access. The second goes through the MCP tools and therefore the bridge; it needs a running bridge built from the code under test, and its database-backed reads rely on that bridge's own grants. Live tests never open the Things database themselves.
 
 Both flags are required. Cleanup is not a promise that a personal library is safe to use for testing. Keep source tests, frozen bundle verification, real Things results and locked-session results as separate evidence.
 

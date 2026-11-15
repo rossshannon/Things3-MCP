@@ -56,6 +56,7 @@ class Action:
     fields: dict[str, type | tuple[type, ...]] = field(default_factory=dict)
     required: frozenset[str] = frozenset()
     nonempty: frozenset[str] = frozenset()
+    patterns: dict[str, re.Pattern[str]] = field(default_factory=dict)
 
     def validate(self, params: dict[str, Any]) -> dict[str, Any]:
         """Validate types and limits before journalling or starting a worker."""
@@ -72,6 +73,9 @@ class Action:
                 raise InvalidRequestError("Invalid action list parameter")
             if (key in self.required and value is None) or (key in self.nonempty and value == ""):
                 raise InvalidRequestError("Required action parameter is empty")
+            pattern = self.patterns.get(key)
+            if pattern is not None and isinstance(value, str) and not pattern.fullmatch(value):
+                raise InvalidRequestError("Invalid action parameter format")
         try:
             size = len(json.dumps(params, allow_nan=False).encode())
         except (ValueError, TypeError, RecursionError) as exc:

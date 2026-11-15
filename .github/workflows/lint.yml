@@ -4,13 +4,17 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+
+permissions:
+  contents: read
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     env:
       UV_PYTHON: ${{ matrix.python-version }}
+      # Forks and Dependabot receive no secrets; skip the scan there instead of failing the job.
+      HAS_SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY != '' }}
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
@@ -34,7 +38,7 @@ jobs:
       run: uv run --locked pytest
 
     - name: Check imports and syntax
-      run: uv run --locked python -m py_compile src/**/*.py
+      run: uv run --locked python -m compileall -q src
 
     - name: Run linting
       run: uv run --locked ruff check .
@@ -49,6 +53,7 @@ jobs:
       run: uv run --locked bandit -r src/ -c pyproject.toml
 
     - name: Check dependencies for vulnerabilities
+      if: env.HAS_SAFETY_API_KEY == 'true'
       run: uv run --locked safety --stage cicd scan --output screen
       env:
         SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}

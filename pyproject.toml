@@ -94,10 +94,9 @@ format = "ruff format ."
 format-check = "ruff format --check ."
 type-check = "mypy src/"
 security = "bandit -r src/"
-deps-check = "safety check"
+deps-check = "safety scan"
 all-checks = ["lint", "format-check", "type-check", "test-cov"]
 build = "python -m build"
-publish = "twine upload dist/*"
 clean = "rm -rf dist build *.egg-info .coverage htmlcov .pytest_cache .mypy_cache .ruff_cache"
 
 # Enhanced Ruff Configuration

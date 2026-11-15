@@ -23,7 +23,7 @@ from clawbridge_mcp import server as interface
 
 @contextmanager
 def serving(bridge):
-    thread = threading.Thread(target=bridge.serve_forever, daemon=True)
+    thread = threading.Thread(target=bridge.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield bridge

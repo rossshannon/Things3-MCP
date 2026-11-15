@@ -26,7 +26,7 @@ def bridge(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", str(ROOT / "src"))
     runtime = tmp_path_factory.mktemp("stdio")
     server = create_server(runtime / "bridge.sock", runtime / "bridge.token")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield server, runtime

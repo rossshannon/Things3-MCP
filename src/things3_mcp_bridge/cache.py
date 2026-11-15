@@ -6,8 +6,6 @@ from typing import Any
 
 from things3_mcp.providers.cache import CacheStore
 
-SNAPSHOT_KEYS = ("inbox", "today", "upcoming", "anytime", "someday", "todos", "projects", "areas", "tags")
-
 
 def write_snapshot(data: dict[str, Any], *, source: str = "live") -> dict[str, Any]:
     """Write a bridge snapshot and return it."""

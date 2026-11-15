@@ -15,12 +15,12 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import FrameType
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from .actions import MAX_BODY_BYTES, Action, InvalidRequestError, correlation_id, json_object
 from .journal import Journal, JournalError
-from .protocol import error_envelope, ok_envelope
+from .protocol import OUTCOMES, error_envelope, ok_envelope
 from .runtime import RuntimeSafetyError, SocketLease, ensure_token
 
 REQUEST_TIMEOUT = 5.0
@@ -109,8 +109,8 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
             self.connections.release()
 
     def handle_error(self, request: Any, client_address: Any) -> None:
-        """Avoid default tracebacks, which can contain app payloads."""
-        print("Bridge request failed", file=sys.stderr)
+        """Avoid default tracebacks, which can contain app payloads; an exception's type name cannot."""
+        print(f"Bridge request failed: {type(sys.exc_info()[1]).__name__}", file=sys.stderr)
 
     def status(self) -> dict[str, Any]:
         """Describe this exact instance without probing or launching an app."""
@@ -132,7 +132,11 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
         mutation_reserved = False
         try:
             if not action.mutation:
-                return self.read_action(name, params, require_live=require_live)
+                try:
+                    return self.read_action(name, params, require_live=require_live)
+                except Exception:  # noqa: BLE001 - a read fault is the bridge's, never the caller's request
+                    print("Bridge read failed", file=sys.stderr)
+                    return error_envelope("bridge_failed", "Bridge could not complete the read", outcome="failed", correlation_id=correlation)
             mutation_reserved = self.mutations.acquire(blocking=False)
             if not mutation_reserved:
                 return error_envelope("bridge_busy", "A mutation is already active", outcome="not_started", correlation_id=correlation)
@@ -144,6 +148,9 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
                 response = self.worker(name, params)
             except Exception:  # noqa: BLE001 - dispatch exceptions must not imply safe replay
                 response = error_envelope("worker_failed", "App outcome could not be established", outcome="outcome_unknown")
+            if not isinstance(response, dict) or type(response.get("ok")) is not bool or response.get("outcome") not in OUTCOMES:
+                # The worker did run, so a response that cannot be interpreted is never safe to replay.
+                response = error_envelope("worker_invalid_response", "App outcome could not be established", outcome="outcome_unknown")
             response.update(operation_id=key, correlation_id=correlation)
             try:
                 self.journal.finish(key, response)
@@ -177,6 +184,29 @@ def serve_until_stopped(server: UnixHTTPServer) -> None:
             signal.signal(signum, handler)
 
 
+class _RequestInput:
+    """Request stream that remembers the last line read, to tell complete headers from truncated ones."""
+
+    def __init__(self, raw: Any) -> None:
+        self.raw = raw
+        self.last_line = b""
+
+    def readline(self, size: int = -1) -> bytes:
+        try:
+            self.last_line = self.raw.readline(size)
+        except TimeoutError:
+            # A read that times out ends the input like the deadline does, so an
+            # unfinished header block is answered rather than dropped.
+            self.last_line = b""
+        return self.last_line
+
+    def read(self, size: int = -1) -> bytes:
+        return self.raw.read(size)
+
+    def close(self) -> None:
+        self.raw.close()
+
+
 class BridgeRequestHandler(BaseHTTPRequestHandler):
     """Strict HTTP framing and authentication, shared by fixed-route adapters."""
 
@@ -187,6 +217,8 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
     def setup(self) -> None:
         """Bound both idle reads and total request input time."""
         super().setup()
+        self.request_input = _RequestInput(self.rfile)
+        self.rfile = cast(Any, self.request_input)
         self.connection.settimeout(REQUEST_TIMEOUT)
         self.input_deadline = threading.Timer(REQUEST_TIMEOUT, self._end_input)
         self.input_deadline.daemon = True
@@ -203,6 +235,22 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         self.input_deadline.cancel()
         super().finish()
 
+    def parse_request(self) -> bool:
+        """Refuse a request line without a protocol version before waiting for its headers.
+
+        The standard library treats one as HTTP/0.9 and, depending on the Python
+        version, either waits for headers that never come or skips them entirely.
+        """
+        request_line: bytes = getattr(self, "raw_requestline", b"")
+        if len(request_line.split()) == 2:
+            self.command = ""
+            self.request_version = self.default_request_version
+            self.requestline = ""
+            self.close_connection = True
+            self.send_error(400)
+            return False
+        return super().parse_request()
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Suppress BaseHTTPRequestHandler's payload-bearing request log."""
 
@@ -215,14 +263,15 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
 
     def _send(self, payload: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(payload, allow_nan=False).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
         try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
             self.wfile.write(body)
         except (OSError, TimeoutError):
+            # The client has gone; there is nobody left to tell.
             pass
 
     def _body(self) -> dict[str, Any]:
@@ -252,56 +301,97 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         """Supply adapter-local read-only status endpoints."""
         return None
 
+    def _route(self) -> tuple[dict[str, Any], int] | tuple[str, dict[str, Any], bool]:
+        """Authenticate and validate a request, answering it directly unless an action must run."""
+        if self.request_input.last_line not in {b"\r\n", b"\n"}:
+            # The header block was cut short by the client or by the input deadline.
+            # Acting on it would drop whatever headers were lost, such as the body length.
+            raise InvalidRequestError("Incomplete request headers")
+        parsed = urlsplit(self.path)
+        if parsed.scheme or parsed.netloc or parsed.fragment:
+            raise InvalidRequestError("Only local request paths are supported")
+        public_health = self.command == "GET" and parsed.path == "/health" and not parsed.query
+        if not public_health and not self._authorized():
+            return error_envelope("bridge_unauthorized", "Bridge token is missing or invalid", outcome="not_started"), 401
+        body = self._body()
+        self.input_deadline.cancel()
+        query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=20)
+        if any(len(values) != 1 for values in query.values()):
+            raise InvalidRequestError("Repeated query field")
+        if self.command == "GET" and body:
+            raise InvalidRequestError("GET request bodies are unsupported")
+        if public_health:
+            return ok_envelope({"running": True, "version": self.server.identity["version"]}), 200
+        if self.command == "GET" and parsed.path == "/status":
+            return ok_envelope(self.server.status()), 200
+        if self.command == "GET" and parsed.path == "/operations":
+            if set(query) - {"correlation_id", "limit"}:
+                raise InvalidRequestError("Unsupported operation query")
+            correlation = correlation_id(query.get("correlation_id", [None])[0])
+            limit = query.get("limit", ["25"])[0]
+            if not limit.isascii() or not limit.isdigit():
+                raise InvalidRequestError("Invalid operation limit")
+            return ok_envelope(self.server.journal.recent(correlation=correlation, limit=int(limit))), 200
+        if self.command == "GET" and parsed.path.startswith("/operations/"):
+            record = self.server.journal.lookup(parsed.path.removeprefix("/operations/"))
+            if record is None:
+                return error_envelope("not_found", "Operation is outside the retained history"), 404
+            return ok_envelope(record), 200
+        special = self.special(self.command, parsed.path, query, body)
+        if special is not None:
+            return special, 200
+        resolved = self.resolve(self.command, parsed.path, query, body)
+        if resolved is None:
+            return error_envelope("not_found", "No bridge endpoint", outcome="not_started"), 404
+        live = self.headers.get("X-Require-Live", "false").lower()
+        if live not in {"true", "false"}:
+            raise InvalidRequestError("Invalid live-read requirement")
+        return *resolved, live == "true"
+
     def _handle(self) -> None:
+        """Answer every request with one JSON envelope, whatever goes wrong.
+
+        Nothing has run while the request is being routed, so faults there are
+        reported as not started. Once an action is dispatched, a fault is the
+        bridge's own and must never read as a request that is safe to resend.
+        """
         try:
-            parsed = urlsplit(self.path)
-            if parsed.scheme or parsed.netloc or parsed.fragment:
-                raise InvalidRequestError("Only local request paths are supported")
-            public_health = self.command == "GET" and parsed.path == "/health" and not parsed.query
-            if not public_health and not self._authorized():
-                self._send(error_envelope("bridge_unauthorized", "Bridge token is missing or invalid", outcome="not_started"), 401)
-                return
-            body = self._body()
-            self.input_deadline.cancel()
-            query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=20)
-            if any(len(values) != 1 for values in query.values()):
-                raise InvalidRequestError("Repeated query field")
-            if self.command == "GET" and body:
-                raise InvalidRequestError("GET request bodies are unsupported")
-            if public_health:
-                self._send(ok_envelope({"running": True, "version": self.server.identity["version"]}))
-                return
-            if self.command == "GET" and parsed.path == "/status":
-                self._send(ok_envelope(self.server.status()))
-                return
-            if self.command == "GET" and parsed.path == "/operations":
-                if set(query) - {"correlation_id", "limit"}:
-                    raise InvalidRequestError("Unsupported operation query")
-                correlation = correlation_id(query.get("correlation_id", [None])[0])
-                limit = int(query.get("limit", ["25"])[0])
-                self._send(ok_envelope(self.server.journal.recent(correlation=correlation, limit=limit)))
-                return
-            if self.command == "GET" and parsed.path.startswith("/operations/"):
-                record = self.server.journal.lookup(parsed.path.rsplit("/", 1)[-1])
-                self._send(ok_envelope(record) if record is not None else error_envelope("not_found", "Operation is outside the retained history"), 200 if record is not None else 404)
-                return
-            special = self.special(self.command, parsed.path, query, body)
-            if special is not None:
-                self._send(special)
-                return
-            resolved = self.resolve(self.command, parsed.path, query, body)
-            if resolved is None:
-                self._send(error_envelope("not_found", "No bridge endpoint", outcome="not_started"), 404)
-                return
-            live = self.headers.get("X-Require-Live", "false").lower()
-            if live not in {"true", "false"}:
-                raise InvalidRequestError("Invalid live-read requirement")
-            response = self.server.execute(*resolved, correlation=self.headers.get("X-Correlation-ID"), require_live=live == "true")
-            self._send(response, 503 if response.get("error_code") in {"bridge_busy", "journal_unavailable"} else 200)
+            routed = self._route()
+        except (JournalError, RuntimeSafetyError, OSError):
+            self._send(error_envelope("bridge_unavailable", "Bridge storage is unavailable", outcome="not_started"), 503)
+            return
         except (InvalidRequestError, ValueError, UnicodeError):
             self._send(error_envelope("invalid_request", "Invalid bridge request", outcome="not_started"), 400)
-        except (OSError, JournalError):
-            self._send(error_envelope("bridge_unavailable", "Bridge storage is unavailable", outcome="not_started"), 503)
+            return
+        except Exception as exc:  # noqa: BLE001 - a handler that raises would close the connection without a reply
+            print(f"Bridge request failed: {type(exc).__name__}", file=sys.stderr)
+            self._send(error_envelope("bridge_failed", "Bridge could not handle the request", outcome="not_started"), 500)
+            return
+        if len(routed) == 2:
+            self._send(*routed)
+            return
+        name, params, require_live = routed
+        definition = self.server.actions.get(name)
+        unknown = "outcome_unknown" if definition is not None and definition.mutation else "failed"
+        try:
+            response = self.server.execute(name, params, correlation=self.headers.get("X-Correlation-ID"), require_live=require_live)
+        except InvalidRequestError:
+            # Raised only while validating, before anything is journalled or started.
+            self._send(error_envelope("invalid_request", "Invalid bridge request", outcome="not_started"), 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - see above
+            print(f"Bridge action failed: {type(exc).__name__}", file=sys.stderr)
+            self._send(error_envelope("bridge_failed", "Bridge could not establish the outcome", outcome=unknown), 500)
+            return
+        try:
+            self._send(response, {"bridge_busy": 503, "journal_unavailable": 503, "bridge_failed": 500}.get(str(response.get("error_code")), 200))
+        except (ValueError, TypeError, RecursionError):
+            # The action ran but its result cannot be encoded; say so without implying it never started.
+            failure = error_envelope("bridge_invalid_response", "Bridge could not encode the result", outcome=unknown)
+            for key in ("operation_id", "correlation_id"):
+                if isinstance(response.get(key), str):
+                    failure[key] = response[key]
+            self._send(failure, 500)
 
     def do_GET(self) -> None:  # noqa: N802
         """Handle a fixed read-only endpoint."""
