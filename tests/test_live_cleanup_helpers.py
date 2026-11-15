@@ -9,29 +9,46 @@ from things3_mcp.applescript_bridge import AppleScriptError
 
 
 class ScriptedThings:
-    """Answers the two scripts the sweep uses: list what matches a prefix, and delete one item by id."""
+    """Answers the two scripts the sweep uses: list what matches a prefix, and delete one item by id.
 
-    def __init__(self, items, *, broken_kind=None, undeletable=()):
+    ``logbook`` holds completed to-dos, which ``every to do`` does not return.
+    """
+
+    def __init__(self, items, *, logbook=None, broken_kind=None, undeletable=()):
         self.items = {kind: dict(entries) for kind, entries in items.items()}
+        self.logbook = dict(logbook or {})
         self.broken_kind = broken_kind
         self.undeletable = set(undeletable)
         self.deleted = []
+        self.scripts = []
 
     def __call__(self, script, timeout=8):
         assert timeout == conftest.SWEEP_TIMEOUT_SECONDS
-        deletion = re.search(r'delete \(first (to do|project|area|tag) whose id is "([^"]+)"\)', script)
+        self.scripts.append(script)
+        deletion = re.search(r'delete (?:(to do|project) id "([^"]+)"|\(first (area|tag) whose id is "([^"]+)"\))', script)
         if deletion:
-            kind, item_id = deletion.groups()
+            kind = deletion.group(1) or deletion.group(3)
+            item_id = deletion.group(2) or deletion.group(4)
             if item_id in self.undeletable:
                 raise AppleScriptError("applescript_timeout", "Things did not confirm completion before the deadline", outcome="outcome_unknown")
             self.deleted.append(item_id)
-            del self.items[kind][item_id]
+            if item_id in self.logbook:
+                del self.logbook[item_id]
+            else:
+                del self.items[kind][item_id]
             return ""
-        kind, prefix = re.search(r'id of \(every (to do|project|area|tag) whose name starts with "([^"]+)"\)\n\s+set foundNames', script).groups()
+        kind, prefix = re.search(r'id of \(every (to do|project|area|tag) whose name starts with "([^"]+)"\)', script).groups()
         if kind == self.broken_kind:
             raise AppleScriptError("applescript_timeout", "Things did not confirm completion before the deadline", outcome="outcome_unknown")
+
         # AppleScript's "starts with" ignores case, as Things does.
-        return "".join(f"{item_id}\t{name}\n" for item_id, name in self.items.get(kind, {}).items() if name.lower().startswith(prefix.lower()))
+        def matching(entries):
+            return [(item_id, name) for item_id, name in entries.items() if name.lower().startswith(prefix.lower())]
+
+        found = matching(self.items.get(kind, {}))
+        if 'list "Logbook"' in script:
+            found += matching(self.logbook)
+        return "\n".join(item_id for item_id, _ in found) + "\x1e" + "\n".join(name for _, name in found)
 
 
 @pytest.fixture
@@ -85,3 +102,29 @@ def test_a_tracked_cleanup_keeps_going_past_an_item_it_cannot_delete(things, mon
     tracker.add_todo("T1")
     tracker.cleanup()
     assert scripted.deleted == ["T1", "G1"] and tracker.problems == []
+
+
+def test_completed_test_to_dos_in_the_logbook_are_swept_too(things):
+    scripted = things({"to do": {"T1": "mcp-test open"}}, logbook={"L1": "mcp-test done", "L2": "A real finished task"})
+    assert conftest.sweep_live_test_items() == []
+    assert scripted.deleted == ["T1", "L1"]
+    assert scripted.logbook == {"L2": "A real finished task"}
+
+
+def test_the_trash_is_never_filtered(things):
+    """A name filter on a large Trash outlasts the Apple Event timeout and leaves Things busy."""
+    scripted = things({"to do": {"T1": "mcp-test a"}, "project": {"P1": "mcp-test b"}})
+    conftest.sweep_live_test_items()
+    assert scripted.scripts and not any('"Trash"' in script for script in scripted.scripts)
+
+
+def test_a_listing_whose_ids_and_names_do_not_line_up_is_refused(monkeypatch):
+    monkeypatch.setattr(conftest, "run_applescript", lambda _script, timeout=8: "T1\nT2\x1emcp-test only one")
+    with pytest.raises(ValueError, match="2 ids and 1 names"):
+        conftest.live_test_items("to do")
+
+
+def test_an_id_that_could_not_be_a_things_id_is_never_put_in_a_script(things):
+    scripted = things({"to do": {'T1" & (do shell script "id") & "': "mcp-test hostile"}})
+    assert conftest.live_test_items("to do") == []
+    assert scripted.deleted == []

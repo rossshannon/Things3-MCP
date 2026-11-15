@@ -24,7 +24,8 @@ _calls = pathlib.Path({str(calls)!r})
 def _record_call(*args, **kwargs):
     with _calls.open("a") as handle:
         handle.write("app call\\n")
-    return "success"
+    # A synthetic app with no test data: an empty listing, and success for everything else.
+    return "\\x1e" if args and "foundIds" in args[0] else "success"
 
 _app = types.ModuleType("things3_mcp.applescript_bridge")
 _app.ensure_things_ready = _record_call

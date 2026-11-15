@@ -3,6 +3,7 @@
 
 import os
 import random
+import re
 import string
 import sys
 import warnings
@@ -227,11 +228,15 @@ def rename_test_area(area_id: str, new_name: str) -> bool:
 
 
 def delete_todo_by_id(todo_id: str) -> bool:
-    """Delete a specific todo by ID."""
+    """Delete a specific todo by ID, wherever it is.
+
+    An id reference also finds a completed or cancelled to-do in the Logbook,
+    which ``first to do whose id is`` does not.
+    """
     script = f"""
     tell application "Things3"
         try
-            set theTodo to first to do whose id is "{todo_id}"
+            set theTodo to to do id "{todo_id}"
             delete theTodo
             return "success"
         on error errMsg
@@ -248,7 +253,7 @@ def delete_project_by_id(project_id: str) -> bool:
     script = f"""
     tell application "Things3"
         try
-            set theProject to first project whose id is "{project_id}"
+            set theProject to project id "{project_id}"
             delete theProject
             return "success"
         on error errMsg
@@ -263,45 +268,51 @@ def delete_project_by_id(project_id: str) -> bool:
 SWEEP_TIMEOUT_SECONDS = 120
 # Areas and tags are only ever created as "mcp-test-<name>"; to-dos and projects also as "mcp-test <name>".
 SWEEP_PREFIXES = {"to do": TEST_NAMESPACE, "project": TEST_NAMESPACE, "area": f"{TEST_NAMESPACE}-", "tag": f"{TEST_NAMESPACE}-"}
+_SWEEP_ID = re.compile(r"[A-Za-z0-9-]+")
+_SWEEP_SEPARATOR = "\x1e"
 
 
 def live_test_items(kind: str) -> list[tuple[str, str]]:
-    """Return ``(id, name)`` of every item of one kind left by a live test, ignoring the Trash.
+    """Return ``(id, name)`` of every item of one kind left by a live test, outside the Trash.
 
-    Things filters by name itself, so this is one round trip however large the
-    library is, and items already in the Trash are not swept again.
+    ``every to do`` covers the open lists but neither the Logbook nor the Trash,
+    so completed and cancelled to-dos are asked for in the Logbook separately.
+    The Trash is never filtered: with a few thousand items in it, Things cannot
+    answer a name filter on it within an Apple Event timeout, and stays busy long
+    after the caller has given up.
     """
     prefix = SWEEP_PREFIXES[kind]
+    logbook = ""
+    if kind == "to do":
+        logbook = f"""
+        set foundIds to foundIds & (id of (to dos of list "Logbook" whose name starts with "{prefix}"))
+        set foundNames to foundNames & (name of (to dos of list "Logbook" whose name starts with "{prefix}"))"""
     script = f"""
     tell application "Things3"
-        set trashedIds to {{}}
-        try
-            set trashedIds to id of (every to do of list "Trash" whose name starts with "{prefix}")
-        end try
         set foundIds to id of (every {kind} whose name starts with "{prefix}")
-        set foundNames to name of (every {kind} whose name starts with "{prefix}")
-        set output to ""
-        repeat with position from 1 to count of foundIds
-            set itemId to (item position of foundIds) as text
-            if trashedIds does not contain itemId then
-                set output to output & itemId & tab & (item position of foundNames) & linefeed
-            end if
-        end repeat
-        return output
+        set foundNames to name of (every {kind} whose name starts with "{prefix}"){logbook}
     end tell
+    set AppleScript's text item delimiters to linefeed
+    return (foundIds as text) & (character id 30) & (foundNames as text)
     """
     found = run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
+    ids_text, separator, names_text = found.partition(_SWEEP_SEPARATOR)
+    ids, names = ids_text.splitlines(), names_text.splitlines()
+    if not separator or len(ids) != len(names):
+        raise ValueError(f"Things listed {len(ids)} ids and {len(names)} names for {kind}s")
     # AppleScript compares text without regard to case; only the exact lower-case prefix is ours.
-    return [(item_id, name) for item_id, _, name in (line.partition("\t") for line in found.splitlines()) if item_id and name.startswith(prefix)]
+    return [(item_id, name) for item_id, name in zip(ids, names, strict=True) if name.startswith(prefix) and _SWEEP_ID.fullmatch(item_id)]
 
 
 def _sweep(kind: str) -> int:
     """Delete what live tests left behind of one kind and return how many items that was."""
     removed = 0
     for item_id, _name in live_test_items(kind):
+        # An id reference finds a to-do or project in the Logbook too; a "whose" filter would not.
+        target = f'{kind} id "{item_id}"' if kind in {"to do", "project"} else f'(first {kind} whose id is "{item_id}")'
         script = f"""
         tell application "Things3"
-            delete (first {kind} whose id is "{item_id}")
+            delete {target}
         end tell
         """
         try:
