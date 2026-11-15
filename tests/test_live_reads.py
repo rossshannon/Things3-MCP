@@ -89,7 +89,7 @@ def test_a_record_of_the_wrong_shape_is_an_error_rather_than_a_guess(scripts):
         live_reads.get("T1")
 
 
-@pytest.mark.parametrize(("reply", "expected"), [("true", True), ("false", False)])
+@pytest.mark.parametrize(("reply", "expected"), [("listed", True), ("absent", False)])
 def test_list_membership_follows_the_reply(scripts, reply, expected):
     scripts.reply = reply
 
@@ -165,3 +165,43 @@ def test_live_tests_that_call_an_mcp_tool_say_they_need_the_bridge():
             if "live_things" in marks and uses_a_tool and "things_bridge" not in marks:
                 unmarked.append(f"{path.name}::{node.name}")
     assert unmarked == []
+
+
+@pytest.mark.parametrize(
+    ("list_name", "status", "someday", "start", "expected"),
+    [
+        ("Anytime", "incomplete", "no", "", True),
+        ("Anytime", "incomplete", "yes", "", False),
+        ("Anytime", "incomplete", "no", "2026-11-15", False),
+        ("Anytime", "completed", "no", "", False),
+        ("Today", "incomplete", "no", "2026-11-15", True),
+        ("Today", "incomplete", "no", "2026-11-01", True),
+        ("Today", "incomplete", "no", "2026-12-01", False),
+        ("Today", "incomplete", "no", "", False),
+        ("Upcoming", "incomplete", "no", "2026-12-01", True),
+        ("Upcoming", "incomplete", "no", "2026-11-15", False),
+        ("Someday", "incomplete", "yes", "", False),
+        ("Inbox", "incomplete", "no", "", False),
+    ],
+)
+def test_a_project_is_placed_by_its_status_and_start_date(scripts, monkeypatch, list_name, status, someday, start, expected):
+    """Things names projects only in Someday's to dos, so the other lists are worked out."""
+
+    class FixedDate:
+        @staticmethod
+        def today():
+            import datetime
+
+            return datetime.date(2026, 11, 15)
+
+    monkeypatch.setattr(live_reads, "date", FixedDate)
+    scripts.reply = f"project\t{status}\t{someday}\t{start}"
+    assert live_reads.in_list("P1", list_name) is expected
+    (script,) = scripts.sent
+    assert 'project id "P1"' in script and 'list "Someday" whose id is "P1"' in script
+
+
+def test_an_unexpected_membership_reply_is_an_error(scripts):
+    scripts.reply = "true"
+    with pytest.raises(ValueError, match="unexpected"):
+        live_reads.in_list("T1", "Today")

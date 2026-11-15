@@ -10,6 +10,7 @@ The dictionaries use the field names of the ``things`` package (``uuid``,
 """
 
 import re
+from datetime import date
 from typing import Any
 
 from tests import conftest
@@ -70,15 +71,47 @@ tell application "Things3"
 end tell
 """
 
+# Things lists projects in Someday but in no other built-in list's to dos, and
+# "projects of list" is not a valid reference. A project's place in Today,
+# Upcoming and Anytime is read from its status and start date instead.
 _IN_LIST_SCRIPT = """
+on isoDate(theDate)
+    if theDate is missing value then return ""
+    set theYear to (year of theDate) as integer
+    set theMonth to (month of theDate) as integer
+    set theDay to (day of theDate) as integer
+    return (theYear as text) & "-" & (text -2 thru -1 of ("0" & theMonth)) & "-" & (text -2 thru -1 of ("0" & theDay))
+end isoDate
+
 tell application "Things3"
-    if (count of (to dos of list "LIST_NAME" whose id is "ITEM_ID")) > 0 then return "true"
+    if (count of (to dos of list "LIST_NAME" whose id is "ITEM_ID")) > 0 then return "listed"
     try
-        if (count of (projects of list "LIST_NAME" whose id is "ITEM_ID")) > 0 then return "true"
+        set theProject to project id "ITEM_ID"
+        set theName to name of theProject
+    on error
+        return "absent"
     end try
-    return "false"
+    set theStatus to "incomplete"
+    if status of theProject is completed then set theStatus to "completed"
+    if status of theProject is canceled then set theStatus to "canceled"
+    set inSomeday to "no"
+    if (count of (to dos of list "Someday" whose id is "ITEM_ID")) > 0 then set inSomeday to "yes"
+    return "project" & tab & theStatus & tab & inSomeday & tab & my isoDate(activation date of theProject)
 end tell
 """
+
+
+def _project_in_list(list_name: str, status: str, in_someday: bool, start: str, today: str) -> bool:
+    """Where Things shows an open project that its lists do not name."""
+    if status != "incomplete" or in_someday:
+        return False
+    if list_name == "Anytime":
+        return not start
+    if list_name == "Today":
+        return bool(start) and start <= today
+    if list_name == "Upcoming":
+        return bool(start) and start > today
+    return False
 
 
 def _checked_id(item_id: Any) -> str | None:
@@ -116,4 +149,10 @@ def in_list(item_id: Any, list_name: str) -> bool:
     if checked is None:
         return False
     script = _IN_LIST_SCRIPT.replace("LIST_NAME", list_name).replace("ITEM_ID", checked)
-    return conftest.run_applescript(script, timeout=READ_TIMEOUT_SECONDS) == "true"
+    reply = conftest.run_applescript(script, timeout=READ_TIMEOUT_SECONDS)
+    if reply in {"listed", "absent"}:
+        return reply == "listed"
+    kind, status, in_someday, start = (reply.split("\t") + ["", "", "", ""])[:4]
+    if kind != "project":
+        raise ValueError("Things returned an unexpected list-membership reply")
+    return _project_in_list(list_name, status, in_someday == "yes", start, date.today().isoformat())
