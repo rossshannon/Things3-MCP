@@ -31,9 +31,11 @@ def _script_error(raw_error: str) -> AppleScriptError:
 def run_applescript(script: str, timeout: int = 8) -> str:
     """Execute a script over stdin without retaining its content in a file."""
     process = None
+    settled = False
     try:
         process = subprocess.Popen(["/usr/bin/osascript", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # nosec B603
         stdout, stderr = process.communicate(input=script.encode("utf-8"), timeout=timeout)
+        settled = True
         if process.returncode != 0:
             raise _script_error(stderr.decode("utf-8", errors="replace"))
         output = stdout.decode("utf-8").strip()
@@ -45,6 +47,7 @@ def run_applescript(script: str, timeout: int = 8) -> str:
         if process is not None:
             process.kill()
             process.communicate()
+            settled = True
         logger.error("AppleScript execution timed out")
         raise AppleScriptError("applescript_timeout", "Things did not confirm completion before the deadline", outcome="outcome_unknown") from exc
     except AppleScriptError:
@@ -53,6 +56,11 @@ def run_applescript(script: str, timeout: int = 8) -> str:
     except Exception as exc:
         logger.error("AppleScript execution failed")
         raise AppleScriptError("applescript_unavailable", "The local AppleScript process failed", outcome="outcome_unknown" if process is not None else "failed") from exc
+    finally:
+        # An interruption such as KeyboardInterrupt must not leave osascript waiting on Things.
+        if process is not None and not settled:
+            process.kill()
+            process.wait()
 
 
 def ensure_things_ready() -> bool:
