@@ -97,22 +97,17 @@ Nothing refreshed `cache/latest.json` except a manual `--snapshot-once`. After a
 
 ## Commits
 
-27 code commits on `claude/project-thread-v8bb9o`, `284a248` to `770270e`, plus this note; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
+36 commits on `claude/project-thread-v8bb9o`, `284a248` to the head, including this note and its updates; `git log bf5bc82..` lists them. In the standalone repository, `7a1d3e1` and `8719651` on the same branch name carry the re-export.
 
 ## Live verification
 
 The hermetic suite was run on the Mac in a new, separate worktree (`/Users/ross/Development/Things3-MCP-live-test`, Python 3.12.16): 657 of 658 passed. The one failure was a real difference between Python 3.12 and 3.13: after an HTTP/0.9 request line, 3.12 waits for headers and 3.13 skips them. The request is now refused from the request line alone (`dd2ea51`), and the suite passes on 3.12.3 and 3.13.18 in the container, in both repositories.
 
-**The live run against Things did not happen.** The read-only preflight stopped at its first Apple Event: macOS was asking whether the Claude Code binary may control Things, and nobody was at the machine to answer. Nothing was created in Things, no development bridge was started, and nothing on the Mac changed apart from the new worktree.
+**All 69 Automation-only live tests pass against the real Things library** (2026-11-15, `e017d10`, 143 s), and clean-up leaves nothing outside the Trash. The first attempt, on 2026-11-14, stopped at the macOS Automation prompt; see "Update - 2026-11-15 10:15 UTC" for what the runs in between found. The 47 `things_bridge` tests have not been run.
 
 What the preflight did establish, from `Things.sdef`: to-dos expose `name`, and no class has a `title` property. That confirms why the old live-test sweeps matched nothing (they read `title`) and relied on a database fallback.
 
-Not yet verified against the real app, and covered only by tests of the generated script:
-
-- `add_tags`, and clearing notes or tags with an empty value
-- the rewritten clean-up sweeps in `tests/conftest.py`
-- the `in List: Anytime` expectation in `tests/test_list_assignment_operations.py`
-- the AppleScript read-back in `tests/live_reads.py` (property names and list membership)
+Still covered only by tests of the generated script: `add_tags`, and clearing notes or tags with an empty value (no live test exercises them), and the `in List: Anytime` expectation in `tests/test_list_assignment_operations.py` (a `things_bridge` test).
 
 The live tests are split by what they need (see "Update - 2026-11-14 23:50 UTC" below):
 
@@ -143,6 +138,21 @@ Question from Ross, paraphrased: is the live run still possible with Automation 
 
 The AppleScript in `tests/live_reads.py` and the clean-up sweep compiles on the Mac with `osacompile` (nothing was run). The Automation prompt was still unanswered, so no live test has run.
 
+### Update - 2026-11-15 10:15 UTC
+
+**Summary**: with Automation allowed, the live tests ran on the Mac. Four rounds found six problems, all fixed; the last round passed 69 of 69.
+
+| Found | Cause | Fix |
+| --- | --- | --- |
+| Clean-up sweep ran past the 300 s test timeout | `to dos of list "Trash" whose name starts with …` cannot finish within the 120 s Apple Event timeout on a Trash of ~3,700 items, and Things stays busy for minutes afterwards | `d1a0da9`: the sweep never filters the Trash. `every to do` already excludes both the Trash and the Logbook (measured), so the Logbook is queried separately for to-dos |
+| osascript kept running after the test was killed | `run_applescript` killed the process on its own timeout only | `3d06a4d`: kill it on any interruption |
+| An empty sweep was reported as a failure | The listing used U+001E as a separator; with nothing to list it was the whole output, and `str.strip()` treats it as whitespace | `69bf43c`: the listing starts with its count |
+| 41 completed test to-dos were stranded in the Logbook | `first to do whose id is` cannot see the Logbook, and `delete to do id` fails there with -1728 although `name`, `status` and `move` resolve the same reference | `b2b6840`: clean-up moves to-dos and projects to the Trash; areas and tags are still deleted |
+| Two project scheduling tests failed | Things lists projects among the to dos of Someday only, and `projects of list "Anytime"` is not a valid reference | `d69b61c`: an open project's list is worked out from its start date |
+| Nine error-path tests failed | They expected error strings or `False`; the write functions raise `AppleScriptError` | `e017d10`: the tests expect the error |
+
+Run on the Mac, in the separate worktree, by the test process with Automation consent only: no database access, no bridge, no permission dialog other than Automation. Before and after the final run, no item outside the Trash starts with `mcp-test`. The Trash now holds several thousand test to-dos from earlier runs and these ones; emptying it is left to Ross.
+
 ## For review
 
 Nothing in this list was changed. Items are grouped by what they need from you.
@@ -171,6 +181,8 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 - **Efficiency.** `include_items` on projects, areas and tags issues one query per row; `/status` and `/auth-status` parse the whole snapshot (3 MB) each time.
 - **Timeouts.** The client refuses any timeout at or below 30 s regardless of the worker's setting, and `THINGS3_MCP_BRIDGE_WORKER_TIMEOUT` is not on the LaunchAgent's allow-list.
 - **`pytest --cov` does not work** under the hermetic guard, and the worker deadline test fails under coverage.
+- **A missing item reads as "may have changed some items".** Things answers -1728 ("Can't get …") when an id, list or area does not resolve, and `_script_error` reports every failure other than -1743 as `applescript_failed` with `outcome_unknown`. Classifying -1728 as `not_found` would be clearer, but a script that changed something before the failing lookup would then be misreported as `failed`; it needs the lookups ordered before any change, per script.
+- **Live-test items accumulate in the Trash.** Every run moves its items there, and Things filters a large Trash very slowly. Nothing in the suite now reads the Trash, but Things' own Trash view and `get_trash` will slow as it grows.
 
 ### Packaging and release
 
@@ -199,6 +211,7 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 7. **Things' AppleScript dictionary has `name`, not `title`.** `title of theTodo` compiles, fails at run time, and inside a `try` block fails silently.
 8. **A test that checks through a different door than the product needs permissions the product does not.** The writes needed only Automation; it was the tests' own verification reads that needed the database. Reading back through the interface under test removed the requirement.
 9. **Two timers of the same length are a race, and a test that passes on one platform only shows which one usually wins there.** Give each cut-off its own test by disabling the other.
+10. **Measure the app before designing around it.** Ten timed read-only queries showed which Things references are fast, which are invalid and which never finish; each assumption in the first sweep was wrong in a way no synthetic test could show.
 
 ## References
 
@@ -208,7 +221,7 @@ Nothing in this list was changed. Items are grouped by what they need from you.
 
 ## Next Steps
 
-- [ ] Allow Automation (Claude Code to Things) on the Mac, then run the Automation-only live tests
+- [x] Allow Automation (Claude Code to Things) on the Mac, then run the Automation-only live tests (69 of 69 pass)
 - [ ] After the bridge is rebuilt from this line, run the `things_bridge` live tests against it
 - [ ] Review and merge PR 13 and this branch; close PR 4
 - [ ] Rebuild, sign and install the bridge; fix cache permissions first
