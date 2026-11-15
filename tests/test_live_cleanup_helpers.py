@@ -48,7 +48,8 @@ class ScriptedThings:
         found = matching(self.items.get(kind, {}))
         if 'list "Logbook"' in script:
             found += matching(self.logbook)
-        return "\n".join(item_id for item_id, _ in found) + "\x1e" + "\n".join(name for _, name in found)
+        # As osascript prints it, then run_applescript strips it.
+        return "\n".join([str(len(found)), *(item_id for item_id, _ in found), *(name for _, name in found)]).strip()
 
 
 @pytest.fixture
@@ -118,10 +119,18 @@ def test_the_trash_is_never_filtered(things):
     assert scripted.scripts and not any('"Trash"' in script for script in scripted.scripts)
 
 
-def test_a_listing_whose_ids_and_names_do_not_line_up_is_refused(monkeypatch):
-    monkeypatch.setattr(conftest, "run_applescript", lambda _script, timeout=8: "T1\nT2\x1emcp-test only one")
-    with pytest.raises(ValueError, match="2 ids and 1 names"):
+@pytest.mark.parametrize("output", ["2\nT1\nT2\nmcp-test only one", "", "two\nT1\nmcp-test a"])
+def test_a_listing_that_does_not_add_up_is_refused(monkeypatch, output):
+    monkeypatch.setattr(conftest, "run_applescript", lambda _script, timeout=8: output)
+    with pytest.raises(ValueError, match="Things listed"):
         conftest.live_test_items("to do")
+
+
+def test_nothing_to_sweep_is_an_empty_listing_not_an_error(things):
+    """With no matches the whole output is "0"; it used to be a lone separator that stripping removed."""
+    things({"to do": {}, "project": {}, "area": {}, "tag": {"G1": "Errands"}})
+    assert conftest.sweep_live_test_items() == []
+    assert conftest.live_test_items("area") == []
 
 
 def test_an_id_that_could_not_be_a_things_id_is_never_put_in_a_script(things):

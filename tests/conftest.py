@@ -269,7 +269,6 @@ SWEEP_TIMEOUT_SECONDS = 120
 # Areas and tags are only ever created as "mcp-test-<name>"; to-dos and projects also as "mcp-test <name>".
 SWEEP_PREFIXES = {"to do": TEST_NAMESPACE, "project": TEST_NAMESPACE, "area": f"{TEST_NAMESPACE}-", "tag": f"{TEST_NAMESPACE}-"}
 _SWEEP_ID = re.compile(r"[A-Za-z0-9-]+")
-_SWEEP_SEPARATOR = "\x1e"
 
 
 def live_test_items(kind: str) -> list[tuple[str, str]]:
@@ -293,13 +292,17 @@ def live_test_items(kind: str) -> list[tuple[str, str]]:
         set foundNames to name of (every {kind} whose name starts with "{prefix}"){logbook}
     end tell
     set AppleScript's text item delimiters to linefeed
-    return (foundIds as text) & (character id 30) & (foundNames as text)
+    return ((count of foundIds) as text) & linefeed & (foundIds as text) & linefeed & (foundNames as text)
     """
-    found = run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
-    ids_text, separator, names_text = found.partition(_SWEEP_SEPARATOR)
-    ids, names = ids_text.splitlines(), names_text.splitlines()
-    if not separator or len(ids) != len(names):
-        raise ValueError(f"Things listed {len(ids)} ids and {len(names)} names for {kind}s")
+    # The count comes first, so an empty listing is still "0" after the output is stripped.
+    count_text, _, rest = run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS).partition("\n")
+    lines = rest.split("\n")
+    count = int(count_text) if count_text.isascii() and count_text.isdigit() else -1
+    if count == 0:
+        return []
+    if count < 0 or len(lines) != 2 * count:
+        raise ValueError(f"Things listed {len(lines)} lines for {count_text or 'no'} {kind}s")
+    ids, names = lines[:count], lines[count:]
     # AppleScript compares text without regard to case; only the exact lower-case prefix is ours.
     return [(item_id, name) for item_id, name in zip(ids, names, strict=True) if name.startswith(prefix) and _SWEEP_ID.fullmatch(item_id)]
 
@@ -319,7 +322,7 @@ def _sweep(kind: str) -> int:
             run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
             removed += 1
         except (RuntimeError, ValueError, OSError) as error:
-            print(f"⚠️  Could not delete test {kind} {item_id}: {type(error).__name__}")
+            print(f"⚠️  Could not delete test {kind} {item_id}: {getattr(error, 'error_code', type(error).__name__)}")
     return removed
 
 
