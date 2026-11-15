@@ -19,6 +19,7 @@ from tests.conftest import (  # noqa: E402
     generate_random_string,
 )
 from things3_mcp.applescript_bridge import (  # noqa: E402
+    AppleScriptError,
     add_project,
     add_todo,
     update_project,
@@ -206,11 +207,10 @@ def test_completion_status_verification(test_namespace):
 def test_invalid_completion_operations(test_namespace):
     """Test handling of invalid completion operations."""
     # Test completing a non-existent todo
-    fake_id = "fake-todo-id-12345"
-    result = update_todo(id=fake_id, completed=True)
-    assert "error" in str(result).lower(), "Completing non-existent todo should return error"
+    # Writes raise a sanitised AppleScriptError; the MCP tools turn it into a message.
+    with pytest.raises(AppleScriptError):
+        update_todo(id="fake-todo-id-12345", completed=True)
 
     # Test completing a non-existent project
-    fake_project_id = "fake-project-id-12345"
-    result = update_project(id=fake_project_id, completed=True)
-    assert "error" in str(result).lower(), "Completing non-existent project should return error"
+    with pytest.raises(AppleScriptError):
+        update_project(id="fake-project-id-12345", completed=True)

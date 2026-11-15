@@ -17,6 +17,7 @@ import pytest  # noqa: E402
 
 from tests import live_reads  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
+    AppleScriptError,
     add_project,
     add_todo,
     ensure_things_ready,
@@ -136,17 +137,16 @@ def test_concurrent_operations(test_namespace):
 
 def test_invalid_todo_id_update():
     """Test updating non-existent todo."""
-    fake_id = "NonExistentTodoID12345"
-    success = update_todo(id=fake_id, title="Should Fail")
-    assert success.startswith("Error:"), "Updating non-existent todo should fail"
+    with pytest.raises(AppleScriptError):
+        update_todo(id="NonExistentTodoID12345", title="Should Fail")
 
 
 def test_empty_title_todo():
     """Test todo creation with empty title."""
-    # This should fail gracefully
-    todo_id = add_todo(title="")
-    # We expect this to return False for empty title
-    assert todo_id is False, "Empty title should be rejected"
+    # Refused before any script runs, so nothing can have been created.
+    with pytest.raises(AppleScriptError) as refused:
+        add_todo(title="")
+    assert refused.value.error_code == "invalid_title" and refused.value.outcome == "failed"
 
 
 def test_very_long_content(cleanup_tracker, test_namespace):
@@ -196,8 +196,9 @@ def test_move_todo_between_areas(test_todo, test_namespace):
 
 def test_move_todo_to_nonexistent_area(test_todo):
     """Test moving a todo to a nonexistent area."""
-    result = update_todo(id=test_todo, list_name="NonexistentArea123")
-    assert "area not found" in str(result).lower(), "Should return appropriate error message"
+    with pytest.raises(AppleScriptError):
+        update_todo(id=test_todo, list_name="NonexistentArea123")
+    assert live_reads.get(test_todo)["area"] is None, "The todo should not have moved"
 
 
 def test_area_move_with_other_updates(test_todo, test_namespace):

@@ -14,6 +14,7 @@ import pytest  # noqa: E402
 
 from tests import live_reads  # noqa: E402
 from things3_mcp.applescript_bridge import (  # noqa: E402
+    AppleScriptError,
     add_project,
     add_todo,
     update_project,
@@ -395,8 +396,8 @@ def test_update_todo_to_nonexistent_list(test_namespace):
 
     try:
         # Try to move to nonexistent list
-        result = update_todo(id=todo_id, list_name="NonexistentList123")
-        assert "error" in str(result).lower() or "not found" in str(result).lower(), f"Should return error for nonexistent list: {result}"
+        with pytest.raises(AppleScriptError):
+            update_todo(id=todo_id, list_name="NonexistentList123")
     finally:
         delete_todo_by_id(todo_id)
 
@@ -410,8 +411,8 @@ def test_update_todo_to_nonexistent_id(test_namespace):
 
     try:
         # Try to move to nonexistent ID
-        result = update_todo(id=todo_id, list_id="nonexistent-id-123")
-        assert "error" in str(result).lower() or "not found" in str(result).lower(), f"Should return error for nonexistent ID: {result}"
+        with pytest.raises(AppleScriptError):
+            update_todo(id=todo_id, list_id="nonexistent-id-123")
     finally:
         delete_todo_by_id(todo_id)
 
@@ -578,9 +579,13 @@ def test_malformed_uuid_handling(test_namespace):
         ]
 
         for malformed_uuid in malformed_uuids:
-            result = update_todo(id=todo_id, list_id=malformed_uuid)
-            # Should either gracefully ignore or return error, but not crash
-            assert isinstance(result, str), f"Should return string result for malformed UUID: {malformed_uuid}"
+            # An empty id means "no move"; anything else that names no list is refused with a sanitised error.
+            try:
+                result = update_todo(id=todo_id, list_id=malformed_uuid)
+            except AppleScriptError as error:
+                assert malformed_uuid, f"An empty list_id should be ignored, not refused: {error.error_code}"
+            else:
+                assert not malformed_uuid and result == "true", f"Should not move to malformed UUID {malformed_uuid!r}: {result}"
             # Todo should remain in its current location (not moved)
             todo = live_reads.get(todo_id)
             assert todo is not None, f"Todo should still exist after malformed UUID: {malformed_uuid}"
@@ -606,11 +611,10 @@ def test_empty_list_id_handling(test_namespace):
         assert "true" in str(result).lower() or result == "true", "None list_id should not cause failure"
 
         # Test whitespace-only list_id - AppleScript may treat this as empty and return error
-        result = update_todo(id=todo_id, list_id="   ")
-        # This might return an error about not finding the ID, which is acceptable behavior
-        assert isinstance(result, str), "Should return string result for whitespace list_id"
-        # Should not crash or return unexpected format
-        assert not result.startswith("/var/folders/"), "Should not return temp file paths"
+        # Whitespace names no list, so Things refuses it with a sanitised error.
+        with pytest.raises(AppleScriptError) as refused:
+            update_todo(id=todo_id, list_id="   ")
+        assert "/var/folders/" not in str(refused.value), "Should not expose temp file paths"
 
         # Verify todo still exists and is accessible
         todo = live_reads.get(todo_id)
@@ -637,13 +641,8 @@ def test_valid_looking_but_nonexistent_ids(test_namespace):
         ]
 
         for fake_uuid in fake_uuids:
-            result = update_todo(id=todo_id, list_id=fake_uuid)
-            # Should handle gracefully - either ignore or return error message
-            assert isinstance(result, str), f"Should return string for fake UUID: {fake_uuid}"
-
-            # If it's an error, it should be properly formatted
-            if "error" in str(result).lower():
-                assert "Error:" in result or "error" in result.lower(), f"Error should be properly formatted: {result}"
+            with pytest.raises(AppleScriptError):
+                update_todo(id=todo_id, list_id=fake_uuid)
 
             # Verify todo still exists and is accessible
             todo = live_reads.get(todo_id)
