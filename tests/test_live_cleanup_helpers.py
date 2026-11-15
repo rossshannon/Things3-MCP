@@ -25,7 +25,7 @@ class ScriptedThings:
     def __call__(self, script, timeout=8):
         assert timeout == conftest.SWEEP_TIMEOUT_SECONDS
         self.scripts.append(script)
-        deletion = re.search(r'delete (?:(to do|project) id "([^"]+)"|\(first (area|tag) whose id is "([^"]+)"\))', script)
+        deletion = re.search(r'move (to do|project) id "([^"]+)" to list "Trash"|delete \(first (area|tag) whose id is "([^"]+)"\)', script)
         if deletion:
             kind = deletion.group(1) or deletion.group(3)
             item_id = deletion.group(2) or deletion.group(4)
@@ -113,10 +113,12 @@ def test_completed_test_to_dos_in_the_logbook_are_swept_too(things):
 
 
 def test_the_trash_is_never_filtered(things):
-    """A name filter on a large Trash outlasts the Apple Event timeout and leaves Things busy."""
+    """A name filter on a large Trash outlasts the Apple Event timeout and leaves Things busy; items are only moved there."""
     scripted = things({"to do": {"T1": "mcp-test a"}, "project": {"P1": "mcp-test b"}})
     conftest.sweep_live_test_items()
-    assert scripted.scripts and not any('"Trash"' in script for script in scripted.scripts)
+    listings = [script for script in scripted.scripts if "starts with" in script]
+    assert listings and not any('"Trash"' in script for script in listings)
+    assert scripted.deleted == ["T1", "P1"]
 
 
 @pytest.mark.parametrize("output", ["2\nT1\nT2\nmcp-test only one", "", "two\nT1\nmcp-test a"])
@@ -137,3 +139,14 @@ def test_an_id_that_could_not_be_a_things_id_is_never_put_in_a_script(things):
     scripted = things({"to do": {'T1" & (do shell script "id") & "': "mcp-test hostile"}})
     assert conftest.live_test_items("to do") == []
     assert scripted.deleted == []
+
+
+def test_to_dos_and_projects_are_moved_to_the_trash_and_areas_and_tags_deleted(things):
+    """A completed to-do in the Logbook cannot be deleted by id, but it can be moved to the Trash."""
+    scripted = things({"project": {"P1": "mcp-test p"}, "area": {"A1": "mcp-test-a"}}, logbook={"L1": "mcp-test done"})
+    conftest.sweep_live_test_items()
+    removals = [script for script in scripted.scripts if "starts with" not in script]
+    assert any('move to do id "L1" to list "Trash"' in script for script in removals)
+    assert any('move project id "P1" to list "Trash"' in script for script in removals)
+    assert any('delete (first area whose id is "A1")' in script for script in removals)
+    assert not any("delete to do" in script or "delete project" in script for script in removals)

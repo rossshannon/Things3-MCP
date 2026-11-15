@@ -227,42 +227,30 @@ def rename_test_area(area_id: str, new_name: str) -> bool:
     return result and "error" not in result.lower()
 
 
-def delete_todo_by_id(todo_id: str) -> bool:
-    """Delete a specific todo by ID, wherever it is.
+def _trash_script(kind: str, item_id: str) -> str:
+    """Move a to-do or project to the Trash, wherever it is.
 
-    An id reference also finds a completed or cancelled to-do in the Logbook,
-    which ``first to do whose id is`` does not.
+    ``delete`` cannot resolve a completed or cancelled item in the Logbook by id
+    (Things answers -1728), although every other command can; moving it to the
+    Trash is what ``delete`` does for an open item anyway.
     """
-    script = f"""
+    return f"""
     tell application "Things3"
-        try
-            set theTodo to to do id "{todo_id}"
-            delete theTodo
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
+        move {kind} id "{item_id}" to list "Trash"
     end tell
     """
-    result = run_applescript(script)
-    return result and "error" not in result.lower()
+
+
+def delete_todo_by_id(todo_id: str) -> bool:
+    """Move a specific to-do to the Trash, including one already completed or cancelled."""
+    run_applescript(_trash_script("to do", todo_id))
+    return True
 
 
 def delete_project_by_id(project_id: str) -> bool:
-    """Delete a specific project by ID."""
-    script = f"""
-    tell application "Things3"
-        try
-            set theProject to project id "{project_id}"
-            delete theProject
-            return "success"
-        on error errMsg
-            return "Error: " & errMsg
-        end try
-    end tell
-    """
-    result = run_applescript(script)
-    return result and "error" not in result.lower()
+    """Move a specific project to the Trash, including one already completed or cancelled."""
+    run_applescript(_trash_script("project", project_id))
+    return True
 
 
 SWEEP_TIMEOUT_SECONDS = 120
@@ -311,13 +299,15 @@ def _sweep(kind: str) -> int:
     """Delete what live tests left behind of one kind and return how many items that was."""
     removed = 0
     for item_id, _name in live_test_items(kind):
-        # An id reference finds a to-do or project in the Logbook too; a "whose" filter would not.
-        target = f'{kind} id "{item_id}"' if kind in {"to do", "project"} else f'(first {kind} whose id is "{item_id}")'
-        script = f"""
-        tell application "Things3"
-            delete {target}
-        end tell
-        """
+        if kind in {"to do", "project"}:
+            script = _trash_script(kind, item_id)
+        else:
+            # Areas and tags have no Trash; deleting them removes them.
+            script = f"""
+            tell application "Things3"
+                delete (first {kind} whose id is "{item_id}")
+            end tell
+            """
         try:
             run_applescript(script, timeout=SWEEP_TIMEOUT_SECONDS)
             removed += 1
